@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>KINGSTON — Appel des commandes</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=Anton&family=Open+Sans:wght@400;600;700;800&display=swap" rel="stylesheet"/>
+<style>
+  :root{ --serif:'Anton','Open Sans',system-ui,sans-serif; --sans:'Open Sans',system-ui,sans-serif; --green:#3f7d4f; --amber:#c89b3c; }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  html,body{margin:0;height:100%;}
+  body{font-family:var(--sans);background:radial-gradient(120% 90% at 50% 0%,#241a0c,#0c0a06);color:#f4efe3;overflow:hidden;}
+  .wrap{position:fixed;inset:0;display:flex;flex-direction:column;}
+  header{flex:0 0 auto;display:flex;align-items:center;justify-content:space-between;padding:22px 34px;border-bottom:1px solid rgba(255,255,255,.08);}
+  .wm{font-family:var(--serif);letter-spacing:.16em;font-size:30px;display:flex;align-items:center;gap:12px;}
+  .sub{letter-spacing:.28em;text-transform:uppercase;font-size:13px;color:#9a9180;}
+  .cols{flex:1;display:grid;grid-template-columns:1fr 1fr;min-height:0;}
+  .col{display:flex;flex-direction:column;min-height:0;padding:22px 26px;}
+  .col+.col{border-left:1px solid rgba(255,255,255,.08);}
+  .col h2{font-family:var(--serif);font-size:24px;letter-spacing:.04em;margin:0 0 16px;display:flex;align-items:center;gap:12px;}
+  .dot{width:13px;height:13px;border-radius:50%;}
+  .prep h2 .dot{background:var(--amber);} .ready h2 .dot{background:var(--green);box-shadow:0 0 0 6px rgba(63,125,79,.25);}
+  .list{display:flex;flex-wrap:wrap;align-content:flex-start;gap:14px;overflow:auto;}
+  .card{border-radius:18px;padding:18px 22px;min-width:200px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.10);}
+  .ready .card{background:linear-gradient(135deg,rgba(63,125,79,.30),rgba(63,125,79,.12));border-color:rgba(120,200,150,.45);animation:pop .4s cubic-bezier(.2,1.2,.3,1);}
+  @keyframes pop{0%{transform:scale(.85);opacity:0}100%{transform:scale(1);opacity:1}}
+  .nm{font-family:var(--serif);font-size:38px;line-height:1;letter-spacing:.02em;}
+  .ready .nm{color:#bdf0cf;}
+  .meta{color:#c9bfa6;font-size:14px;margin-top:8px;}
+  .empty{color:#7c7464;font-size:16px;padding:14px 2px;}
+  footer{flex:0 0 auto;text-align:center;color:#7c7464;font-size:13px;padding:12px;border-top:1px solid rgba(255,255,255,.08);}
+  .live{display:inline-flex;align-items:center;gap:7px;}
+  .live i{width:8px;height:8px;border-radius:50%;background:var(--green);animation:bl 1.6s ease-in-out infinite;}
+  @keyframes bl{0%,100%{opacity:.4}50%{opacity:1}}
+  .off i{background:#b4452f;animation:none;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="wm"><svg width="30" height="22" viewBox="0 0 26 20"><path d="M2 17 L4 6 L9 12 L13 4 L17 12 L22 6 L24 17 Z" fill="#d8b252"/></svg> KINGSTON</div>
+    <div style="text-align:right"><div class="sub" id="shop">Commandes</div><div class="live" id="live"><i></i> <span id="livetxt">en direct</span></div></div>
+  </header>
+  <div class="cols">
+    <div class="col prep"><h2><span class="dot"></span> En préparation</h2><div class="list" id="prep"></div></div>
+    <div class="col ready"><h2><span class="dot"></span> Prête — viens la chercher</h2><div class="list" id="ready"></div></div>
+  </div>
+  <footer>On t'appelle par ton prénom dès que c'est prêt · KINGSTON</footer>
+</div>
+<script>
+(function(){
+  "use strict";
+  var QP=new URLSearchParams(location.search);
+  var BQ=QP.get('boutique')||'aix';
+  document.getElementById('shop').textContent='Boutique '+BQ;
+  var orders={}, prevReady={};
+  function firstName(o){
+    if(o.customerName) return (''+o.customerName).trim().split(/\s+/)[0];
+    var r=o.customerRef||''; if(r && r.indexOf('@')<0) return (''+r).trim().split(/\s+/)[0];
+    return o.numero||'Commande';
+  }
+  function itemCount(o){ return (o.items||[]).reduce(function(a,it){return a+(it.qty||1);},0); }
+  function card(o){
+    var n=itemCount(o);
+    return '<div class="card"><div class="nm">'+esc(firstName(o))+'</div><div class="meta">'+(n?n+' article'+(n>1?'s':''):'')+' · '+esc(o.numero||'')+'</div></div>';
+  }
+  function esc(s){return (''+s).replace(/&/g,'&amp;').replace(/</g,'&lt;');}
+  function render(){
+    var prep=[], ready=[];
+    Object.keys(orders).forEach(function(k){ var o=orders[k]; if(o.status==='prete') ready.push(o); else if(o.status==='nouveau'||o.status==='preparation') prep.push(o); });
+    prep.sort(function(a,b){return (a.ts||0)-(b.ts||0);}); ready.sort(function(a,b){return (b.ts||0)-(a.ts||0);});
+    document.getElementById('prep').innerHTML = prep.length?prep.map(card).join(''):'<div class="empty">Aucune commande en cours.</div>';
+    document.getElementById('ready').innerHTML = ready.length?ready.map(card).join(''):'<div class="empty">Rien de prêt pour l\'instant.</div>';
+    // carillon quand une commande vient de passer « prête »
+    var now={}; ready.forEach(function(o){ now[o.id]=1; if(!prevReady[o.id]) chime(); }); prevReady=now;
+  }
+  function upsert(o){ if(!o||o.id==null) return; if(o.status==='servie'){ delete orders[o.id]; } else { orders[o.id]=o; } render(); }
+  var actx=null;
+  function chime(){ try{ actx=actx||new (window.AudioContext||window.webkitAudioContext)(); var t=actx.currentTime; [880,1175].forEach(function(f,i){ var o=actx.createOscillator(),g=actx.createGain(); o.type='sine'; o.frequency.value=f; o.connect(g); g.connect(actx.destination); g.gain.setValueAtTime(0.0001,t+i*0.16); g.gain.exponentialRampToValueAtTime(0.22,t+i*0.16+0.02); g.gain.exponentialRampToValueAtTime(0.0001,t+i*0.16+0.5); o.start(t+i*0.16); o.stop(t+i*0.16+0.5); }); }catch(e){} }
+  function live(on){ var l=document.getElementById('live'); l.className='live'+(on?'':' off'); document.getElementById('livetxt').textContent=on?'en direct':'reconnexion…'; }
+  function connect(){
+    var es=new EventSource('/api/orders/stream?boutique='+encodeURIComponent(BQ));
+    es.addEventListener('snapshot',function(e){ try{ orders={}; JSON.parse(e.data).forEach(function(o){ orders[o.id]=o; }); render(); live(true); }catch(x){} });
+    es.addEventListener('order',function(e){ try{ upsert(JSON.parse(e.data)); live(true); }catch(x){} });
+    es.onopen=function(){ live(true); };
+    es.onerror=function(){ live(false); }; // EventSource se reconnecte tout seul
+  }
+  connect();
+})();
+</script>
+</body>
+</html>

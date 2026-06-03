@@ -9,7 +9,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Anton&family=Open+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
 <style>
 :root{
-  --bg:#f3f1ea; --card:#ffffff; --ink:#1b1813; --muted:#7c776c; --line:#e7e3d9;
+  --bg:#f3f1ea; --card:#ffffff; --ink:#1b1813; --muted:#6b675b; --line:#e7e3d9;
   --gold:#b8902f; --gold2:#d8b252; --dark:#15110a; --green:#3f7d4f;
   /* Typographie KINGSTON : Anton (titres / logo) + Open Sans (texte courant). */
   --serif:'Anton','Open Sans',system-ui,sans-serif; --sans:'Open Sans',system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
@@ -24,8 +24,8 @@ body{font-family:var(--sans);background:var(--bg);color:var(--ink);overflow:hidd
 .wm{display:flex;align-items:center;gap:9px;font-family:var(--serif);letter-spacing:.14em;font-size:21px;font-weight:400;color:#f4efe3;}
 .restart{border:1px solid rgba(255,255,255,.18);background:transparent;color:#cfc9ba;border-radius:10px;padding:9px 14px;font-size:13px;cursor:pointer;}
 .head-r{display:flex;align-items:center;gap:10px;}
-.promo{background:var(--dark);overflow:hidden;white-space:nowrap;border-bottom:1px solid rgba(216,178,82,.18);}
-.promo-track{display:inline-block;padding:9px 0;animation:marq 26s linear infinite;color:var(--gold2);font-size:12.5px;letter-spacing:.03em;font-weight:600;}
+.promo{background:var(--dark);overflow:hidden;white-space:nowrap;border-bottom:1px solid rgba(255,255,255,.08);}
+.promo-track{display:inline-block;padding:9px 0;animation:marq 50s linear infinite;color:#a59c86;font-size:12.5px;letter-spacing:.03em;font-weight:500;}
 .promo-track span{margin:0 16px;}
 .promo-track .sep{opacity:.45;margin:0 2px;}
 @keyframes marq{from{transform:translateX(0)}to{transform:translateX(-50%)}}
@@ -36,14 +36,14 @@ body{font-family:var(--sans);background:var(--bg);color:var(--ink);overflow:hidd
 .hero:after{content:"";position:absolute;right:-40px;top:-40px;width:180px;height:180px;border-radius:50%;background:radial-gradient(circle,rgba(216,178,82,.25),transparent 70%);}
 .hero-t{font-family:var(--serif);font-size:28px;letter-spacing:.01em;color:#f4efe3;}
 .hero-s{color:#c9bfa6;margin-top:6px;font-size:14.5px;}
-.hero-cta{position:relative;border:0;border-radius:13px;padding:14px 22px;font-weight:800;font-size:14px;cursor:pointer;background:linear-gradient(135deg,var(--gold2),var(--gold));color:#15110a;white-space:nowrap;}
+.hero-cta{position:relative;border:0;border-radius:13px;padding:14px 22px;font-weight:800;font-size:14px;cursor:pointer;background:var(--ink);color:#f4efe3;white-space:nowrap;}
 .badge{position:absolute;margin:10px;background:var(--gold);color:#fff;font-size:11px;font-weight:800;padding:4px 10px;border-radius:999px;letter-spacing:.03em;z-index:2;box-shadow:0 3px 8px rgba(184,144,47,.4);}
 .av-pts{text-align:center;margin-bottom:6px;}
 .av-n{font-family:var(--serif);font-size:50px;color:var(--ink);line-height:1;}
 .av-l{color:var(--muted);font-size:13px;margin-top:4px;}
 .gauge{height:14px;border-radius:999px;background:#eceae2;overflow:hidden;margin:10px 0 6px;}
 .gauge>i{display:block;height:100%;background:linear-gradient(90deg,var(--gold),var(--gold2));}
-.av-prog{text-align:center;color:#6f5717;font-size:13px;margin-bottom:14px;}
+.av-prog{text-align:center;color:var(--ink);font-size:13px;margin-bottom:14px;}
 .av-row{display:flex;gap:12px;align-items:flex-start;padding:12px 0;border-top:1px solid var(--line);}
 .av-dot{width:10px;height:10px;border-radius:50%;background:var(--gold);margin-top:5px;flex:0 0 10px;}
 .av-t{font-weight:700;}
@@ -70,8 +70,8 @@ body{font-family:var(--sans);background:var(--bg);color:var(--ink);overflow:hidd
 .pcard .ds{color:var(--muted);font-size:12.5px;margin-top:3px;}
 .pcard .row{margin-top:auto;display:flex;align-items:center;justify-content:space-between;padding-top:12px;}
 .pcard .pr{font-weight:800;font-size:18px;}
-.add{border:0;background:var(--gold);color:#fff;font-weight:800;border-radius:12px;padding:11px 16px;font-size:15px;cursor:pointer;transition:transform .08s,background .15s;}
-.add:hover{background:#a37e26;} .add:active{transform:scale(.9);}
+.add{border:0;background:var(--ink);color:#f4efe3;font-weight:800;border-radius:12px;padding:12px 18px;font-size:15px;cursor:pointer;transition:transform .08s,background .15s;}
+.add:hover{background:#000;} .add:active{transform:scale(.9);}
 .pcard{cursor:pointer;}
 .ovl.right{justify-content:flex-end;align-items:stretch;padding:0;}
 .drawer{background:var(--card);width:440px;max-width:92vw;height:100%;overflow:auto;position:relative;animation:slidein .28s cubic-bezier(.2,.8,.2,1);box-shadow:-12px 0 44px rgba(0,0,0,.28);}
@@ -92,7 +92,7 @@ body{font-family:var(--sans);background:var(--bg);color:var(--ink);overflow:hidd
 .chip2{border:1px solid var(--line);background:#fff;border-radius:14px;padding:15px;cursor:pointer;display:flex;justify-content:space-between;align-items:center;font-size:16px;}
 .chip2:hover{border-color:var(--gold);} .chip2 b{font-family:var(--serif);} .chip2 span{color:var(--ink);font-weight:800;}
 .d-add{width:100%;border:0;border-radius:14px;padding:17px;font-size:16px;font-weight:800;color:#fff;background:linear-gradient(135deg,var(--gold2),var(--gold));cursor:pointer;margin-top:8px;}
-.d-legal{margin-top:16px;font-size:11px;color:var(--muted);line-height:1.5;border-top:1px solid var(--line);padding-top:12px;}
+.d-legal{margin-top:16px;font-size:12px;color:var(--muted);line-height:1.5;border-top:1px solid var(--line);padding-top:12px;}
 
 /* Order bar */
 .orderbar{flex:0 0 auto;background:var(--card);border-top:1px solid var(--line);box-shadow:0 -4px 20px rgba(20,16,9,.07);
@@ -112,7 +112,7 @@ body{font-family:var(--sans);background:var(--bg);color:var(--ink);overflow:hidd
 .sheet-full{max-width:680px;display:flex;flex-direction:column;max-height:90vh;}
 .sheet-h{padding:18px 22px;border-bottom:1px solid var(--line);font-family:var(--serif);font-size:21px;display:flex;align-items:center;justify-content:space-between;}
 .sheet-b{padding:20px 22px;overflow:auto;}
-.x{border:0;background:#f0eee7;color:var(--muted);width:34px;height:34px;border-radius:50%;font-size:18px;cursor:pointer;}
+.x{border:0;background:#f0eee7;color:var(--ink);width:40px;height:40px;border-radius:50%;font-size:20px;cursor:pointer;}
 .opt{width:100%;display:flex;align-items:center;justify-content:space-between;border:1px solid var(--line);background:var(--card);border-radius:14px;padding:16px 18px;margin-bottom:10px;cursor:pointer;font-size:17px;}
 .opt:hover{border-color:var(--gold);} .opt:active{transform:scale(.99);}
 .opt b{font-family:var(--serif);} .opt .op{color:var(--ink);font-weight:800;}
@@ -130,11 +130,11 @@ body{font-family:var(--sans);background:var(--bg);color:var(--ink);overflow:hidd
 .ob-cart{position:relative;display:flex;align-items:center;cursor:pointer;}
 .ob-cart .cnt{position:absolute;top:-7px;right:-9px;background:var(--gold);color:#fff;font-size:11px;font-weight:800;min-width:19px;height:19px;border-radius:999px;display:flex;align-items:center;justify-content:center;padding:0 4px;}
 .totrow{display:flex;justify-content:space-between;align-items:baseline;padding:16px 0 4px;font-family:var(--serif);font-size:26px;font-weight:700;}
-.loy{display:flex;align-items:center;justify-content:space-between;background:rgba(184,144,47,.08);border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin-top:12px;font-size:13.5px;color:#6f5717;}
+.loy{display:flex;align-items:center;justify-content:space-between;background:rgba(184,144,47,.08);border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin-top:12px;font-size:13.5px;color:var(--ink);}
 .loy button{border:1px solid var(--gold);background:#fff;color:var(--gold);font-weight:700;border-radius:999px;padding:7px 13px;font-size:13px;cursor:pointer;}
 /* Coupons fidelite */
 .cpn-sec{margin-top:14px;border:1px solid var(--line);border-radius:14px;padding:14px;background:rgba(184,144,47,.05);}
-.cpn-h{font-weight:800;font-size:13.5px;color:#6f5717;margin-bottom:11px;display:flex;align-items:center;gap:7px;}
+.cpn-h{font-weight:800;font-size:13.5px;color:var(--ink);margin-bottom:11px;display:flex;align-items:center;gap:7px;}
 .cpn-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
 .cpn{position:relative;border:1.5px solid var(--line);background:#fff;border-radius:13px;padding:12px 10px 11px;cursor:pointer;text-align:center;display:flex;flex-direction:column;gap:2px;transition:transform .08s,border-color .15s;}
 .cpn:active{transform:scale(.96);} .cpn:hover{border-color:var(--gold);}
@@ -144,7 +144,7 @@ body{font-family:var(--sans);background:var(--bg);color:var(--ink);overflow:hidd
 .cpn.on{border-color:var(--gold);background:linear-gradient(135deg,rgba(216,178,82,.22),rgba(184,144,47,.12));box-shadow:0 0 0 2px var(--gold) inset;}
 .cpn[disabled]{opacity:.5;cursor:default;}
 .cpn[disabled]:hover{border-color:var(--line);}
-.cpn-applied{margin-top:11px;display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:13.5px;font-weight:700;color:#6f5717;background:rgba(63,125,79,.1);border:1px solid rgba(63,125,79,.25);border-radius:11px;padding:10px 13px;}
+.cpn-applied{margin-top:11px;display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:13.5px;font-weight:700;color:var(--ink);background:rgba(63,125,79,.1);border:1px solid rgba(63,125,79,.25);border-radius:11px;padding:10px 13px;}
 .cpn-applied button{border:1px solid var(--line);background:#fff;color:#b4452f;font-weight:700;border-radius:999px;padding:6px 12px;font-size:12.5px;cursor:pointer;}
 .totrow.sub,.totrow.disc{font-family:var(--sans);font-size:15px;font-weight:600;padding:6px 0;}
 .totrow.sub{color:var(--muted);} .totrow.disc{color:var(--green);}
@@ -165,6 +165,53 @@ body{font-family:var(--sans);background:var(--bg);color:var(--ink);overflow:hidd
 .check{width:90px;height:90px;border-radius:50%;margin:6px auto;display:flex;align-items:center;justify-content:center;font-size:46px;color:#fff;background:var(--green);}
 .bump{animation:bump .3s ease;}
 @keyframes bump{0%{transform:scale(1)}40%{transform:scale(1.12)}100%{transform:scale(1)}}
+
+/* ---- Améliorations UX : recherche, badges, ajout panier, confettis, jauge fidélité, image de secours ---- */
+.search-wrap{margin:0 0 16px;}
+.search{width:100%;border:1.5px solid var(--line);border-radius:14px;padding:15px 16px;font-size:16px;font-family:var(--sans);background:#fff;color:var(--ink);}
+.search:focus{outline:none;border-color:var(--ink);}
+.badge{background:var(--ink);color:#fff;} /* « Nouveau » par défaut : encre (plus d'or) */
+.badge.low{background:#b4452f;} .badge.fav{background:var(--green);} .badge.pop{background:#2a2620;}
+.pcard.out{opacity:.5;} .pcard.out .add{background:#bdb8ac;color:#fff;}
+.ph{position:relative;}
+.ph.noimg::after{content:'KINGSTON';position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-family:var(--serif);letter-spacing:.12em;color:#cfc7b5;font-size:17px;background:#15110a;}
+.stockline{font-size:12px;color:#b4452f;font-weight:700;margin-top:3px;}
+.addtoast{position:fixed;left:50%;bottom:98px;transform:translateX(-50%);background:var(--ink);color:#f4efe3;font-weight:700;font-size:15px;padding:12px 20px;border-radius:999px;box-shadow:0 12px 32px rgba(0,0,0,.32);z-index:70;opacity:0;pointer-events:none;display:flex;align-items:center;gap:9px;}
+.addtoast.show{animation:toastup 1.2s ease forwards;}
+@keyframes toastup{0%{opacity:0;transform:translateX(-50%) translateY(16px)}14%{opacity:1;transform:translateX(-50%) translateY(0)}80%{opacity:1;transform:translateX(-50%) translateY(0)}100%{opacity:0;transform:translateX(-50%) translateY(-10px)}}
+.confetti{position:absolute;inset:0;overflow:hidden;pointer-events:none;}
+.confetti i{position:absolute;top:-14px;width:9px;height:14px;border-radius:2px;opacity:.9;animation:fall 1.7s ease-in forwards;}
+@keyframes fall{0%{transform:translateY(-20px) rotate(0);opacity:0}12%{opacity:1}100%{transform:translateY(300px) rotate(560deg);opacity:0}}
+.check.pop{animation:checkpop .6s cubic-bezier(.2,1.2,.3,1);}
+@keyframes checkpop{0%{transform:scale(0) rotate(-25deg);opacity:0}60%{transform:scale(1.15) rotate(6deg)}100%{transform:scale(1) rotate(0);opacity:1}}
+.gauge>i{background:linear-gradient(90deg,var(--green),#5aa06e);} /* jauge fidélité en vert (plus d'or) */
+.hero-gauge{margin-top:14px;max-width:340px;}
+.hero-gauge .gtxt{font-size:13px;color:#c9bfa6;margin-top:6px;}
+.fav-pick{display:flex;align-items:center;gap:14px;background:#fff;border:1px solid var(--line);border-radius:16px;padding:12px 14px;margin:0 0 16px;cursor:pointer;}
+.fav-pick:active{transform:scale(.99);}
+.fav-pick .fp-ph{width:54px;height:54px;border-radius:12px;background:#eceae2 center/cover no-repeat;flex:0 0 54px;}
+.fav-pick .fp-t{font-weight:800;} .fav-pick .fp-s{color:var(--muted);font-size:12.5px;}
+.fav-pick .fp-go{margin-left:auto;font-weight:800;color:var(--ink);}
+
+/* ---- Élévation : transitions douces, jauge de force, pastilles d'effets, ventes additionnelles, niveaux ---- */
+.welcome{animation:fadein .32s ease;}
+@keyframes fadein{from{opacity:0}to{opacity:1}}
+.ovl.dim .sheet{animation:sheetin .26s cubic-bezier(.2,.8,.2,1);}
+@keyframes sheetin{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
+.strength{margin:12px 0 4px;}
+.strength .s-l{display:flex;justify-content:space-between;font-size:12.5px;color:var(--muted);margin-bottom:5px;font-weight:600;}
+.d-chiprow{display:flex;gap:12px;align-items:flex-start;padding:11px 0;border-top:1px solid var(--line);}
+.d-chips{display:flex;flex-wrap:wrap;gap:6px;flex:1;}
+.d-chip{border:1px solid var(--line);border-radius:999px;padding:5px 11px;font-size:13px;background:#faf8f3;}
+.xsell{margin-top:16px;border-top:1px solid var(--line);padding-top:14px;}
+.xsell-h{font-weight:800;font-size:14.5px;margin-bottom:10px;}
+.xs-grid{display:flex;gap:10px;overflow-x:auto;padding-bottom:4px;-webkit-overflow-scrolling:touch;}
+.xs-item{flex:0 0 130px;border:1px solid var(--line);border-radius:14px;padding:10px;cursor:pointer;background:#fff;}
+.xs-item:active{transform:scale(.97);}
+.xs-ph{height:76px;border-radius:9px;background:#eceae2 center/cover no-repeat;margin-bottom:8px;}
+.xs-n{font-size:13px;font-weight:700;line-height:1.2;height:32px;overflow:hidden;}
+.xs-add{margin-top:4px;font-size:13.5px;font-weight:800;color:var(--ink);}
+.tier{display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:999px;font-size:11px;font-weight:800;color:#fff;letter-spacing:.04em;vertical-align:middle;}
 </style>
 </head>
 <body>
@@ -203,6 +250,33 @@ body{font-family:var(--sans);background:var(--bg);color:var(--ink);overflow:hidd
   var CATS=[]; CATALOG.forEach(function(p){ if(CATS.indexOf(p.cat)<0)CATS.push(p.cat); });
   var RAIL=['Nouveautés'].concat(CATS);
   function isNew(p){ return !!p.new; }
+  function isOut(p){ return p.unit==='g' ? (p.stockG!=null && p.stockG<=0) : (p.stockU!=null && p.stockU<=0); }
+  function isLow(p){ return p.unit==='g' ? (p.stockG!=null && p.stockG>0 && p.stockG<=10) : (p.stockU!=null && p.stockU>0 && p.stockU<=3); }
+  function escAttr(x){ return String(x==null?'':x).replace(/"/g,'&quot;').replace(/</g,'&lt;'); }
+  function featured(){ var n=CATALOG.filter(isNew); return n.length?n:CATALOG.slice(0,8); }
+  function searchResults(){ var q=(s.q||'').toLowerCase().trim(); return q?CATALOG.filter(function(p){return (p.name||'').toLowerCase().indexOf(q)>=0||(p.cat||'').toLowerCase().indexOf(q)>=0;}):null; }
+  var CAT_HINT={'Fleurs':'à rouler','Résine':'hash / résine','Accessoire':'matériel','Feuilles':'à rouler','Plateaux':'accessoires','King':'premium'};
+  function catHint(c){ return CAT_HINT[c]?'<span style="font-family:var(--sans);font-size:14px;color:var(--muted);font-weight:600"> · '+CAT_HINT[c]+'</span>':''; }
+  function nextCoupon(){ var pts=s.member?(s.member.points|0):0; var c=COUPONS.slice().sort(function(a,b){return a.p-b.p;}); for(var i=0;i<c.length;i++){ if(pts<c[i].p) return c[i]; } return null; }
+  function flashAdded(name){
+    var t=document.createElement('div'); t.className='addtoast';
+    t.innerHTML='<span style="font-size:18px">✓</span> Ajouté'+(name?' · '+name:'')+' <b style="background:var(--green);color:#fff;border-radius:999px;padding:1px 9px;margin-left:4px">+1</b>';
+    document.body.appendChild(t); void t.offsetWidth; t.classList.add('show');
+    var c=obEl&&obEl.querySelector('.cnt'); if(c){c.classList.remove('bump');void c.offsetWidth;c.classList.add('bump');}
+    setTimeout(function(){ if(t.parentNode)t.parentNode.removeChild(t); },1350);
+  }
+  function confettiHTML(){ var cols=['#3f7d4f','#d8b252','#b8902f','#cfe8dd','#f4efe3']; var h='<div class="confetti">'; for(var i=0;i<26;i++){ h+='<i style="left:'+Math.round(Math.random()*100)+'%;background:'+cols[i%cols.length]+';animation-delay:'+(Math.random()*0.5).toFixed(2)+'s"></i>'; } return h+'</div>'; }
+  function animateCount(id,to){ var el=document.getElementById(id); if(!el)return; var start=Date.now(),dur=900; var tick=function(){ var p=Math.min(1,(Date.now()-start)/dur); el.textContent=Math.round(p*to); if(p<1)requestAnimationFrame(tick); }; requestAnimationFrame(tick); }
+  // ---- Niveaux de membre (fidélité) ----
+  var TIERS=[{n:'Bronze',c:'#a9743b',min:0},{n:'Argent',c:'#8b8f98',min:500},{n:'Or',c:'#b8902f',min:2000}];
+  function tierOf(pts){ pts=pts|0; var t=TIERS[0],idx=0; for(var i=0;i<TIERS.length;i++){ if(pts>=TIERS[i].min){ t=TIERS[i]; idx=i; } } return {name:t.n,color:t.c,min:t.min,next:TIERS[idx+1]||null}; }
+  function tierBadge(pts){ var t=tierOf(pts); return '<span class="tier" style="background:'+t.color+'">'+t.name+'</span>'; }
+  function tierProgressHTML(pts){ var t=tierOf(pts); if(!t.next) return '<div style="text-align:center;color:var(--muted);font-size:12.5px;margin-bottom:14px">Niveau maximum atteint — merci 🙌</div>'; var span=t.next.min-t.min, pc=Math.max(4,Math.min(100,Math.round((pts-t.min)/span*100))); return '<div style="margin:2px 0 16px"><div class="gauge"><i style="width:'+pc+'%"></i></div><div style="text-align:center;color:var(--muted);font-size:12.5px;margin-top:6px">Plus que <b>'+(t.next.min-pts)+' pts</b> avant le niveau '+t.next.n+'</div></div>'; }
+  // ---- Force CBD (jauge) + effets en pastilles ----
+  function cbdPct(p){ if(typeof p.cbd==='number') return p.cbd; var m=/(\d{1,2})\s*%/.exec(String(p.info||p.desc||'')); return m?parseInt(m[1],10):null; }
+  function chipRow(label,val){ if(!val) return ''; var c=String(val).split(/[,;]/).map(function(x){ x=x.trim(); return x?'<span class="d-chip">'+x+'</span>':''; }).join(''); return c?'<div class="d-chiprow"><span class="d-l">'+label+'</span><div class="d-chips">'+c+'</div></div>':''; }
+  // ---- Ventes additionnelles (accessoires non déjà au panier) ----
+  function crossSellHTML(title,mode){ var inCart={}; s.cart.forEach(function(l){ inCart[l.key]=1; }); var sugg=CATALOG.filter(function(p){ return p.unit==='u' && !isOut(p) && !inCart[p.id]; }).slice(0,4); if(!sugg.length) return ''; var act=mode==='cart'?'xadd':'detail'; return '<div class="xsell"><div class="xsell-h">'+(title||'Complète ta commande')+'</div><div class="xs-grid">'+sugg.map(function(p){ var ph=p.img?'<div class="xs-ph" style="background-image:url('+p.img+')"></div>':'<div class="xs-ph"></div>'; return '<div class="xs-item" data-a="'+act+'" data-id="'+p.id+'">'+ph+'<div class="xs-n">'+p.name+'</div><div class="xs-add">'+(mode==='cart'?'+ '+eur(p.price):'Voir')+'</div></div>'; }).join('')+'</div></div>'; }
 
   // Coupons fidelite : remise fixe en euros contre un cout fixe en points (identique a la caisse).
   var COUPONS=[{e:10,p:750},{e:20,p:1350},{e:50,p:3000},{e:100,p:5250}];
@@ -217,19 +291,19 @@ body{font-family:var(--sans);background:var(--bg);color:var(--ink);overflow:hidd
   function rebuildCats(){ CATS=[]; CATALOG.forEach(function(p){ if(CATS.indexOf(p.cat)<0)CATS.push(p.cat); }); RAIL=['Nouveautés'].concat(CATS); }
   // Produits ajoutes depuis l'app (serveur) : on les fusionne au catalogue de la borne.
   function mapBorneProduct(p){
-    var o={id:p.id,name:p.name,cat:p.cat||'Divers',desc:p.desc||'',info:p.desc||'',unit:p.unit,img:p.img||'',custom:true,new:!!p.new};
+    var o={id:p.id,name:p.name,cat:p.cat||'Divers',desc:p.desc||'',info:p.desc||'',unit:p.unit,img:p.img||'',custom:true,new:!!p.new,popular:!!p.popular,stockG:p.stockG,stockU:p.stockU};
     if(p.unit==='g'){ o.tiers=(p.tiers||[]).map(function(t){return [t[0],t[1]];}); }
     else { o.price=p.price; if(p.packs&&p.packs.length)o.packs=p.packs; }
     return o;
   }
   function loadServerProducts(){
-    fetch('/api/menu').then(function(r){return r.ok?r.json():null;}).then(function(d){
+    fetch('/api/menu?boutique='+encodeURIComponent(BORNE.boutique)).then(function(r){return r.ok?r.json():null;}).then(function(d){
       if(!d||!d.products||!d.products.length)return;
       // Le serveur fait foi : on remplace le catalogue de la borne par le vrai catalogue (pas de doublon).
       CATALOG=d.products.map(mapBorneProduct);
       rebuildCats();
       // Si aucun produit n'est marqué "nouveau", on retire l'onglet Nouveautés et on ouvre la 1re catégorie.
-      if(!CATALOG.some(isNew)){ RAIL=CATS.slice(); if(s.cat==='Nouveautés') s.cat=CATS[0]||'Nouveautés'; }
+      RAIL=['Nouveautés'].concat(CATS); // l'onglet Nouveautés reste toujours (vitrine d'entrée / coups de cœur)
       renderBase();
     }).catch(function(){});
   }
@@ -245,34 +319,45 @@ body{font-family:var(--sans);background:var(--bg);color:var(--ink);overflow:hidd
     var ex=s.cart.filter(function(l){return l.key===line.key;})[0];
     if(ex){ex.qty++;}else{s.cart.push(line);}
     renderOrderBar(true);
+    flashAdded(line.name);
   }
 
   /* ---------- Rail + menu ---------- */
-  function catProducts(c){ return c==='Nouveautés' ? CATALOG.filter(isNew) : byCat(c); }
-  function railThumb(c){ var p = c==='Nouveautés' ? CATALOG.filter(isNew)[0] : byCat(c)[0]; return p?p.img:''; }
+  function catProducts(c){ return c==='Nouveautés' ? featured() : byCat(c); }
+  function railThumb(c){ var p = c==='Nouveautés' ? featured()[0] : byCat(c)[0]; return p?p.img:''; }
   function pcard(p){
-    return '<div class="pcard" data-a="detail" data-id="'+p.id+'">'+(isNew(p)?'<div class="badge">Nouveau</div>':'')+'<div class="ph" style="background-image:url('+p.img+')"></div><div class="info"><div class="nm">'+p.name+'</div><div class="ds">'+p.desc+'</div>'+
-      '<div class="row"><div class="pr">'+(p.unit==='g'?'dès ':'')+eur(entry(p))+'</div><button class="add" data-a="detail" data-id="'+p.id+'">Voir</button></div></div></div>';
+    var badge = isOut(p) ? '<div class="badge low">Épuisé</div>'
+      : isNew(p) ? '<div class="badge">Nouveau</div>'
+      : p.popular ? '<div class="badge pop">★ Populaire</div>'
+      : isLow(p) ? '<div class="badge low">Bientôt épuisé</div>'
+      : (p.fav ? '<div class="badge fav">Coup de cœur</div>' : '');
+    var ph = p.img ? '<div class="ph" style="background-image:url('+p.img+')"></div>' : '<div class="ph noimg"></div>';
+    var sub = p.desc ? '<div class="ds">'+p.desc+'</div>' : '';
+    return '<div class="pcard'+(isOut(p)?' out':'')+'" role="button" aria-label="'+escAttr(p.name)+'" data-a="detail" data-id="'+p.id+'">'+badge+ph+
+      '<div class="info"><div class="nm">'+p.name+'</div>'+sub+
+      '<div class="row"><div class="pr">'+(p.unit==='g'?'dès ':'')+eur(entry(p))+'</div><button class="add" data-a="detail" data-id="'+p.id+'">'+(isOut(p)?'Épuisé':'Voir')+'</button></div></div></div>';
   }
   function dRow(l,v){ return v?'<div class="d-row"><span class="d-l">'+l+'</span><span class="d-v">'+v+'</span></div>':''; }
   function openDetail(p){
-    var attrs = p.unit==='g' ? dRow('Arômes',p.aromes)+dRow('Terpènes',p.terpenes)+dRow('Goût',p.gout) : '';
+    var strength=''; var cb=cbdPct(p); if(p.unit==='g' && cb){ var sw=Math.min(100,Math.round(cb*3.3)); strength='<div class="strength"><div class="s-l"><span>Force · CBD</span><span>'+cb+'%</span></div><div class="gauge"><i style="width:'+sw+'%"></i></div></div>'; }
+    var attrs = p.unit==='g' ? strength+chipRow('Arômes',p.aromes)+chipRow('Terpènes',p.terpenes)+chipRow('Goût',p.gout) : '';
     var add = p.unit==='g'
       ? '<div class="d-sec">Choisissez le poids</div><div class="d-grid">'+p.tiers.map(function(t){return '<button class="chip2" data-a="addg" data-id="'+p.id+'" data-g="'+t[0]+'" data-pr="'+t[1]+'"><b>'+t[0]+' g</b><span>'+eur(t[1])+'</span></button>';}).join('')+'</div>'
       : (p.packs&&p.packs.length
         ? '<div class="d-sec">Choisissez</div><div class="d-grid"><button class="chip2" data-a="addu" data-id="'+p.id+'"><b>À l\'unité</b><span>'+eur(p.price)+'</span></button>'+p.packs.map(function(k){return '<button class="chip2" data-a="addpack" data-id="'+p.id+'" data-q="'+k.qty+'" data-pr="'+k.price+'"><b>Pack de '+k.qty+'</b><span>'+eur(k.price)+'</span></button>';}).join('')+'</div>'
         : '<button class="d-add" data-a="addu" data-id="'+p.id+'">Ajouter au panier · '+eur(p.price)+'</button>');
+    if(isOut(p)) add='<button class="d-add" disabled style="background:#bdb8ac;color:#fff;cursor:default">Épuisé pour le moment</button>';
     ovl.innerHTML='<div class="ovl right dim" data-a="bg"><div class="drawer"><button class="x dx" data-a="closeovl">&times;</button>'+
       '<div class="d-ph" style="background-image:url('+p.img+')"></div>'+
       '<div class="d-body"><div class="d-cat">'+p.cat+'</div><div class="d-name">'+p.name+'</div>'+
-      '<div class="d-desc">'+(p.info||p.desc||'')+'</div>'+attrs+add+'<div class="d-legal">THC &lt; 0,3 % · non destiné à un usage médical · interdit aux mineurs</div></div></div></div>';
+      '<div class="d-desc">'+(p.info||p.desc||'')+'</div>'+attrs+add+(p.unit==='g'?crossSellHTML('Ça va bien avec','detail'):'')+'<div class="d-legal">THC &lt; 0,3 % · non destiné à un usage médical · interdit aux mineurs</div></div></div></div>';
   }
   function renderHeader(){
     var h=document.getElementById('headr'); if(!h)return;
     if(s.member){
-      h.innerHTML='<div class="hpts"><svg width="15" height="11" viewBox="0 0 26 20"><path d="M2 17 L4 6 L9 12 L13 4 L17 12 L22 6 L24 17 Z" fill="#15110a"/></svg>'+s.member.points+' pts</div><button class="hbtn" data-a="avantages">Mes avantages</button><button class="restart" data-a="restart">Recommencer</button>';
+      h.innerHTML='<div class="hpts"><svg width="15" height="11" viewBox="0 0 26 20"><path d="M2 17 L4 6 L9 12 L13 4 L17 12 L22 6 L24 17 Z" fill="#15110a"/></svg>'+s.member.points+' pts</div>'+tierBadge(s.member.points)+'<button class="hbtn" data-a="avantages">Mes avantages</button><button class="restart" data-a="restart">Recommencer</button>';
     } else {
-      h.innerHTML='<button class="hbtn gold" data-a="login">Se connecter</button><button class="restart" data-a="restart">Recommencer</button>';
+      h.innerHTML='<button class="hbtn" data-a="login">J\'ai ma carte</button><button class="restart" data-a="restart">Recommencer</button>';
     }
   }
   function renderRail(){
@@ -280,16 +365,32 @@ body{font-family:var(--sans);background:var(--bg);color:var(--ink);overflow:hidd
       return '<div class="railitem '+(c===s.cat?'on':'')+'" data-a="cat" data-c="'+c+'"><div class="ri-ph" style="background-image:url('+railThumb(c)+')"></div><div class="ri-lbl">'+c+'</div></div>';
     }).join('');
   }
-  function renderMenu(){
-    var html='';
-    if(s.cat==='Nouveautés'){
-      html+='<div class="hero"><div><div class="hero-t">'+(s.member?'Bonjour '+s.member.name:'Bienvenue chez KINGSTON')+'</div><div class="hero-s">'+(s.member?'Vous avez '+s.member.points+' points fidélité.':'Parrainez un ami : 20 € offerts à chacun.')+'</div></div>'+(s.member?'<button class="hero-cta" data-a="avantages">Mes avantages</button>':'<button class="hero-cta" data-a="login">Devenir membre</button>')+'</div>';
-      html+='<h2 class="menu-h">Nouvelles arrivées</h2>';
+  function heroBlock(){
+    var h;
+    if(s.member){
+      var fn=(s.member.name||'').split(/\s+/)[0]||'', pts=s.member.points|0, nc=nextCoupon(), gauge='';
+      if(nc){ var pct=Math.max(5,Math.min(100,Math.round(pts/nc.p*100))); gauge='<div class="hero-gauge"><div class="gauge"><i style="width:'+pct+'%"></i></div><div class="gtxt">Plus que <b>'+(nc.p-pts)+' pts</b> avant ton bon de '+nc.e+' € 🎁</div></div>'; }
+      h='<div class="hero"><div><div class="hero-t">Salut '+fn+' 👋</div><div class="hero-s">Tu as '+pts+' points fidélité.</div>'+'<div style="margin-top:8px">'+tierBadge(pts)+'</div>'+gauge+'</div><button class="hero-cta" data-a="avantages">Mes avantages</button></div>';
     } else {
-      html+='<h2 class="menu-h">'+s.cat+'</h2>';
+      h='<div class="hero"><div><div class="hero-t">Bienvenue chez KINGSTON</div><div class="hero-s">Membre du Club ? Scanne ta carte et cumule 5 pts/€.</div></div><button class="hero-cta" data-a="login">J\'ai ma carte</button></div>';
     }
-    html+='<div class="pgrid">'+catProducts(s.cat).map(pcard).join('')+'</div>';
+    var fav=byCat('Fleurs')[0]||CATALOG[0];
+    var favHtml=fav?'<div class="fav-pick" data-a="detail" data-id="'+fav.id+'"><div class="fp-ph" style="background-image:url('+(fav.img||'')+')"></div><div><div class="fp-t">Coup de cœur · '+fav.name+'</div><div class="fp-s">'+(fav.desc||'La sélection KINGSTON du moment')+'</div></div><div class="fp-go">Voir →</div></div>':'';
+    return h+favHtml+'<h2 class="menu-h">À découvrir</h2>';
+  }
+  function renderMenu(){
+    var html = (s.cat==='Nouveautés') ? heroBlock() : '<h2 class="menu-h">'+s.cat+catHint(s.cat)+'</h2>';
+    html+='<div class="search-wrap"><input id="borne-search" class="search" type="search" placeholder="Rechercher un produit…" value="'+escAttr(s.q||'')+'"/></div>';
+    html+='<div id="pgrid" class="pgrid"></div>';
     menuEl.innerHTML=html;
+    renderGrid();
+  }
+  function renderGrid(){
+    var g=document.getElementById('pgrid'); if(!g)return;
+    var sr=searchResults();
+    var list=(sr!==null)?sr:catProducts(s.cat);
+    g.innerHTML=list.length?list.map(pcard).join('')
+      :'<div style="padding:26px;color:var(--muted);font-size:15px">Aucun produit'+(s.q?' pour « '+escAttr(s.q)+' »':'')+'.</div>';
   }
   function renderOrderBar(doBump){
     var n=count();
@@ -327,10 +428,9 @@ body{font-family:var(--sans);background:var(--bg);color:var(--ink);overflow:hidd
       '<div style="margin-top:44px;font-size:24px;font-weight:700">Faites-vous partie du KINGSTON CLUB&nbsp;?</div>'+
       '<div style="color:#9a9180;margin-top:12px;font-size:14.5px;max-width:460px;line-height:1.5">Scannez votre carte pour cumuler des points et utiliser vos coupons. Sinon, commandez librement.</div>'+
       '<div style="display:flex;gap:16px;margin-top:36px;flex-wrap:wrap;justify-content:center">'+
-        '<button data-a="clubyes" style="border:0;border-radius:16px;padding:22px 30px;font-weight:800;font-size:17px;color:#15110a;background:linear-gradient(135deg,var(--gold2),var(--gold));cursor:pointer;min-width:230px">Oui, je scanne ma carte</button>'+
-        '<button data-a="clubno" style="border:1px solid rgba(255,255,255,.28);background:transparent;color:#efe8d7;border-radius:16px;padding:22px 30px;font-size:16px;cursor:pointer;min-width:230px">Non / Première visite</button>'+
+        '<button data-a="clubyes" style="border:0;border-radius:16px;padding:22px 34px;font-weight:800;font-size:17px;color:#15110a;background:linear-gradient(135deg,var(--gold2),var(--gold));cursor:pointer;min-width:240px">Oui, j\'ai ma carte</button>'+
       '</div>'+
-      '<div data-a="clubno" style="margin-top:26px;font-size:13px;color:#8a8273;cursor:pointer">Continuer sans compte&nbsp;→</div>'+
+      '<div data-a="clubno" style="margin-top:24px;font-size:15px;color:#cfc7b5;cursor:pointer;text-decoration:underline;text-underline-offset:4px">Commander sans carte&nbsp;→</div>'+
       '<div style="margin-top:30px;font-size:12px;color:#6f6857;max-width:450px;line-height:1.5">Réservé aux 18 ans et plus. En continuant, vous certifiez avoir 18 ans ou +. Produits CBD (THC &lt; 0,3 %), non destinés à un usage médical, interdits aux mineurs.</div>'+
     '</div>';
   }
@@ -395,13 +495,13 @@ body{font-family:var(--sans);background:var(--bg);color:var(--ink);overflow:hidd
     var fn=(s.member.name||'').trim().split(/\s+/)[0]||'cher membre';
     var pts=s.member.points|0;
     var sub=pts>0
-      ? 'Content de te revoir. Tu as <b style="color:#6f5717">'+pts+' points</b> — transforme-les en bons d\'achat.'
+      ? 'Content de te revoir. Tu as <b style="color:var(--ink)">'+pts+' points</b> — transforme-les en bons d\'achat.'
       : 'Bienvenue dans le KINGSTON CLUB. Tu cumules 5 points par euro dépensé.';
     ovl.innerHTML='<div class="ovl dim" data-a="bg"><div class="sheet welcome-pop" style="max-width:430px;text-align:center;position:relative">'+
       '<button class="x" data-a="closeovl" style="position:absolute;top:14px;right:14px">&times;</button>'+
       '<div class="sheet-b" style="padding:38px 30px 12px">'+
         '<div style="font-size:11.5px;letter-spacing:.2em;color:var(--muted);font-weight:800">KINGSTON CLUB</div>'+
-        '<div style="font-family:var(--serif);font-size:33px;color:var(--ink);margin-top:10px">Salut '+fn+'&nbsp;!</div>'+
+        '<div style="font-family:var(--serif);font-size:33px;color:var(--ink);margin-top:10px">Salut '+fn+'&nbsp;!</div>'+'<div style="margin-top:8px">'+tierBadge(pts)+'</div>'+
         '<div style="color:var(--muted);font-size:14.5px;margin-top:10px;line-height:1.55">'+sub+'</div>'+
       '</div>'+
       '<div class="sheet-f"><button class="btn-light" data-a="closeovl">Commander</button><button class="btn-primary" data-a="avantages">Mes avantages</button></div>'+
@@ -436,7 +536,7 @@ body{font-family:var(--sans);background:var(--bg);color:var(--ink);overflow:hidd
     var loy=s.member?'<div class="loy"><span>Membre KINGSTON — vous cumulez <b>'+Math.round(netTotal())+' points</b></span></div>':'<div class="loy"><span>Membre KINGSTON&nbsp;? Cumulez et dépensez vos points.</span><button data-a="member">M\'identifier</button></div>';
     ovl.innerHTML='<div class="ovl dim" data-a="bg"><div class="sheet sheet-full">'+
       '<div class="sheet-h">Ma commande<button class="x" data-a="closeovl">&times;</button></div>'+
-      '<div class="sheet-b">'+lines+totals+(s.cart.length?loy+couponPanel():'')+'</div>'+
+      '<div class="sheet-b">'+lines+totals+(s.cart.length?loy+couponPanel()+crossSellHTML('Tu veux ajouter ?','cart'):'')+'</div>'+
       '<div class="sheet-f"><button class="btn-light" data-a="closeovl">+ Ajouter des produits</button><button class="btn-primary" '+(s.cart.length?'':'disabled')+' data-a="pay">Payer '+eur(netTotal())+'</button></div>'+
       '</div></div>';
   }
@@ -448,12 +548,12 @@ body{font-family:var(--sans);background:var(--bg);color:var(--ink);overflow:hidd
       var ok=pts>=c.p;
       return '<div style="display:flex;justify-content:space-between;align-items:center;padding:11px 13px;border:1px solid var(--line);border-radius:12px;margin-bottom:8px;'+(ok?'background:rgba(184,144,47,.10);border-color:var(--gold)':'opacity:.5')+'">'+
         '<div><b style="font-family:var(--serif);font-size:18px">'+eur(c.e)+'</b> <span style="color:var(--muted);font-size:12.5px">en bon d\'achat</span></div>'+
-        '<div style="font-weight:800;color:var(--gold);font-size:13.5px">'+c.p+' pts'+(ok?' · dispo':'')+'</div></div>';
+        '<div style="font-weight:800;color:var(--ink);font-size:13.5px">'+c.p+' pts'+(ok?' · dispo':'')+'</div></div>';
     }).join('');
     ovl.innerHTML='<div class="ovl dim" data-a="bg"><div class="sheet">'+
       '<div class="sheet-h">Mes avantages<button class="x" data-a="closeovl">&times;</button></div>'+
       '<div class="sheet-b"><div class="av-pts"><div class="av-n">'+pts+'</div><div class="av-l">points fidélité</div></div>'+
-      '<div style="text-align:center;background:linear-gradient(135deg,rgba(216,178,82,.15),rgba(184,144,47,.08));border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:16px"><div style="font-weight:800;color:#6f5717;font-size:15px">★ 5 points par euro dépensé</div><div style="color:var(--muted);font-size:12.5px;margin-top:3px">cumulés en boutique, sur la borne et en ligne</div></div>'+
+      '<div style="text-align:center;margin:6px 0 10px">'+tierBadge(pts)+'</div>'+tierProgressHTML(pts)+'<div style="text-align:center;background:#faf8f3;border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:16px"><div style="font-weight:800;color:var(--ink);font-size:15px">★ 5 points par euro dépensé</div><div style="color:var(--muted);font-size:12.5px;margin-top:3px">cumulés en boutique, sur la borne et en ligne</div></div>'+
       '<div style="font-family:var(--serif);font-size:17px;margin:4px 0 4px">Vos coupons fidélité</div>'+
       '<div style="color:var(--muted);font-size:12px;margin-bottom:10px">Échangez vos points contre un bon d\'achat, utilisable au paiement en caisse comme sur la borne.</div>'+
       coupons+
@@ -478,39 +578,54 @@ body{font-family:var(--sans);background:var(--bg);color:var(--ink);overflow:hidd
       .catch(function(){ cb(false, {error:'Terminal de paiement injoignable'}); }); // injoignable -> refus, pas d'auto-acceptation
   }
   function submitOrder(cb){
+    var fn=(s.member&&s.member.name)?(''+s.member.name).trim().split(/\s+/)[0]:null;
     var items=s.cart.map(function(l){return {name:l.name, detail:l.detail||'', qty:l.qty, price:l.price};});
-    var body={boutiqueId:BORNE.boutique, borneId:BORNE.id, items:items, total:netTotal(), customerRef:(s.member&&s.member.email)||(s.member&&s.member.name)||null, payment:'Carte (borne)'};
+    var body={boutiqueId:BORNE.boutique, borneId:BORNE.id, items:items, total:netTotal(), customerRef:(s.member&&s.member.email)||(s.member&&s.member.name)||null, customerName:fn, payment:'Carte (borne)'};
     if(s.coupon){ body.couponEur=s.coupon.e; body.couponPoints=s.coupon.p; }
     fetch('/api/orders',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)})
       .then(function(r){return r.json().catch(function(){return {};});})
-      .then(function(d){ cb((d&&d.numero)||('CMD-'+s.order)); })
-      .catch(function(){ cb('CMD-'+s.order); });
+      .then(function(d){ cb((d&&d.numero)||('CMD-'+s.order), d&&d.facture); })
+      .catch(function(){ cb('CMD-'+s.order, null); });
   }
   function pay(){
+    window.__paying=true; // suspend la remise à zéro automatique pendant le paiement
     // Commande à 0 € (entièrement réglée par coupon / points) : on NE passe PAS par le terminal.
     if(netTotal()<=0){
       ovl.innerHTML='<div class="ovl dim"><div class="sheet"><div class="sheet-b"><div class="term"><div class="spin"></div><div style="font-family:var(--serif);font-size:21px">Validation de la commande…</div><div style="color:var(--muted);margin:8px 0 4px">Réglée avec vos points fidélité — aucun paiement carte nécessaire.</div></div></div></div></div>';
-      submitOrder(function(numero){ done(numero); });
+      submitOrder(function(numero,facture){ done(numero,facture); });
       return;
     }
     ovl.innerHTML='<div class="ovl dim"><div class="sheet"><div class="sheet-b"><div class="term"><div class="spin"></div><div style="font-family:var(--serif);font-size:21px">Paiement en cours</div><div style="color:var(--muted);margin:8px 0 12px">Présentez votre carte sur le terminal</div><div style="font-family:var(--serif);font-size:30px;color:var(--ink)">'+eur(netTotal())+'</div></div></div></div></div>';
     payOnTerminal(netTotal(), function(ok){
-      if(!ok){ ovl.innerHTML='<div class="ovl dim"><div class="sheet"><div class="sheet-b"><div class="term"><div style="font-family:var(--serif);font-size:22px">Paiement refusé</div><div style="color:var(--muted);margin:8px 0 12px">Réessayez, ou voyez un conseiller.</div></div></div><div class="sheet-f"><button class="btn-primary" data-a="cart">Retour au panier</button></div></div></div>'; return; }
-      submitOrder(function(numero){ done(numero); });
+      if(!ok){ window.__paying=false; ovl.innerHTML='<div class="ovl dim"><div class="sheet"><div class="sheet-b"><div class="term"><div style="font-family:var(--serif);font-size:22px">Paiement refusé</div><div style="color:var(--muted);margin:8px 0 12px">Réessaie ta carte, ou utilise un autre moyen de paiement.</div></div></div><div class="sheet-f"><button class="btn-primary" data-a="cart">Retour au panier</button></div></div></div>'; return; }
+      submitOrder(function(numero,facture){ done(numero,facture); });
     });
   }
-  function done(numero){
+  function done(numero, facture){
+    window.__paying=false; s._dnum=numero; s._dfac=facture;
     var earned=Math.round(netTotal());
     var used=s.coupon?s.coupon.p:0;
     var fn=s.member?((s.member.name||'').trim().split(/\s+/)[0]):'';
-    var fid=s.member?'<div style="margin-top:14px;color:#6f5717;font-weight:700">+'+earned+' points fidélité'+(used?' · −'+used+' points (coupon)':'')+'</div>':'';
+    var prog=''; if(s.member){ var newPts=(s.member.points|0)+earned-used, cs=COUPONS.slice().sort(function(a,b){return a.p-b.p;}), nc2=null; for(var i=0;i<cs.length;i++){ if(newPts<cs[i].p){ nc2=cs[i]; break; } } if(nc2) prog='<div style="margin-top:8px;color:var(--muted);font-size:13px">Plus que '+(nc2.p-newPts)+' pts avant ton bon de '+nc2.e+' € 🎁</div>'; }
+    var fid=s.member?'<div style="margin-top:16px;color:var(--green);font-weight:800;font-size:16px">+<span id="ptcount">0</span> points fidélité'+(used?' · −'+used+' points (coupon)':'')+'</div>':'';
     var hello=fn?('Merci '+fn+' !'):'Merci !';
     var appel=fn?('On t\'appelle très bientôt par ton prénom, <b>'+fn+'</b>.'):'On t\'appelle très bientôt.';
-    ovl.innerHTML='<div class="ovl dim"><div class="sheet"><div class="sheet-b"><div class="term"><div class="check">&#10003;</div>'+
+    var lvl=''; if(s.member){ var _np=(s.member.points|0)+earned-used, _ot=tierOf(s.member.points|0).name, _nt=tierOf(_np).name; if(_ot!==_nt) lvl='<div style="margin-top:10px;font-weight:800;color:var(--green)">🎉 Tu passes '+_nt+' !</div>'; }
+    ovl.innerHTML='<div class="ovl dim"><div class="sheet"><div class="sheet-b" style="position:relative">'+confettiHTML()+'<div class="term"><div class="check pop">&#10003;</div>'+
       '<div style="font-family:var(--serif);font-size:25px">'+hello+'</div>'+
       '<div style="font-size:17px;font-weight:700;margin:12px 0 4px">Ta commande est en préparation</div>'+
-      '<div style="color:var(--muted);font-size:14.5px;line-height:1.5">'+appel+' Installe-toi, on s\'occupe du reste.</div>'+
-      fid+'</div></div><div class="sheet-f"><button class="btn-primary" data-a="newOrder">Nouvelle commande</button></div></div></div>';
+      '<div style="color:var(--muted);font-size:14.5px;line-height:1.5">'+appel+' Installe-toi, c\'est prêt dans <b>~3 min</b>.</div>'+
+      fid+prog+lvl+'</div></div><div class="sheet-f">'+(facture?'<button class="btn-light" data-a="ticket" data-f="'+escAttr(facture)+'">🧾 Mon ticket</button>':'')+'<button class="btn-primary" data-a="newOrder">Nouvelle commande</button></div></div></div>';
+    if(s.member && earned>0) animateCount('ptcount', earned);
+  }
+
+  // Ticket client : reçu imprimable affiché dans une fenêtre (impression via l'imprimante de la borne).
+  function receiptOverlay(facture){
+    ovl.innerHTML='<div class="ovl dim"><div class="sheet" style="max-width:390px">'+
+      '<div class="sheet-h">Ton ticket<button class="x" data-a="ticketclose">&times;</button></div>'+
+      '<div class="sheet-b" style="padding:0"><iframe id="rcpt" title="Ticket" src="/api/receipt?facture='+encodeURIComponent(facture)+'" style="width:100%;height:58vh;border:0;background:#fff"></iframe></div>'+
+      '<div class="sheet-f"><button class="btn-light" data-a="ticketclose">Fermer</button><button class="btn-primary" data-a="ticketprint">Imprimer</button></div>'+
+    '</div></div>';
   }
 
   /* ---------- Événements ---------- */
@@ -528,13 +643,17 @@ body{font-family:var(--sans);background:var(--bg);color:var(--ink);overflow:hidd
     if(a==='qrgo'){ var qi=document.getElementById('qr-input'); doIdentify(qi?qi.value:''); return; }
     if(a==='closeid'){ stopQrCam(); closeOvl(); return; }
     if(a==='avantages'){ avantages(); return; }
-    if(a==='cat'){ s.cat=el.getAttribute('data-c'); renderRail(); renderMenu(); return; }
+    if(a==='cat'){ s.cat=el.getAttribute('data-c'); s.q=''; renderRail(); renderMenu(); return; }
     if(a==='detail'){ openDetail(find(el.getAttribute('data-id'))); return; }
     if(a==='addu'){ var pu=find(el.getAttribute('data-id')); addLine({key:pu.id,name:pu.name,detail:'',price:pu.price,qty:1,img:pu.img}); closeOvl(); return; }
+    if(a==='xadd'){ var px=find(el.getAttribute('data-id')); if(px) addLine({key:px.id,name:px.name,detail:'',price:px.price,qty:1,img:px.img}); cart(); return; }
     if(a==='addg'){ var pg=find(el.getAttribute('data-id')); var g=+el.getAttribute('data-g'),pr=+el.getAttribute('data-pr'); addLine({key:pg.id+'-'+g,name:pg.name,detail:g+' g',price:pr,qty:1,img:pg.img}); closeOvl(); return; }
     if(a==='addpack'){ var ppk=find(el.getAttribute('data-id')); var pq=+el.getAttribute('data-q'),ppr=+el.getAttribute('data-pr'); addLine({key:ppk.id+'-p'+pq,name:ppk.name,detail:'Pack de '+pq,price:ppr,qty:1,img:ppk.img}); closeOvl(); return; }
     if(a==='bg'){ if(ev.target.classList.contains('ovl'))closeOvl(); return; }
     if(a==='closeovl'){ closeOvl(); return; }
+    if(a==='ticket'){ receiptOverlay(el.getAttribute('data-f')); return; }
+    if(a==='ticketclose'){ done(s._dnum, s._dfac); return; }
+    if(a==='ticketprint'){ var rf=document.getElementById('rcpt'); try{ rf.contentWindow.focus(); rf.contentWindow.print(); }catch(e){} return; }
     if(a==='cart'){ if(count())cart(); return; }
     if(a==='inc'){ s.cart[+el.getAttribute('data-i')].qty++; cart(); renderOrderBar(); return; }
     if(a==='dec'){ var i=+el.getAttribute('data-i'); s.cart[i].qty--; if(s.cart[i].qty<=0)s.cart.splice(i,1); if(!s.cart.length)s.coupon=null; cart(); renderOrderBar(); return; }
@@ -543,12 +662,20 @@ body{font-family:var(--sans);background:var(--bg);color:var(--ink);overflow:hidd
     if(a==='rmcoupon'){ s.coupon=null; cart(); renderOrderBar(); return; }
     if(a==='member'){ identifyModal(); return; }
     if(a==='pay'){ if(count())pay(); return; }
-    if(a==='newOrder' || a==='restart'){ s={cat:'Nouveautés',cart:[],member:null,coupon:null,order:s.order+1}; renderBase(); clubGate(); return; }
+    if(a==='newOrder' || a==='restart'){ s={cat:'Nouveautés',cart:[],member:null,coupon:null,q:'',order:s.order+1}; renderBase(); clubGate(); return; }
   });
 
+  // Recherche : filtre instantané (on ne re-rend que la grille, le champ garde le focus).
+  document.body.addEventListener('input', function(e){ if(e.target && e.target.id==='borne-search'){ s.q=e.target.value; renderGrid(); } });
+  // Remise à zéro après inactivité (borne partagée) : 90 s sans interaction -> retour à l'accueil + session effacée.
+  var idleTimer=null, IDLE_MS=90000;
+  function idleReset(){ if(window.__paying)return; s={cat:'Nouveautés',cart:[],member:null,coupon:null,q:'',order:s.order+1}; renderBase(); ageGate(); }
+  function armIdle(){ clearTimeout(idleTimer); idleTimer=setTimeout(idleReset, IDLE_MS); }
+  ['click','touchstart','keydown','input'].forEach(function(ev){ document.addEventListener(ev, armIdle, true); });
   renderBase();
-  clubGate();
+  ageGate();          // D1 : contrôle d'âge 18+ en TOUT PREMIER (avant le Club)
   loadServerProducts();
+  armIdle();
 })();
 </script>
 </body>

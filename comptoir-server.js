@@ -54,6 +54,7 @@ const STATIC = {
   '/': 'Comptoir-app.html', '/app': 'Comptoir-app.html', '/Comptoir-app.html': 'Comptoir-app.html',
   '/borne': 'borne-kingston.html', '/borne-kingston.html': 'borne-kingston.html',
   '/commande': 'centre-commande.html', '/centre-commande.html': 'centre-commande.html',
+  '/appel': 'appel-kingston.html', '/appel-kingston.html': 'appel-kingston.html',
 };
 function serveStatic(res, file) {
   fs.readFile(pathmod.join(__dirname, file), function (err, data) {
@@ -92,30 +93,58 @@ const PORT = Number(process.env.PORT || 3000);
 let POINTS_PER_EURO = Number(process.env.COMPTOIR_PTS_PER_EURO || 5);
 
 /* ----------------------------- Donnees (en memoire ; PostgreSQL en prod) ---------------------------- */
-const boutiques = [
-  { id: 'aix', name: 'Aix-en-Provence' },
-  { id: 'marseille', name: 'Marseille Prado' },
-  { id: 'avignon', name: 'Avignon Centre' },
-];
+// (Le registre des boutiques/franchises est defini plus bas : objet `boutiques` indexe par id.)
 
-// Comptes : métadonnées (nom, rôle, boutique). Les jetons d'accès sont désormais des SESSIONS aléatoires.
-const accounts = {
-  admin:     { name: 'Lenny K.',          role: 'admin',   boutiqueId: null },
-  aix:       { name: 'Manager Aix',        role: 'manager', boutiqueId: 'aix' },
-  marseille: { name: 'Manager Marseille',  role: 'manager', boutiqueId: 'marseille' },
+// ---- Identite legale par defaut (reseau). Sert de modele pour une nouvelle boutique. ----
+const SELLER_DEFAULT = {
+  name: process.env.COMPTOIR_SELLER_NAME || 'KINGSTON SARL',
+  siren: process.env.COMPTOIR_SELLER_SIREN || '000000000',
+  vat: process.env.COMPTOIR_SELLER_VAT || 'FR00000000000',
+  address: process.env.COMPTOIR_SELLER_ADDRESS || '1 cours Mirabeau',
+  zip: process.env.COMPTOIR_SELLER_ZIP || '13290',
+  city: process.env.COMPTOIR_SELLER_CITY || 'Aix-en-Provence',
+  country: 'FR',
 };
 
-// Mots de passe : configurables par variables d'environnement, stockés HACHÉS (jamais en clair, jamais en dur).
-//   COMPTOIR_PASS_ADMIN / COMPTOIR_PASS_AIX / COMPTOIR_PASS_MARSEILLE
-// À défaut : « kingston » (démo) -> avertissement au démarrage tant qu'il n'est pas changé.
-const PASS_SALT = crypto.randomBytes(16);
+// ---- Boutiques / franchises : registre PERSISTANT. Chaque boutique est souvent une entite legale propre
+//      (son SIREN, sa TVA) -> ses factures sont emises sous SA propre identite, avec sa propre numerotation.
+//      Extensible a chaud via l'ecran « Franchises » (POST /api/boutiques). ----
+let boutiques = {
+  aix:       { id: 'aix',       label: 'KINGSTON Aix',       prefix: 'AIX',  seller: Object.assign({}, SELLER_DEFAULT) },
+  marseille: { id: 'marseille', label: 'KINGSTON Marseille', prefix: 'MARS', seller: Object.assign({}, SELLER_DEFAULT, { name: 'KINGSTON Marseille', address: '', zip: '13001', city: 'Marseille' }) },
+  avignon:   { id: 'avignon',   label: 'KINGSTON Avignon',   prefix: 'AVI',  seller: Object.assign({}, SELLER_DEFAULT, { name: 'KINGSTON Avignon', address: '', zip: '84000', city: 'Avignon' }) },
+};
+function boutiqueIds() { return Object.keys(boutiques); }
+
+// ---- Comptes : admin reseau + UN manager par boutique. Reconstruits quand le registre change. ----
+const PASS_SALT = crypto.randomBytes(16);                       // sel de process (mots de passe via variables d'env)
 function hashPass(p) { return crypto.scryptSync(String(p == null ? '' : p), PASS_SALT, 32); }
+// Mot de passe PERSISTE (defini depuis l'ecran Franchises) : sel propre stocke avec l'empreinte.
+function makeStoredPass(p) { const salt = crypto.randomBytes(16); const hash = crypto.scryptSync(String(p == null ? '' : p), salt, 32); return { salt: salt.toString('hex'), hash: hash.toString('hex') }; }
+function verifyStoredPass(st, p) { try { const salt = Buffer.from(st.salt, 'hex'); const a = crypto.scryptSync(String(p == null ? '' : p), salt, 32); const h = Buffer.from(st.hash, 'hex'); return a.length === h.length && crypto.timingSafeEqual(a, h); } catch (e) { return false; } }
 const DEFAULT_PASS = 'kingston';
-const PASS_ENV = { admin: process.env.COMPTOIR_PASS_ADMIN, aix: process.env.COMPTOIR_PASS_AIX, marseille: process.env.COMPTOIR_PASS_MARSEILLE };
-let usingDefaultPass = false;
+let accounts = {};
 const credentials = {};
-for (const k of Object.keys(accounts)) { const p = PASS_ENV[k] || DEFAULT_PASS; if (!PASS_ENV[k]) usingDefaultPass = true; credentials[k] = { hash: hashPass(p) }; }
-function checkPass(user, pass) { const c = credentials[user]; if (!c) return false; const a = hashPass(pass); return a.length === c.hash.length && crypto.timingSafeEqual(a, c.hash); }
+let usingDefaultPass = false;
+function rebuildAccounts() {
+  for (const k of Object.keys(credentials)) delete credentials[k];
+  accounts = { admin: { name: 'Lenny K.', role: 'admin', boutiqueId: null } };
+  { const p = process.env.COMPTOIR_PASS_ADMIN; if (!p) usingDefaultPass = true; credentials.admin = { hash: hashPass(p || DEFAULT_PASS) }; }
+  for (const id of boutiqueIds()) {
+    const b = boutiques[id];
+    accounts[id] = { name: 'Manager ' + (b.label || id), role: 'manager', boutiqueId: id };
+    const envp = process.env['COMPTOIR_PASS_' + id.toUpperCase()];
+    if (envp) credentials[id] = { hash: hashPass(envp) };
+    else if (b.cred && b.cred.salt) credentials[id] = { stored: b.cred };
+    else { credentials[id] = { hash: hashPass(DEFAULT_PASS) }; usingDefaultPass = true; }
+  }
+}
+rebuildAccounts();
+function checkPass(user, pass) {
+  const c = credentials[user]; if (!c) return false;
+  if (c.stored) return verifyStoredPass(c.stored, pass);
+  const a = hashPass(pass); return a.length === c.hash.length && crypto.timingSafeEqual(a, c.hash);
+}
 
 // Sessions : jeton aléatoire -> { name, role, boutiqueId, exp }. Expiration 7 jours.
 const sessions = {};
@@ -166,9 +195,9 @@ let hideBaseCatalog = false;
 function allCatalog() { return hideBaseCatalog ? customProducts.slice() : catalog.concat(customProducts); }
 function findProduct(id) { return allCatalog().find((p) => p.id === id); }
 function ensureStock(p) {
-  for (const b of boutiques) {
-    if (!stock[b.id]) stock[b.id] = {};
-    if (!stock[b.id][p.id]) stock[b.id][p.id] = (p.unit === 'g') ? { lots: [] } : { units: 0 };
+  for (const id of boutiqueIds()) {
+    if (!stock[id]) stock[id] = {};
+    if (!stock[id][p.id]) stock[id][p.id] = (p.unit === 'g') ? { lots: [] } : { units: 0 };
   }
 }
 const IMG_DIR = process.env.COMPTOIR_IMG_DIR || pathmod.join(__dirname, 'img');
@@ -182,26 +211,33 @@ let fiscalEvents = [];               // journal des événements (JET) scellé :
 let fiscalSeq = 0;                   // numérotation continue des événements
 let lastFiscalSig = 'GENESIS';       // dernière signature -> chaînage
 let clotureSeq = { Z: 0, M: 0, A: 0 }; // compteurs de clôtures (journalière / mensuelle / annuelle)
-let gtPerpetuel = 0;                 // Grand Total perpétuel : cumul TTC des ventes, JAMAIS remis à zéro
-let gtPerpetuelAvoirs = 0;           // cumul perpétuel des avoirs (négatif)
+let gtPerpetuel = 0;                 // Grand Total perpétuel RESEAU : cumul TTC toutes boutiques (tableau de bord)
+let gtPerpetuelAvoirs = 0;           // cumul perpétuel des avoirs RESEAU
 let fiscalKey = '';                  // clé secrète de scellement HMAC, propre à l'installation
 
+// ---- Etat fiscal PAR boutique (entites souvent distinctes : chacune son SIREN) ----
+// Numerotation, Grand Total perpetuel et clotures sont INDEPENDANTS par boutique.
+// La chaine d'empreintes (lastHash) reste UNIQUE pour l'installation -> inalterabilite globale prouvable.
+let seqByB = {};            // { boutiqueId: dernier numero de facture de CETTE boutique }
+let gtByB = {};             // { boutiqueId: Grand Total perpetuel TTC de CETTE boutique }
+let gtAvoirsByB = {};       // { boutiqueId: cumul des avoirs de CETTE boutique }
+let clotureSeqByB = {};     // { boutiqueId: { Z, M, A } }
+function fb(id) { if (seqByB[id] == null) seqByB[id] = 0; if (gtByB[id] == null) gtByB[id] = 0; if (gtAvoirsByB[id] == null) gtAvoirsByB[id] = 0; if (!clotureSeqByB[id]) clotureSeqByB[id] = { Z: 0, M: 0, A: 0 }; return id; }
+
 /* ----------------------------- Identite vendeur (e-facture / e-reporting) ---------------------------- */
-// Sert a remplir l'emetteur des factures electroniques (Factur-X). A completer avec le vrai SIREN/TVA.
-const SELLER = {
-  name: process.env.COMPTOIR_SELLER_NAME || 'KINGSTON SARL',
-  siren: process.env.COMPTOIR_SELLER_SIREN || '000000000',
-  vat: process.env.COMPTOIR_SELLER_VAT || 'FR00000000000',
-  address: process.env.COMPTOIR_SELLER_ADDRESS || '1 cours Mirabeau',
-  zip: process.env.COMPTOIR_SELLER_ZIP || '13290',
-  city: process.env.COMPTOIR_SELLER_CITY || 'Aix-en-Provence',
-  country: 'FR',
-};
+// Identite par defaut du reseau. CHAQUE boutique porte sa PROPRE identite (boutiques[id].seller, souvent
+// un SIREN distinct) ; on retombe sur celle-ci tant qu'une boutique n'a pas renseigne la sienne.
+const SELLER = SELLER_DEFAULT;
+function sellerFor(boutiqueId) { const b = boutiques[boutiqueId]; return (b && b.seller) || SELLER_DEFAULT; }
 
 /* ----------------------------- Persistance disque (mode memoire) ---------------------------- */
 // En mode PostgreSQL la base fait foi. Sinon, factures + commandes sont conservees dans un
 // fichier JSON afin de SURVIVRE au redemarrage / a l'extinction du Mac.
 const DATA_FILE = process.env.COMPTOIR_DATA_FILE || pathmod.join(__dirname, 'comptoir-data.json');
+// Robustesse : garantir que le dossier des données existe AU DEMARRAGE.
+// Cas /app/data monté en volume (persistant) OU, si le volume n'est pas encore là,
+// on le crée localement — ainsi l'écriture ne casse jamais (plus d'erreur ENOENT).
+try { fs.mkdirSync(pathmod.dirname(DATA_FILE), { recursive: true }); } catch (e) { console.error('Création du dossier de données impossible :', e.message); }
 let persistTimer = null;
 // Sauvegarde quotidienne (rotation : on garde les 14 dernières) AVANT d'écraser le fichier.
 function backupDaily() {
@@ -226,7 +262,7 @@ function persist() {
       // Écriture ATOMIQUE : fichier temporaire puis renommage -> jamais de fichier tronqué en cas de coupure.
       // NB : fiscalKey n'est PLUS écrite ici (stockée à part, fichier protégé).
       const tmp = DATA_FILE + '.tmp';
-      fs.writeFileSync(tmp, JSON.stringify({ v: 1, savedAt: new Date().toISOString(), pointsPerEuro: POINTS_PER_EURO, hideBaseCatalog, customProducts, stock, invoiceSeq, lastHash, invoices, orderSeq, orders, fiscalEvents, fiscalSeq, lastFiscalSig, clotureSeq, gtPerpetuel, gtPerpetuelAvoirs }), 'utf8');
+      fs.writeFileSync(tmp, JSON.stringify({ v: 1, savedAt: new Date().toISOString(), pointsPerEuro: POINTS_PER_EURO, hideBaseCatalog, customProducts, stock, boutiques, invoiceSeq, lastHash, invoices, orderSeq, orders, fiscalEvents, fiscalSeq, lastFiscalSig, clotureSeq, gtPerpetuel, gtPerpetuelAvoirs, seqByB, gtByB, gtAvoirsByB, clotureSeqByB }), 'utf8');
       fs.renameSync(tmp, DATA_FILE);
     } catch (e) { console.error('Persistance impossible :', e.message); }
   }, 200);
@@ -252,6 +288,22 @@ function loadPersisted() {
     if (typeof d.gtPerpetuel === 'number') gtPerpetuel = d.gtPerpetuel;
     if (typeof d.gtPerpetuelAvoirs === 'number') gtPerpetuelAvoirs = d.gtPerpetuelAvoirs;
     if (typeof d.fiscalKey === 'string') fiscalKey = d.fiscalKey;
+    // Registre des boutiques (franchises) + identites legales + mots de passe managers.
+    if (d.boutiques && typeof d.boutiques === 'object' && Object.keys(d.boutiques).length) { boutiques = d.boutiques; rebuildAccounts(); }
+    for (const id of boutiqueIds()) { if (!stock[id]) stock[id] = {}; }
+    // Etat fiscal PAR boutique : restaurer ; a defaut (ancien format) reconstituer depuis l'historique.
+    if (d.seqByB && typeof d.seqByB === 'object') seqByB = d.seqByB;
+    if (d.gtByB && typeof d.gtByB === 'object') gtByB = d.gtByB;
+    if (d.gtAvoirsByB && typeof d.gtAvoirsByB === 'object') gtAvoirsByB = d.gtAvoirsByB;
+    if (d.clotureSeqByB && typeof d.clotureSeqByB === 'object') clotureSeqByB = d.clotureSeqByB;
+    if (!d.seqByB || !d.gtByB) {                              // migration : numerotation continue + totaux par boutique
+      for (const inv of invoices) {
+        const id = inv.boutiqueId || 'aix'; fb(id);
+        seqByB[id] += 1;
+        if (inv.total >= 0) gtByB[id] = Math.round((gtByB[id] + inv.total) * 100) / 100;
+        else gtAvoirsByB[id] = Math.round((gtAvoirsByB[id] + inv.total) * 100) / 100;
+      }
+    }
     console.log('Journal recharge depuis le disque : ' + invoices.length + ' facture(s), ' + orders.length + ' commande(s), ' + fiscalEvents.length + ' evenement(s) fiscaux.');
   } catch (e) { console.error('Lecture persistance impossible :', e.message); }
 }
@@ -307,19 +359,24 @@ function invoiceBody(f) { return JSON.stringify([f.seq, f.num, f.boutiqueId, f.t
 function sealInvoice(body, hash) { return fiscalKey ? crypto.createHmac('sha256', fiscalKey).update(body + '|' + hash).digest('hex') : null; }
 
 function createInvoice(boutiqueId, total, lines, client, payment, source) {
-  const seq = ++invoiceSeq;
-  const num = 'KING-2026-' + String(seq).padStart(4, '0');
+  fb(boutiqueId);
+  const seq = ++seqByB[boutiqueId];                         // numerotation PROPRE a la boutique (entite)
+  const b = boutiques[boutiqueId];
+  const prefix = (b && b.prefix) || String(boutiqueId || 'KING').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 5) || 'KING';
+  const num = prefix + '-' + new Date().getFullYear() + '-' + String(seq).padStart(4, '0');
   const date = new Date().toISOString();
   const fields = { seq, num, boutiqueId, total, lines, client, payment, date, prevHash: lastHash };
   const body = invoiceBody(fields);
   const hash = sha256(body);
-  // 'source' = metadonnee (hors empreinte). seal = sceau HMAC à clé secrète (inaltérabilité forte).
-  const inv = Object.assign({}, fields, { hash, seal: sealInvoice(body, hash), source: source || 'caisse' });
+  // Identite legale FIGEE sur la facture (entite emettrice). 'source'/'seal' = metadonnees hors empreinte.
+  const sl = sellerFor(boutiqueId);
+  const inv = Object.assign({}, fields, { hash, seal: sealInvoice(body, hash), source: source || 'caisse',
+    seller: { name: sl.name, siren: sl.siren, vat: sl.vat, address: sl.address, zip: sl.zip, city: sl.city, country: sl.country } });
   invoices.push(inv);
-  lastHash = hash;
-  // Grand Total perpétuel (NF525) : cumul de toutes les opérations, jamais remis à zéro.
-  if (total >= 0) gtPerpetuel = Math.round((gtPerpetuel + total) * 100) / 100;
-  else gtPerpetuelAvoirs = Math.round((gtPerpetuelAvoirs + total) * 100) / 100;
+  lastHash = hash;                                          // chaine d'empreintes UNIQUE (inalterabilite globale)
+  // Grand Total perpetuel : PAR boutique (entite) ET reseau (tableau de bord). Jamais remis a zero.
+  if (total >= 0) { gtByB[boutiqueId] = Math.round((gtByB[boutiqueId] + total) * 100) / 100; gtPerpetuel = Math.round((gtPerpetuel + total) * 100) / 100; }
+  else { gtAvoirsByB[boutiqueId] = Math.round((gtAvoirsByB[boutiqueId] + total) * 100) / 100; gtPerpetuelAvoirs = Math.round((gtPerpetuelAvoirs + total) * 100) / 100; }
   persist();
   return inv;
 }
@@ -359,15 +416,16 @@ function facturesPourCloture(type, bId, nowIso) {
 
 // Réalise une clôture (Z/M/A) : agrège, capture le GT perpétuel, scelle dans le JET.
 function faireCloture(type, bId) {
+  fb(bId);
   const sel = facturesPourCloture(type, bId);
   const agg = fiscal.aggregate(sel.factures);
-  const numero = ++clotureSeq[type];
+  const numero = ++clotureSeqByB[bId][type];               // compteur de cloture PROPRE a la boutique
   const data = Object.assign({
     numero: numero,
     periode: type === 'Z' ? 'journalière' : (type === 'M' ? 'mensuelle' : 'annuelle'),
     depuis: sel.depuis, jusqua: sel.jusqua,
-    grandTotalPerpetuel: gtPerpetuel,
-    grandTotalAvoirsPerpetuel: gtPerpetuelAvoirs,
+    grandTotalPerpetuel: gtByB[bId],                        // Grand Total perpetuel de CETTE boutique (entite)
+    grandTotalAvoirsPerpetuel: gtAvoirsByB[bId],
   }, agg);
   return logFiscalEvent('CLOTURE_' + type, bId, data);
 }
@@ -467,6 +525,40 @@ const server = http.createServer(async (req, res) => {
 
   // --- Commandes : routes publiques (borne + ecran centre de commande sur le reseau local).
   // En prod, proteger par un jeton de borne/ecran ; ici, scope par boutique.
+  // Ticket / reçu client : page imprimable (rouleau 80 mm). Public — la borne l'affiche après la commande.
+  if (req.method === 'GET' && path === '/api/receipt') {
+    const num = u.searchParams.get('facture') || '';
+    const inv = invoices.find((i) => i.num === num);
+    if (!inv) { res.writeHead(404, Object.assign({ 'content-type': 'text/html; charset=utf-8' }, res._cors || COMMON_CORS)); return res.end('<!doctype html><meta charset="utf-8"><p style="font-family:sans-serif;padding:20px">Ticket introuvable.</p>'); }
+    const sl = inv.seller || sellerFor(inv.boutiqueId);
+    const E = (x) => String(x == null ? '' : x).replace(/&/g, '&amp;').replace(/</g, '&lt;');
+    const M = (n) => (Math.round((Number(n) || 0) * 100) / 100).toFixed(2).replace('.', ',') + ' €';
+    const dt = new Date(inv.date);
+    const lignes = (inv.lines || []).map((l) => '<tr><td>' + E(l.produit || l.name || 'Article') + (l.detail ? '<br><span class="d">' + E(l.detail) + '</span>' : '') + '</td><td class="q">' + (l.qty || 1) + '</td><td class="p">' + M(l.prix != null ? l.prix : l.price) + '</td></tr>').join('');
+    const tva = inv.tva || null;
+    const ht = tva && typeof tva.totalHT === 'number' ? '<div class="rowt"><span>Total HT</span><span>' + M(tva.totalHT) + '</span></div>' : '';
+    const tvaRows = tva && tva.parTaux ? Object.keys(tva.parTaux).map((t) => '<div class="rowt"><span>dont TVA ' + Math.round(Number(t) * 100) + '%</span><span>' + M(tva.parTaux[t].tva) + '</span></div>').join('') : '';
+    const html = '<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Ticket ' + E(inv.num) + '</title>'
+      + '<style>@page{size:80mm auto;margin:0}body{font-family:ui-monospace,Menlo,Consolas,monospace;color:#111;margin:0 auto;padding:14px;max-width:330px}'
+      + 'h1{font-family:Arial,sans-serif;font-size:21px;letter-spacing:.16em;text-align:center;margin:0 0 2px}.c{text-align:center}.muted{color:#555;font-size:11px}'
+      + 'table{width:100%;border-collapse:collapse;margin:10px 0;font-size:12.5px}td{padding:3px 0;vertical-align:top}.q{text-align:center;width:30px}.p{text-align:right;white-space:nowrap}.d{color:#666;font-size:11px}'
+      + 'hr{border:0;border-top:1px dashed #aaa;margin:8px 0}.rowt{display:flex;justify-content:space-between;font-size:12px;margin:2px 0}.tot{display:flex;justify-content:space-between;font-weight:bold;font-size:16px;margin-top:6px}'
+      + '.seal{font-size:9px;color:#888;word-break:break-all;margin-top:8px}.btn{display:block;width:100%;margin:16px 0 0;padding:13px;font-size:14px;border:0;border-radius:9px;background:#111;color:#fff;font-family:Arial,sans-serif;cursor:pointer}@media print{.btn{display:none}}</style></head><body>'
+      + '<h1>KINGSTON</h1><div class="c muted">' + E(sl.name || 'KINGSTON') + (sl.city ? ' · ' + E(sl.city) : '') + '</div>'
+      + '<div class="c muted">' + (sl.siren && sl.siren !== '000000000' ? 'SIREN ' + E(sl.siren) : '') + (sl.vat && sl.vat !== 'FR00000000000' ? ' · TVA ' + E(sl.vat) : '') + '</div>'
+      + '<hr><div class="muted">Ticket <b>' + E(inv.num) + '</b><br>' + dt.toLocaleDateString('fr-FR') + ' ' + dt.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }) + (inv.source ? ' · ' + E(inv.source) : '') + '</div>'
+      + '<table>' + lignes + '</table><hr>' + ht + tvaRows
+      + (inv.remise ? '<div class="rowt"><span>Remise fidélité</span><span>-' + M(inv.remise) + '</span></div>' : '')
+      + '<div class="tot"><span>TOTAL</span><span>' + M(inv.total) + '</span></div>'
+      + '<div class="rowt"><span>Règlement</span><span>' + E(inv.payment || 'Carte') + '</span></div>'
+      + '<hr><div class="c muted">Merci de ta visite ! Conserve ce ticket.</div>'
+      + '<div class="muted" style="margin-top:6px;text-align:center">Caisse certifiée NF525 — données inaltérables.</div>'
+      + (inv.seal ? '<div class="seal">Sceau : ' + E(String(inv.seal).slice(0, 32)) + '…</div>' : '')
+      + '<button class="btn" onclick="window.print()">Imprimer le ticket</button>'
+      + '</body></html>';
+    res.writeHead(200, Object.assign({ 'content-type': 'text/html; charset=utf-8' }, res._cors || COMMON_CORS));
+    return res.end(html);
+  }
   if (req.method === 'GET' && path === '/api/orders/stream') {
     const boutique = u.searchParams.get('boutique') || '';
     res.writeHead(200, Object.assign({
@@ -532,6 +624,7 @@ const server = http.createServer(async (req, res) => {
       couponPoints: pointsUtilises,
       total: total,
       customerRef: body.customerRef || null,
+      customerName: body.customerName || null,
       payment: body.payment || 'Carte (borne)',
       facture: facture,
       status: 'nouveau',
@@ -576,12 +669,19 @@ const server = http.createServer(async (req, res) => {
 
   // Menu public (borne libre-service) : catalogue sans authentification ni stock.
   if (req.method === 'GET' && path === '/api/menu') {
+    const bId = u.searchParams.get('boutique') || 'aix';        // stock affiche selon la boutique de la borne
+    // « Populaire » : best-sellers calcules sur les VRAIES ventes (lignes de factures, hors avoirs).
+    const sales = {};
+    for (const inv of invoices) { if (inv.total < 0) continue; for (const ln of (inv.lines || [])) { const nm = String(ln.name || '').toLowerCase(); if (nm) sales[nm] = (sales[nm] || 0) + (ln.qty || 1); } }
+    const ranked = Object.keys(sales).sort((a, b) => sales[b] - sales[a]).slice(0, 5);
     const list = allCatalog().map((p) => {
-      const o = { id: p.id, name: p.name, cat: p.cat, unit: p.unit, img: p.img || '', desc: p.desc || '', custom: !!p.custom, new: !!p.new };
-      if (p.unit === 'g') o.tiers = p.tiers; else { o.price = p.price; if (Array.isArray(p.packs) && p.packs.length) o.packs = p.packs; }
+      const o = { id: p.id, name: p.name, cat: p.cat, unit: p.unit, img: p.img || '', desc: p.desc || '', custom: !!p.custom, new: !!p.new, popular: ranked.indexOf(String(p.name || '').toLowerCase()) >= 0 };
+      const sk = (stock[bId] || {})[p.id];
+      if (p.unit === 'g') { o.tiers = p.tiers; o.stockG = totalGrams(sk); }
+      else { o.price = p.price; if (Array.isArray(p.packs) && p.packs.length) o.packs = p.packs; o.stockU = sk ? (sk.units || 0) : 0; }
       return o;
     });
-    return send(res, 200, { products: list });
+    return send(res, 200, { boutique: bId, products: list });
   }
 
   // Identification client sur la borne via QR (route publique). Le QR peut contenir un e-mail,
@@ -753,7 +853,7 @@ const server = http.createServer(async (req, res) => {
             cat: (wp.categories && wp.categories[0] && wp.categories[0].name) || 'Boutique',
             custom: true,
             img: (wp.images && wp.images[0] && wp.images[0].src) || '',
-            desc: '',
+            desc: (wp.short_description || wp.description || '').replace(/<[^>]*>/g, ' ').replace(/&[a-z]+;/gi, ' ').replace(/\s+/g, ' ').trim().slice(0, 140),
           };
           if (wp.type === 'variable' && Array.isArray(wp.variations) && wp.variations.length) {
             const tiers = [];
@@ -974,6 +1074,53 @@ const server = http.createServer(async (req, res) => {
       return send(res, 200, { count: list.length, factures: list });
     }
 
+    // ---------------- FRANCHISES / BOUTIQUES (reseau) ----------------
+    // Liste : identite + URLs pretes a partager. Un manager ne voit QUE sa boutique.
+    if (req.method === 'GET' && path === '/api/boutiques') {
+      const all = boutiqueIds().map((id) => {
+        const b = boutiques[id];
+        const hasPass = !!(process.env['COMPTOIR_PASS_' + id.toUpperCase()] || (b.cred && b.cred.salt));
+        return { id: id, label: b.label || id, prefix: b.prefix || id.toUpperCase().slice(0, 4), seller: b.seller || SELLER_DEFAULT, motDePasseDefini: hasPass };
+      });
+      const list = user.role === 'admin' ? all : all.filter((b) => b.id === user.boutiqueId);
+      return send(res, 200, { boutiques: list });
+    }
+
+    // Ajouter / mettre a jour une franchise (identite legale + mot de passe manager). Admin reseau uniquement.
+    if (req.method === 'POST' && path === '/api/boutiques') {
+      if (user.role !== 'admin') return send(res, 403, { error: 'Réservé à l\'administrateur réseau' });
+      const b = await readJson(req);
+      let id = (b.id || '').toString().trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+      if (!id) id = (b.label || '').toString().trim().toLowerCase().replace(/[^a-z0-9]+/g, '').slice(0, 20);
+      if (!id) return send(res, 400, { error: 'Identifiant de boutique requis (ex. lyon)' });
+      if (id === 'admin') return send(res, 400, { error: 'Identifiant réservé' });
+      const ex = boutiques[id] || {};
+      const exSeller = ex.seller || {};
+      const seller = {
+        name: (b.name != null ? String(b.name) : exSeller.name || ('KINGSTON ' + id)).trim(),
+        siren: (b.siren != null ? String(b.siren) : exSeller.siren || '').replace(/\s/g, ''),
+        vat: (b.vat != null ? String(b.vat) : exSeller.vat || '').replace(/\s/g, ''),
+        address: b.address != null ? String(b.address) : (exSeller.address || ''),
+        zip: b.zip != null ? String(b.zip) : (exSeller.zip || ''),
+        city: b.city != null ? String(b.city) : (exSeller.city || ''),
+        country: 'FR',
+      };
+      const rec = {
+        id: id,
+        label: (b.label != null ? String(b.label) : ex.label || ('KINGSTON ' + id)).trim(),
+        prefix: (b.prefix || ex.prefix || id).toString().toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 5) || id.toUpperCase(),
+        seller: seller,
+      };
+      if (ex.cred) rec.cred = ex.cred;                                   // conserver le mot de passe existant
+      if (b.password) rec.cred = makeStoredPass(b.password);             // (re)definir le mot de passe manager
+      boutiques[id] = rec;
+      if (!stock[id]) stock[id] = {};                                    // stock de la boutique
+      fb(id);                                                            // etat fiscal de la boutique
+      rebuildAccounts();                                                 // compte manager cree/mis a jour
+      persist();
+      return send(res, 200, { ok: true, boutique: { id: id, label: rec.label, prefix: rec.prefix, seller: rec.seller, motDePasseDefini: !!(rec.cred || process.env['COMPTOIR_PASS_' + id.toUpperCase()]) } });
+    }
+
     if (req.method === 'GET' && path === '/api/fiscal/verify') {
       if (PG) return send(res, 200, await PG.verifyChain(user));
       const fact = verifyChain();
@@ -995,8 +1142,9 @@ const server = http.createServer(async (req, res) => {
       const ventes = inScope.filter((i) => i.total >= 0);
       const clotures = fiscalEvents.filter((e) => /^CLOTURE_/.test(e.type) && (bId ? e.boutiqueId === bId : true));
       return send(res, 200, {
-        grandTotalPerpetuel: gtPerpetuel,
-        grandTotalAvoirsPerpetuel: gtPerpetuelAvoirs,
+        boutique: bId || 'reseau',
+        grandTotalPerpetuel: bId ? (gtByB[bId] || 0) : gtPerpetuel,            // GT de l'entite si ciblee, sinon reseau
+        grandTotalAvoirsPerpetuel: bId ? (gtAvoirsByB[bId] || 0) : gtPerpetuelAvoirs,
         nbTickets: ventes.length,
         nbAvoirs: inScope.length - ventes.length,
         nbClotures: clotures.length,
@@ -1062,7 +1210,7 @@ const server = http.createServer(async (req, res) => {
 
     if (req.method === 'GET' && path === '/api/dashboard') {
       if (PG) return send(res, 200, await PG.dashboard(user));
-      const scope = user.role === 'admin' ? boutiques.map((b) => b.id) : [user.boutiqueId];
+      const scope = user.role === 'admin' ? boutiqueIds() : [user.boutiqueId];
       const dashboard = scope.map((id) => {
         const inv = invoices.filter((i) => i.boutiqueId === id);
         return { boutique: id, tickets: inv.length, ca: Math.round(inv.reduce((a, i) => a + i.total, 0) * 100) / 100 };
@@ -1149,7 +1297,7 @@ const server = http.createServer(async (req, res) => {
       }
 
       if (req.method === 'GET' && path === '/api/journal/ereporting') {
-        const nom = (boutiques.find((b) => b.id === bId) || {}).name || (bId || 'Reseau KINGSTON');
+        const nom = (boutiques[bId] || {}).label || (bId || 'Reseau KINGSTON');
         const periode = (from || 'origine') + ' -> ' + (to || 'aujourd_hui');
         const sales = list.map((i) => ({ total: i.total, payment: i.payment, lines: (i.lines || []).map((l) => ({ vat: l.vat, prix: l.prix })) }));
         return send(res, 200, efacture.ereportingZ(nom, periode, sales));
@@ -1180,6 +1328,7 @@ loadPersisted();
 if (!PG) {
   // Clé de scellement fiscal : stockée DANS UN FICHIER DÉDIÉ protégé (mode 600), hors du fichier de données.
   const FISCAL_KEY_FILE = process.env.COMPTOIR_FISCAL_KEY_FILE || pathmod.join(pathmod.dirname(DATA_FILE), '.comptoir_fiscal_key');
+  try { fs.mkdirSync(pathmod.dirname(FISCAL_KEY_FILE), { recursive: true }); } catch (e) {}
   const migrated = fiscalKey; // éventuelle clé héritée de l'ancien fichier de données (migration)
   fiscalKey = '';
   try { if (fs.existsSync(FISCAL_KEY_FILE)) fiscalKey = fs.readFileSync(FISCAL_KEY_FILE, 'utf8').trim(); } catch (e) { console.error('Cle fiscale : lecture impossible :', e.message); }

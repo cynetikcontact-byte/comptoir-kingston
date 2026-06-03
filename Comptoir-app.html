@@ -253,6 +253,7 @@ table.tbl tr:hover td{background:#faf9f5;}
       <div class="nav-item" data-view="journal"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 4h13a2 2 0 0 1 2 2v14H6a2 2 0 0 1-2-2z"/><path d="M8 8h7M8 12h7M8 16h4"/></svg> Journal des ventes</div>
       <div class="nav-item" data-view="factu"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M6 2h9l5 5v15H6z"/><path d="M14 2v6h6M9 13h6M9 17h6"/></svg> Facturation</div>
       <div class="nav-item" data-view="conformite"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3l7 3v5c0 4.5-3 8-7 10-4-2-7-5.5-7-10V6z"/><path d="M9 12l2 2 4-4"/></svg> Conformité</div>
+      <div class="nav-item" id="nav-franchises" data-view="franchises"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 21V9l9-6 9 6v12"/><path d="M3 21h18M9 21v-6h6v6"/></svg> Franchisés</div>
       <div class="nav-grp">Système</div>
       <div class="nav-item" data-view="reglages"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 8 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H2a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 3.6 8a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H8a1.65 1.65 0 0 0 1-1.51V2a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V8a1.65 1.65 0 0 0 1.51 1H22a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg> Réglages</div>
     </nav>
@@ -478,7 +479,7 @@ table.tbl tr:hover td{background:#faf9f5;}
   function custRowsHtml(list,actName){if(!list.length)return '<div class="muted" style="padding:14px">Aucun client trouvé.</div>';return list.map(function(c,i){return '<div class="cust-row" data-act="'+actName+'" data-i="'+i+'"><div><b>'+esc(c.name||c.email)+'</b><div class="muted" style="font-size:12px">'+esc(c.email||'')+(c.phone?' · '+esc(c.phone):'')+'</div></div><div style="color:var(--gold);font-weight:700">'+Math.round(c.points||0)+' pts</div></div>';}).join('');}
 
   // ---------- Vues ----------
-  var titles={dash:'Tableau de bord',pos:'Caisse',borne:'Borne',commandes:'Commandes — Centre de commande',journal:'Journal des ventes — Borne & Caisse',produits:'Produits',stock:'Stock (grammes & lots)',fidelite:'Fidélité — Kingston Club',factu:'Facturation',reglages:'Réglages — Fidélité myCred'};
+  var titles={dash:'Tableau de bord',pos:'Caisse',borne:'Borne',commandes:'Commandes — Centre de commande',journal:'Journal des ventes — Borne & Caisse',produits:'Produits',stock:'Stock (grammes & lots)',fidelite:'Fidélité — Kingston Club',factu:'Facturation',conformite:'Conformité caisse — NF525',franchises:'Franchisés — réseau multi-boutiques',reglages:'Réglages — Fidélité myCred'};
 
   function viewDash(){
     if(st.user&&st.user.role!=='admin'){return viewDashBoutique();}
@@ -873,7 +874,58 @@ table.tbl tr:hover td{background:#faf9f5;}
       '<div class="net-note" style="margin-top:14px">'+crown('#b8902f')+' Chaque vente est figée et scellée par signature HMAC-SHA256 chaînée à la précédente : impossible de modifier ou supprimer une vente sans casser la chaîne (les corrections passent par un avoir). Les clôtures conservent le Grand Total perpétuel. L’archive exportée est vérifiable par l’administration fiscale.</div>';
   }
 
-  var viewsMap={dash:viewDash,pos:viewPos,produits:viewProduits,stock:viewStock,fidelite:viewFidelite,factu:viewFactu,borne:viewBorne,commandes:viewCommandes,journal:viewJournal,conformite:viewConformite,reglages:viewReglages};
+  // ---------- Franchisés / boutiques du réseau (admin) ----------
+  var franchData={loaded:false,loading:false,list:[]};
+  function loadFranchises(){
+    if(!API.on||franchData.loading)return;
+    franchData.loading=true;
+    apiGet('/api/boutiques').then(function(d){franchData.list=(d&&d.boutiques)||[];franchData.loaded=true;franchData.loading=false;if(st.view==='franchises')renderFranchBody();}).catch(function(){franchData.loading=false;franchData.loaded=true;if(st.view==='franchises')renderFranchBody();});
+  }
+  function franchBase(){return ((API&&API.base)||location.origin).replace(/\/$/,'');}
+  function franchUrlRow(label,url){return '<div style="display:flex;align-items:center;gap:8px;margin:5px 0"><span class="muted" style="width:128px;flex:0 0 128px;font-size:12px">'+label+'</span><code style="flex:1;min-width:0;background:#15100a;color:#cfe8dd;border-radius:7px;padding:6px 9px;font-size:11.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(url)+'</code><button class="btn" data-act="copytxt" data-txt="'+esc(url)+'" style="padding:5px 10px">Copier</button></div>';}
+  function renderFranchBody(){
+    var el=document.getElementById('franch-body');if(!el)return;
+    var base=franchBase();
+    var cards=(franchData.list||[]).map(function(b){
+      var s=b.seller||{}; var sirenOk=s.siren&&s.siren!=='000000000';
+      var idtag=sirenOk?'<span class="tag tag-ok">SIREN '+esc(s.siren)+'</span>':'<span class="tag tag-low">SIREN à renseigner</span>';
+      var passtag=b.motDePasseDefini?'<span class="tag tag-ok">accès défini</span>':'<span class="tag tag-low">mot de passe par défaut</span>';
+      return '<div class="card" style="padding:16px;margin-bottom:12px">'+
+        '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap">'+
+        '<div><div style="font-family:var(--serif);font-size:18px">'+esc(b.label||b.id)+'</div>'+
+        '<div class="muted" style="font-size:12.5px;margin-top:2px">'+esc(s.name||'')+(s.city?' · '+esc(s.city):'')+' · préfixe factures <b>'+esc(b.prefix||'')+'</b></div></div>'+
+        '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:flex-start">'+idtag+passtag+'</div></div>'+
+        '<div style="margin-top:12px">'+
+        franchUrlRow('Borne libre-service',base+'/borne?boutique='+encodeURIComponent(b.id))+
+        franchUrlRow('Caisse / admin',base+'/')+
+        franchUrlRow('Écran commandes',base+'/commande?boutique='+encodeURIComponent(b.id))+
+        '</div>'+
+        '<div style="margin-top:10px"><button class="btn" data-act="editfranch" data-id="'+esc(b.id)+'">Modifier l’identité / le mot de passe</button></div>'+
+        '</div>';
+    }).join('')||'<div class="muted" style="padding:14px">Aucune boutique pour le moment. Ajoute ta première franchise ci-dessus.</div>';
+    el.innerHTML=cards;
+  }
+  function viewFranchises(){
+    if(st.user&&st.user.role!=='admin'){return '<div class="vhead"><div><h1>Franchisés</h1><p>Réservé à l’administrateur réseau.</p></div></div>';}
+    if(!API.on){return '<div class="vhead"><div><h1>Franchisés</h1><p>Connecte l’app au serveur (Réglages) pour gérer tes boutiques franchisées et récupérer leurs adresses.</p></div></div>';}
+    setTimeout(loadFranchises,0);
+    var ff=function(id,label,ph,type){return '<div class="fld"><label>'+label+'</label><input id="'+id+'" '+(type?'type="'+type+'" ':'')+'placeholder="'+esc(ph)+'" style="width:100%"/></div>';};
+    return '<div class="vhead"><div><h1>Franchisés <span class="tag tag-ok" style="vertical-align:middle">réseau multi-boutiques</span></h1><p>Ajoute une boutique franchisée : elle obtient son accès privé et ses 3 adresses (borne, caisse, écran commandes). Chaque franchise facture sous sa propre identité légale (SIREN), avec sa propre numérotation.</p></div></div>'+
+      '<div class="card" style="padding:16px;margin-bottom:18px">'+
+      '<div style="font-family:var(--serif);font-size:16px;margin-bottom:10px">Ajouter / mettre à jour une franchise</div>'+
+      '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px">'+
+      ff('fr-id','Identifiant court','lyon')+ff('fr-label','Nom de la boutique','KINGSTON Lyon')+ff('fr-name','Raison sociale (entité légale)','KINGSTON LYON SARL')+
+      ff('fr-siren','SIREN','123 456 789')+ff('fr-vat','N° TVA','FR12123456789')+ff('fr-pass','Mot de passe manager','••••••••','password')+
+      ff('fr-address','Adresse','10 rue de la République')+ff('fr-zip','Code postal','69002')+ff('fr-city','Ville','Lyon')+
+      '</div>'+
+      '<button class="btn btn-gold" data-act="addfranch" style="margin-top:12px">Enregistrer la franchise</button>'+
+      '<div class="muted" style="font-size:12px;margin-top:8px">L’identifiant court sert dans les adresses (ex. /borne?boutique=<b>lyon</b>) et de préfixe aux factures. Laisse le mot de passe vide pour ne pas le changer.</div>'+
+      '</div>'+
+      '<div id="franch-body"><div class="muted" style="padding:14px">Chargement…</div></div>'+
+      '<div class="net-note" style="margin-top:14px">'+crown('#b8902f')+' Chaque franchise est isolée : son manager ne voit que sa boutique, ses ventes sont numérotées et totalisées séparément, et ses factures portent SON SIREN. Toi (admin réseau) gardes la vue d’ensemble.</div>';
+  }
+
+  var viewsMap={dash:viewDash,pos:viewPos,produits:viewProduits,stock:viewStock,fidelite:viewFidelite,factu:viewFactu,borne:viewBorne,commandes:viewCommandes,journal:viewJournal,conformite:viewConformite,franchises:viewFranchises,reglages:viewReglages};
 
   function render(){
     if(!st.user){showLogin();return;}
@@ -883,6 +935,7 @@ table.tbl tr:hover td{background:#faf9f5;}
     $("#topTitle").textContent=titles[st.view]||'';
     var rb=document.querySelector('.role-badge');if(rb){rb.innerHTML='<span class="av">'+st.user.initials+'</span><div>'+st.user.roleLabel+'<br><b>'+st.user.name+'</b></div>';}
     var sel=document.getElementById('boutiqueSel');if(sel){sel.style.display=st.user.role==='admin'?'':'none';}
+    var nfr=document.getElementById('nav-franchises');if(nfr){nfr.style.display=(st.user.role==='admin')?'':'none';}
     var sf=document.getElementById('sideFoot');if(sf){sf.innerHTML='<b>'+st.user.name+'</b>'+st.user.roleLabel+' · KINGSTON<button class="btn" style="width:100%;margin-top:10px;background:transparent;color:#cfc9ba;border-color:rgba(255,255,255,.16)" data-act="logout">Se déconnecter</button>';}
   }
 
@@ -1140,6 +1193,27 @@ table.tbl tr:hover td{background:#faf9f5;}
     if(a==='cloture'){doCloture(el.getAttribute('data-t'));return;}
     if(a==='fiscverify'){fiscalData.loading=false;loadFiscal();toast('Vérification de l’intégrité…');return;}
     if(a==='fiscarchive'){exportArchive();return;}
+    if(a==='addfranch'){
+      if(!API.on){toast('Connecte-toi au serveur');return;}
+      var gv=function(id){return ((document.getElementById(id)||{}).value||'').trim();};
+      var body={id:gv('fr-id'),label:gv('fr-label'),name:gv('fr-name'),siren:gv('fr-siren'),vat:gv('fr-vat'),address:gv('fr-address'),zip:gv('fr-zip'),city:gv('fr-city')};
+      var pw=gv('fr-pass'); if(pw)body.password=pw;
+      if(!body.id&&!body.label){toast('Indique au moins un identifiant ou un nom de boutique');return;}
+      apiPost('/api/boutiques',body).then(function(d){toast('Franchise « '+((d.boutique&&d.boutique.label)||body.label||body.id)+' » enregistrée');franchData.loading=false;franchData.loaded=false;loadFranchises();}).catch(function(e){toast('Échec : '+(e.message||e));});
+      return;
+    }
+    if(a==='editfranch'){
+      var bb=(franchData.list||[]).filter(function(x){return x.id===el.getAttribute('data-id');})[0];if(!bb)return;var s=bb.seller||{};
+      var sv=function(id,v){var n=document.getElementById(id);if(n)n.value=v||'';};
+      sv('fr-id',bb.id);sv('fr-label',bb.label);sv('fr-name',s.name);sv('fr-siren',s.siren==='000000000'?'':s.siren);sv('fr-vat',s.vat);sv('fr-address',s.address);sv('fr-zip',s.zip);sv('fr-city',s.city);sv('fr-pass','');
+      window.scrollTo(0,0);toast('Modifie les champs puis « Enregistrer la franchise »');return;
+    }
+    if(a==='copytxt'){
+      var t=el.getAttribute('data-txt')||'';
+      if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(t).then(function(){toast('Adresse copiée');}).catch(function(){toast('Copie impossible — sélectionne le texte');});}
+      else{toast('Copie non supportée par le navigateur');}
+      return;
+    }
     if(a==='recok'){var rp=pById($('#rc-prod').value);var lot=($('#rc-lot').value||'LOT-NEW').trim();var gg=parseInt($('#rc-g').value,10)||0;var exp=($('#rc-exp').value||'12/2027').trim();rp.lots=rp.lots||[];rp.lots.push({lot:lot,g:gg,exp:exp,coa:'COA-'+Math.floor(Math.random()*9000+1000)});saveStock(st.boutiqueId);closeModal();render();toast('Lot '+lot+' réceptionné (+'+gg+' g) · '+(BQNAME[st.boutiqueId]||''));return;}
     if(a==='cmpbq'){var bb=el.getAttribute('data-b');var ci=st.compare.indexOf(bb);if(ci>=0)st.compare.splice(ci,1);else st.compare.push(bb);render();return;}
     if(a==='apiconnect'){doApiConnect();return;}
