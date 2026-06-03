@@ -1,0 +1,1213 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Comptoir — KINGSTON</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=Anton&family=Open+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
+<style>
+:root{
+  --gold:#b8902f; --gold2:#d8b252; --gold-soft:rgba(184,144,47,.12);
+  --ink:#151009; --ink2:#1d160d; --ink3:#272016;
+  --cream:#f4f1e9; --paper:#f3f1ea; --card:#ffffff;
+  --text:#1d1a14; --muted:#75716a; --line:#e7e3d8;
+  --green:#3f7d4f; --green-soft:rgba(63,125,79,.12);
+  --red:#b4452f; --red-soft:rgba(180,69,47,.12);
+  /* Typographie KINGSTON : Anton (titres / logo) + Open Sans (texte courant). */
+  --serif:'Anton','Open Sans',system-ui,sans-serif;
+  --sans:'Open Sans',system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+}
+*{box-sizing:border-box;}
+html,body{margin:0;padding:0;}
+body{font-family:var(--sans);color:var(--text);background:var(--paper);-webkit-font-smoothing:antialiased;}
+button{font-family:inherit;}
+#app{display:flex;min-height:100vh;}
+
+/* Sidebar */
+.side{width:236px;flex:0 0 236px;background:var(--ink);color:#cfc9ba;display:flex;flex-direction:column;}
+.side-brand{padding:22px 20px 18px;border-bottom:1px solid rgba(255,255,255,.07);display:flex;align-items:center;gap:9px;}
+.side-brand .wm{font-family:var(--serif);font-size:22px;letter-spacing:.12em;color:var(--cream);font-weight:400;}
+.side-brand .sub{font-size:9px;letter-spacing:.32em;color:#7d7665;text-transform:uppercase;margin-top:2px;}
+.nav{padding:12px 12px;flex:1;}
+.nav-grp{font-size:9.5px;letter-spacing:.18em;text-transform:uppercase;color:#6a6353;padding:14px 10px 6px;}
+.nav-item{display:flex;align-items:center;gap:11px;padding:10px 12px;border-radius:10px;color:#c8c2b3;cursor:pointer;font-size:13.5px;font-weight:500;margin-bottom:2px;border-left:2px solid transparent;}
+.nav-item:hover{background:rgba(255,255,255,.04);color:#fff;}
+.nav-item.active{background:var(--gold-soft);color:var(--gold2);border-left-color:var(--gold);font-weight:600;}
+.nav-item svg{flex:0 0 18px;opacity:.85;}
+.side-foot{padding:14px 18px;border-top:1px solid rgba(255,255,255,.07);font-size:11px;color:#7d7665;}
+.side-foot b{color:#cfc9ba;display:block;font-size:12px;font-weight:600;}
+
+/* Main */
+.main{flex:1;display:flex;flex-direction:column;min-width:0;}
+.top{height:62px;flex:0 0 62px;background:#fff;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;padding:0 24px;}
+.top-l{display:flex;align-items:center;gap:14px;}
+.top-title{font-family:var(--serif);font-size:19px;font-weight:700;}
+.demo-pill{font-size:10px;letter-spacing:.06em;color:var(--gold);background:var(--gold-soft);border:1px solid rgba(184,144,47,.3);padding:3px 9px;border-radius:999px;text-transform:uppercase;font-weight:700;}
+.top-r{display:flex;align-items:center;gap:16px;}
+.boutique-sel{appearance:none;border:1px solid var(--line);background:#fff;border-radius:9px;padding:8px 30px 8px 12px;font-size:13px;color:var(--text);cursor:pointer;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%2375716a' fill='none' stroke-width='1.5'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 11px center;}
+.role-badge{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--muted);}
+.role-badge .av{width:30px;height:30px;border-radius:50%;background:var(--ink);color:var(--gold2);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:12px;font-family:var(--serif);}
+.role-badge b{color:var(--text);font-weight:600;}
+.view{padding:24px;overflow:auto;flex:1;}
+
+/* Generic */
+.vhead{display:flex;align-items:flex-end;justify-content:space-between;margin-bottom:18px;flex-wrap:wrap;gap:10px;}
+.vhead h1{font-family:var(--serif);font-size:23px;margin:0;}
+.vhead p{margin:4px 0 0;color:var(--muted);font-size:13px;}
+.btn{border:1px solid var(--line);background:#fff;color:var(--text);border-radius:10px;padding:10px 16px;font-size:13px;font-weight:600;cursor:pointer;}
+.btn:hover{border-color:var(--gold);}
+.btn-gold{background:var(--gold);border-color:var(--gold);color:#fff;}
+.btn-gold:hover{background:#a37e26;border-color:#a37e26;}
+.btn-dark{background:var(--ink);border-color:var(--ink);color:var(--gold2);}
+.btn-lg{padding:14px 22px;font-size:15px;}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;box-shadow:0 1px 2px rgba(20,16,9,.04);}
+.muted{color:var(--muted);}
+.tag{font-size:10px;font-weight:700;padding:3px 8px;border-radius:6px;text-transform:uppercase;letter-spacing:.04em;}
+.tag-g{background:var(--gold-soft);color:var(--gold);}
+.tag-ok{background:var(--green-soft);color:var(--green);}
+.tag-low{background:var(--red-soft);color:var(--red);}
+
+/* KPI */
+.kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:18px;}
+.kpi{padding:16px 18px;}
+.kpi .lbl{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;}
+.kpi .val{font-family:var(--serif);font-size:27px;font-weight:700;margin-top:6px;}
+.kpi .dlt{font-size:11.5px;margin-top:4px;color:var(--green);}
+
+/* Table */
+table.tbl{width:100%;border-collapse:collapse;font-size:13.5px;}
+table.tbl th{text-align:left;font-size:10.5px;letter-spacing:.07em;text-transform:uppercase;color:var(--muted);padding:12px 14px;border-bottom:1px solid var(--line);font-weight:700;}
+table.tbl td{padding:13px 14px;border-bottom:1px solid var(--line);}
+table.tbl tr:last-child td{border-bottom:0;}
+table.tbl tr:hover td{background:#faf9f5;}
+.net-note{display:flex;align-items:center;gap:9px;background:var(--gold-soft);border:1px solid rgba(184,144,47,.25);border-radius:11px;padding:11px 14px;font-size:12.5px;color:#7a5f1e;margin-bottom:16px;}
+
+/* Caisse */
+.pos{display:grid;grid-template-columns:1fr 360px;gap:16px;height:calc(100vh - 62px - 48px);}
+.pos-left{display:flex;flex-direction:column;min-height:0;}
+.cats{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;}
+.pos-search{width:100%;border:1px solid var(--line);border-radius:10px;padding:10px 14px;font-size:14px;margin-bottom:12px;background:#fff;}
+.pos-search:focus{outline:none;border-color:var(--gold);}
+.cat{padding:8px 15px;border-radius:999px;border:1px solid var(--line);background:#fff;font-size:13px;color:var(--muted);cursor:pointer;font-weight:600;}
+.cat.on{background:var(--ink);color:var(--gold2);border-color:var(--ink);}
+.pgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px;overflow:auto;padding-right:4px;align-content:start;}
+.pcard{background:#fff;border:1px solid var(--line);border-radius:13px;padding:14px;cursor:pointer;display:flex;flex-direction:column;gap:6px;box-shadow:0 1px 2px rgba(20,16,9,.04);transition:transform .06s,border-color .12s;}
+.pcard:hover{border-color:var(--gold);transform:translateY(-1px);}
+.pcard.dis{opacity:.45;cursor:not-allowed;}
+.pcard .pc-cat{font-size:9.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--gold);font-weight:700;}
+.pcard .pc-name{font-weight:700;font-size:14.5px;}
+.pcard .pc-cbd{font-size:11px;color:var(--muted);}
+.pc-img{height:88px;border-radius:9px;background:#1a1a1f center/cover no-repeat;margin-bottom:2px;}
+.pcard .pc-foot{margin-top:auto;display:flex;align-items:center;justify-content:space-between;padding-top:6px;}
+.pcard .pc-price{font-family:var(--serif);font-weight:700;font-size:15px;}
+.pcard .pc-stock{font-size:10.5px;color:var(--muted);}
+
+.ticket{background:#fff;border:1px solid var(--line);border-radius:14px;display:flex;flex-direction:column;min-height:0;box-shadow:0 1px 2px rgba(20,16,9,.04);}
+.tk-head{padding:15px 16px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;}
+.tk-head h3{margin:0;font-family:var(--serif);font-size:16px;}
+.tk-client{padding:12px 16px;border-bottom:1px solid var(--line);}
+.tk-client .mem{display:flex;align-items:center;justify-content:space-between;background:var(--ink);border-radius:11px;padding:10px 13px;color:var(--cream);}
+.tk-client .mem .pts{color:var(--gold2);font-weight:700;font-size:13px;}
+.tk-lines{flex:1;overflow:auto;padding:6px 16px;}
+.tk-line{display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--line);}
+.tk-line .tl-name{font-weight:600;font-size:13.5px;}
+.tk-line .tl-det{font-size:11px;color:var(--muted);}
+.tk-line .tl-r{display:flex;align-items:center;gap:10px;}
+.tk-x{border:0;background:#f0eee7;color:var(--muted);width:24px;height:24px;border-radius:50%;cursor:pointer;font-size:15px;line-height:1;}
+.tk-empty{color:var(--muted);text-align:center;padding:40px 10px;font-size:13px;}
+.tk-foot{border-top:1px solid var(--line);padding:14px 16px;}
+.tk-tot{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px;}
+.tk-tot .t1{font-size:13px;color:var(--muted);} .tk-tot .t2{font-family:var(--serif);font-size:24px;font-weight:700;}
+.tk-pts{font-size:11.5px;color:var(--gold);margin-bottom:12px;}
+.tk-tva{font-size:11px;color:var(--muted);margin-bottom:6px;}
+.tk-redeembtn{width:100%;border:1px dashed var(--gold);background:var(--gold-soft);color:#7a5f1e;border-radius:10px;padding:9px;font-size:12.5px;font-weight:600;cursor:pointer;margin-top:8px;}
+.tk-redeem{display:flex;justify-content:space-between;align-items:center;background:var(--gold-soft);border-radius:10px;padding:8px 12px;font-size:12.5px;color:#7a5f1e;margin-top:8px;}
+.tk-redeem button{border:0;background:none;color:var(--gold);font-weight:700;cursor:pointer;font-size:12px;}
+.tk-pay{display:flex;gap:9px;}
+.tk-pay .btn{flex:1;text-align:center;}
+
+/* Stock */
+.stock-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px;}
+.lots{width:100%;border-collapse:collapse;font-size:12px;margin-top:8px;}
+.lots th{font-size:9.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);text-align:left;padding:6px 8px;border-bottom:1px solid var(--line);}
+.lots td{padding:7px 8px;border-bottom:1px solid var(--line);}
+.lots tr:last-child td{border-bottom:0;}
+.bar{height:6px;border-radius:4px;background:#eceae2;overflow:hidden;margin-top:8px;}
+.bar > i{display:block;height:100%;background:var(--gold);}
+
+/* Produits CRM */
+.prow{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:13px 16px;border-bottom:1px solid var(--line);flex-wrap:wrap;}
+.prow:last-child{border-bottom:0;}
+.toggle{font-size:11px;font-weight:700;border-radius:999px;padding:6px 12px;cursor:pointer;border:1px solid var(--line);background:#fff;color:var(--muted);}
+.toggle.on{background:var(--gold-soft);border-color:var(--gold);color:var(--gold);}
+.stepper{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:8px;padding:3px 6px;font-size:11px;color:var(--muted);}
+.stepper b{color:var(--text);min-width:54px;text-align:center;}
+.stepper button{width:22px;height:22px;border-radius:6px;border:1px solid var(--line);background:#fff;cursor:pointer;font-size:14px;line-height:1;}
+.stepper button:hover{border-color:var(--gold);color:var(--gold);}
+.addform{display:flex;gap:10px;flex-wrap:wrap;align-items:end;padding:16px;border-top:1px dashed var(--line);}
+.fld{display:flex;flex-direction:column;gap:5px;}
+.fld label{font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);}
+.fld input,.fld select{border:1px solid var(--line);border-radius:9px;padding:9px 11px;font-size:13px;background:#fff;}
+.fld input:focus,.fld select:focus{outline:none;border-color:var(--gold);}
+
+/* Fidélité tiers */
+.tiers{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:18px;}
+.tier{padding:16px 18px;text-align:center;}
+.tier .nm{font-family:var(--serif);font-size:17px;font-weight:700;}
+.tier .th{font-size:12px;color:var(--muted);margin-top:3px;}
+.tier .dot{width:34px;height:34px;border-radius:50%;margin:0 auto 8px;}
+
+/* Modal */
+.modal-backdrop{position:fixed;inset:0;background:rgba(15,11,6,.55);display:flex;align-items:center;justify-content:center;z-index:50;padding:20px;}
+.modal{background:#fff;border-radius:16px;max-width:440px;width:100%;overflow:hidden;box-shadow:0 24px 60px rgba(0,0,0,.3);}
+.modal-h{padding:18px 20px;border-bottom:1px solid var(--line);font-family:var(--serif);font-size:18px;font-weight:700;}
+.modal-b{padding:20px;}
+.modal-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+.gbtn{border:1px solid var(--line);border-radius:12px;padding:16px;cursor:pointer;text-align:center;background:#fff;}
+.gbtn:hover{border-color:var(--gold);}
+.gbtn .g1{font-family:var(--serif);font-weight:700;font-size:18px;} .gbtn .g2{color:var(--gold);font-weight:700;margin-top:4px;}
+.cust-row{display:flex;align-items:center;justify-content:space-between;padding:12px;border:1px solid var(--line);border-radius:11px;margin-bottom:8px;cursor:pointer;}
+.cust-row:hover{border-color:var(--gold);}
+.term{background:var(--ink);border-radius:14px;padding:24px;text-align:center;color:var(--cream);}
+.term .tdot{width:54px;height:54px;border:4px solid rgba(216,178,82,.25);border-top-color:var(--gold2);border-radius:50%;margin:0 auto 14px;animation:spin .9s linear infinite;}
+@keyframes spin{to{transform:rotate(360deg);}}
+
+/* Borne overlay */
+.borne{position:fixed;inset:0;z-index:80;background:radial-gradient(120% 90% at 50% 0%,#211a0f 0%,#100c06 60%);color:var(--cream);display:flex;flex-direction:column;}
+.b-top{display:flex;align-items:center;justify-content:space-between;padding:18px 26px;}
+.b-wm{font-family:var(--serif);letter-spacing:.12em;font-size:22px;color:var(--cream);font-weight:400;display:flex;gap:9px;align-items:center;}
+.b-close{background:rgba(255,255,255,.08);border:0;color:#cfc9ba;border-radius:10px;padding:9px 14px;cursor:pointer;font-size:13px;}
+.b-pts{color:var(--gold2);font-weight:700;font-size:14px;border:1px solid rgba(216,178,82,.4);padding:6px 13px;border-radius:999px;}
+.b-stage{display:flex;gap:8px;justify-content:center;padding:0 20px 8px;font-size:11px;color:#8a8273;}
+.b-stage span{display:flex;align-items:center;gap:5px;} .b-stage i{width:7px;height:7px;border-radius:50%;background:#46402f;display:inline-block;font-style:normal;}
+.b-stage span.on{color:var(--gold2);} .b-stage span.on i{background:var(--gold2);}
+.b-body{flex:1;overflow:auto;padding:14px 26px 26px;max-width:860px;width:100%;margin:0 auto;}
+.b-h1{font-family:var(--serif);font-size:30px;text-align:center;margin:14px 0 6px;}
+.b-h2{text-align:center;color:#9a9180;font-size:14px;margin-bottom:22px;}
+.b-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:14px;}
+.b-tile{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.09);border-radius:16px;padding:22px 18px;cursor:pointer;text-align:center;}
+.b-tile:hover{border-color:var(--gold);background:rgba(216,178,82,.08);}
+.b-tile .t1{font-family:var(--serif);font-size:18px;} .b-tile .t2{color:#9a9180;font-size:12px;margin-top:5px;}
+.b-card{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.09);border-radius:16px;padding:18px 20px;cursor:pointer;display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;}
+.b-card:hover{border-color:var(--gold);}
+.b-card .bc1{font-family:var(--serif);font-size:18px;} .b-card .bc2{font-size:12px;color:#9a9180;margin-top:3px;}
+.b-card .price{color:var(--gold2);font-family:var(--serif);font-size:19px;}
+.b-thumb{width:54px;height:54px;border-radius:11px;background:#241d12 center/cover no-repeat;flex:0 0 54px;}
+.b-add{background:rgba(216,178,82,.1);border:1px solid var(--gold);color:var(--gold2);border-radius:999px;padding:10px 16px;cursor:pointer;font-weight:700;font-size:13px;}
+.b-add.on{background:var(--gold);color:var(--ink);}
+.b-promo{margin-top:16px;background:rgba(216,178,82,.1);border:1px solid rgba(216,178,82,.3);border-radius:12px;padding:14px 16px;color:var(--gold2);font-size:13.5px;text-align:center;}
+.b-foot{padding:16px 26px 24px;max-width:860px;margin:0 auto;width:100%;}
+.b-cta{width:100%;background:var(--gold);color:var(--ink);border:0;border-radius:14px;padding:18px;font-size:17px;font-weight:800;cursor:pointer;letter-spacing:.02em;}
+.b-ghost{width:100%;background:transparent;color:#cfc9ba;border:1px solid rgba(255,255,255,.18);border-radius:14px;padding:15px;font-size:14px;cursor:pointer;}
+.b-back{color:#8a8273;cursor:pointer;font-size:13px;font-weight:600;}
+.b-line{display:flex;justify-content:space-between;padding:14px 0;border-bottom:1px solid rgba(255,255,255,.09);}
+.b-tot{display:flex;justify-content:space-between;font-family:var(--serif);font-size:22px;padding:16px 0 6px;}
+.b-check{width:74px;height:74px;border-radius:50%;background:var(--gold);color:var(--ink);font-size:38px;display:flex;align-items:center;justify-content:center;margin:10px auto;}
+
+/* Toast */
+.toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(20px);background:var(--ink);color:var(--cream);padding:13px 20px;border-radius:12px;font-size:13.5px;opacity:0;pointer-events:none;transition:.25s;z-index:120;border:1px solid rgba(216,178,82,.3);}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
+.hidden{display:none !important;}
+#receipt{display:none;}
+@media print{ body * {visibility:hidden;} #receipt, #receipt * {visibility:visible;} #receipt{display:block;position:absolute;left:0;top:0;width:100%;} }
+.rc{width:280px;margin:0 auto;font-family:'Courier New',monospace;color:#000;font-size:12px;padding:10px;}
+.rc-h{text-align:center;font-family:Georgia,serif;font-size:22px;letter-spacing:.16em;font-weight:700;}
+.rc-sub{text-align:center;font-size:11px;margin-bottom:8px;}
+.rc-meta{text-align:center;font-size:11px;margin-bottom:10px;}
+.rc-t{width:100%;border-collapse:collapse;}
+.rc-t td{padding:2px 0;vertical-align:top;}
+.rc-line{border-top:1px dashed #000;margin:8px 0;}
+.rc-tot td{font-weight:700;border-top:1px solid #000;padding-top:4px;font-size:14px;}
+.rc-pay{margin-top:8px;font-size:11px;}
+.rc-legal{margin-top:12px;font-size:9px;text-align:center;line-height:1.4;}
+.login-bg{position:fixed;inset:0;z-index:200;background:radial-gradient(120% 90% at 50% 0%,#211a0f,#0c0a06);display:flex;align-items:center;justify-content:center;padding:20px;}
+.login-card{background:#16140e;border:1px solid #2c2a20;border-radius:18px;padding:30px 26px;width:100%;max-width:360px;color:var(--cream);}
+.login-wm{display:flex;align-items:center;gap:9px;justify-content:center;font-family:var(--serif);letter-spacing:.14em;font-size:26px;color:var(--cream);font-weight:400;}
+.login-sub{text-align:center;color:#8a8273;letter-spacing:.32em;font-size:10px;text-transform:uppercase;margin-top:4px;}
+.login-card .fld{display:flex;flex-direction:column;gap:5px;}
+.login-card .fld label{font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;color:#9b988f;}
+.login-card .fld input,.login-card .fld select{background:#0e0c08;border:1px solid #2c2a20;border-radius:9px;padding:11px;color:var(--cream);width:100%;box-sizing:border-box;font-size:14px;}
+.login-card .fld input:focus,.login-card .fld select:focus{outline:none;border-color:var(--gold);}
+@media(max-width:900px){.pos{grid-template-columns:1fr;height:auto;}.kpis{grid-template-columns:1fr 1fr;}.tiers{grid-template-columns:1fr;}}
+</style>
+</head>
+<body>
+<div id="app">
+  <aside class="side">
+    <div class="side-brand">
+      <svg width="22" height="17" viewBox="0 0 26 20" aria-hidden="true"><path d="M2 17 L4 6 L9 12 L13 4 L17 12 L22 6 L24 17 Z" fill="#d8b252"/></svg>
+      <div><div class="wm">KINGSTON</div><div class="sub">Comptoir</div></div>
+    </div>
+    <nav class="nav" id="nav">
+      <div class="nav-grp">Exploitation</div>
+      <div class="nav-item" data-view="dash"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg> Tableau de bord</div>
+      <div class="nav-item" data-view="pos"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="13" rx="2"/><path d="M7 21h10M9 17v4M15 17v4"/></svg> Caisse</div>
+      <div class="nav-item" data-view="borne"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="6" y="2" width="12" height="20" rx="2"/><path d="M10 18h4"/></svg> Borne</div>
+      <div class="nav-item" data-view="commandes"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg> Commandes</div>
+      <div class="nav-grp">Gestion</div>
+      <div class="nav-item" data-view="produits"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 7l9-4 9 4-9 4-9-4z"/><path d="M3 7v10l9 4 9-4V7"/></svg> Produits</div>
+      <div class="nav-item" data-view="stock"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 9h18M3 14h18"/><rect x="3" y="4" width="18" height="16" rx="2"/></svg> Stock (grammes)</div>
+      <div class="nav-item" data-view="fidelite"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3l2.5 5 5.5.8-4 3.9.9 5.5L12 21l-4.9-2.6.9-5.5-4-3.9 5.5-.8z"/></svg> Fidélité</div>
+      <div class="nav-item" data-view="journal"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 4h13a2 2 0 0 1 2 2v14H6a2 2 0 0 1-2-2z"/><path d="M8 8h7M8 12h7M8 16h4"/></svg> Journal des ventes</div>
+      <div class="nav-item" data-view="factu"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M6 2h9l5 5v15H6z"/><path d="M14 2v6h6M9 13h6M9 17h6"/></svg> Facturation</div>
+      <div class="nav-item" data-view="conformite"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3l7 3v5c0 4.5-3 8-7 10-4-2-7-5.5-7-10V6z"/><path d="M9 12l2 2 4-4"/></svg> Conformité</div>
+      <div class="nav-grp">Système</div>
+      <div class="nav-item" data-view="reglages"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 8 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H2a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 3.6 8a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H8a1.65 1.65 0 0 0 1-1.51V2a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V8a1.65 1.65 0 0 0 1.51 1H22a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg> Réglages</div>
+    </nav>
+    <div class="side-foot" id="sideFoot"><b>Lenny K.</b>Admin réseau · KINGSTON</div>
+  </aside>
+
+  <main class="main">
+    <header class="top">
+      <div class="top-l">
+        <div class="top-title" id="topTitle">Tableau de bord</div>
+        <span class="demo-pill">Prototype</span>
+      </div>
+      <div class="top-r">
+        <select class="boutique-sel" id="boutiqueSel">
+          <option>Aix-en-Provence</option>
+          <option>Marseille Prado</option>
+          <option>Avignon Centre</option>
+          <option>Réseau (toutes boutiques)</option>
+        </select>
+        <div class="role-badge"><span class="av">LK</span><div>Admin réseau<br><b>Lenny K.</b></div></div>
+      </div>
+    </header>
+    <section class="view" id="view"></section>
+  </main>
+</div>
+
+<div id="login-root"></div>
+<div id="modal-root"></div>
+<div id="receipt"></div>
+<div id="borne-root"></div>
+<div id="toast" class="toast"></div>
+
+<script>
+(function(){
+  "use strict";
+  var $=function(s){return document.querySelector(s);};
+  var view=$("#view"), modalRoot=$("#modal-root"), borneRoot=$("#borne-root"), toastEl=$("#toast");
+
+  // ---------- Données ----------
+  var products=[
+    {id:'p1',name:'Super BOOF',cat:'Fleurs',unit:'g',cbd:'18% CBD',tiers:[[2,5],[5,11],[10,20],[25,45]],onBorne:true,onWeb:true,
+      lots:[{lot:'BOOF-2604',g:70,exp:'04/2027',coa:'COA-1041'},{lot:'BOOF-2605',g:50,exp:'06/2027',coa:'COA-1062'}]},
+    {id:'p2',name:'Super Skunk',cat:'Fleurs',unit:'g',cbd:'15% CBD',tiers:[[2,5],[5,11],[10,20],[25,45]],onBorne:true,onWeb:true,
+      lots:[{lot:'SKNK-2603',g:80,exp:'03/2027',coa:'COA-0991'}]},
+    {id:'p3',name:'King #5.1',cat:'King',unit:'g',cbd:'22% CBD',tiers:[[2,12],[5,28],[10,52],[25,120]],onBorne:true,onWeb:true,
+      lots:[{lot:'KING-2602',g:45,exp:'02/2027',coa:'COA-0955'}]},
+    {id:'p4',name:'Tyson Paper',cat:'Accessoire',unit:'u',cbd:'Feuilles + tips',price:2,stockU:60,onBorne:true,onWeb:true},
+    {id:'p5',name:'Feuille Cloudz',cat:'Accessoire',unit:'u',cbd:'Feuilles slim',price:3.5,stockU:40,onBorne:true,onWeb:true},
+    {id:'p6',name:'Kleaner THC',cat:'Accessoire',unit:'u',cbd:'Nettoyant THC',price:15,stockU:12,onBorne:false,onWeb:true},
+    {id:'p8',name:'Feuille Elements Zushi',cat:'Accessoire',unit:'u',cbd:'Feuilles + tips',price:7,stockU:25,onBorne:true,onWeb:true},
+    {id:'p9',name:'Feuille element Phantom',cat:'Accessoire',unit:'u',cbd:'Feuilles slim',price:3,stockU:30,onBorne:true,onWeb:true},
+    {id:'p7',name:'Plateau Raw Gold',cat:'Collector',unit:'u',cbd:'Édition limitée',price:50,stockU:5,onBorne:true,onWeb:true},
+    {id:'p10',name:'Plateau Lemonade RAW',cat:'Collector',unit:'u',cbd:'Édition limitée',price:60,stockU:3,onBorne:true,onWeb:true},
+    {id:'p11',name:'Plateau Raw Hot DOG',cat:'Collector',unit:'u',cbd:'Édition limitée',price:60,stockU:2,onBorne:true,onWeb:true}
+  ];
+  var PRODUCT_IMG={
+    'Super BOOF':'https://kingston-cbd.fr/wp-content/uploads/2026/05/IMG_3303-683x1024.jpeg',
+    'Super Skunk':'https://kingston-cbd.fr/wp-content/uploads/2026/05/IMG_3300-683x1024.jpeg',
+    'King #5.1':'https://kingston-cbd.fr/wp-content/uploads/2026/04/IMG_1776-768x1024.jpeg',
+    'Tyson Paper':'https://kingston-cbd.fr/wp-content/uploads/2026/04/IMG_3240-1024x683.jpg',
+    'Feuille Cloudz':'https://kingston-cbd.fr/wp-content/uploads/2026/04/IMG_1324-768x1024.jpeg',
+    'Kleaner THC':'https://kingston-cbd.fr/wp-content/uploads/2026/04/4CD741EB-3A1F-4723-ABB6-0B7E1415D172-1024x730.jpeg',
+    'Feuille Elements Zushi':'https://kingston-cbd.fr/wp-content/uploads/2026/04/IMG_3250-1024x683.jpeg',
+    'Feuille element Phantom':'https://kingston-cbd.fr/wp-content/uploads/2026/04/BB7C2F5B-21BE-45E6-9FD6-BD938BA747D4-1024x683.jpeg',
+    'Plateau Raw Gold':'https://kingston-cbd.fr/wp-content/uploads/2026/04/EAC49747-3D58-44E8-B63F-61E7EF6A7598-990x1024.png',
+    'Plateau Lemonade RAW':'https://kingston-cbd.fr/wp-content/uploads/2026/04/DFE4AB2F-E3C5-4DE2-83B6-84628BDF3156-1024x989.png',
+    'Plateau Raw Hot DOG':'https://kingston-cbd.fr/wp-content/uploads/2026/04/615B60AF-B17A-457D-A6C9-F6E1D6B862B5-1005x1024.png'
+  };
+  var customers=[
+    {id:'c1',name:'Lenny K.',email:'lenny@kingston-cbd.fr',phone:'06 12 •• •• 31',points:240,tier:'Or'},
+    {id:'c2',name:'Sarah M.',email:'sarah@kingston-cbd.fr',phone:'06 •• •• •• 09',points:90,tier:'Argent'},
+    {id:'c3',name:'Karim B.',email:'karim@kingston-cbd.fr',phone:'07 •• •• •• 77',points:1350,tier:'Or'},
+    {id:'c4',name:'Julie P.',email:'julie@kingston-cbd.fr',phone:'06 •• •• •• 14',points:30,tier:'Bronze'}
+  ];
+  var invoices=[
+    {num:'KING-2026-0418',date:'29/05/2026 10:12',client:'Lenny K.',total:31,pay:'Carte Monetico'},
+    {num:'KING-2026-0419',date:'29/05/2026 10:40',client:'Comptoir',total:7,pay:'Espèces'},
+    {num:'KING-2026-0420',date:'29/05/2026 11:05',client:'Sarah M.',total:52,pay:'Carte Monetico'}
+  ];
+  var nextInvoice=421;
+  var boutiques=[
+    {name:'Aix-en-Provence',ca:1240,tickets:38,alertes:2,statut:'Ouverte'},
+    {name:'Marseille Prado',ca:2110,tickets:61,alertes:0,statut:'Ouverte'},
+    {name:'Avignon Centre',ca:880,tickets:24,alertes:1,statut:'Ouverte'},
+    {name:'Nîmes',ca:0,tickets:0,alertes:0,statut:'Fermée'}
+  ];
+
+  var st={view:'dash',cat:'Tout',cart:[],client:null,boutique:'Aix-en-Provence',user:null,redeemPts:0,coupon:null,posSearch:'',boutiqueId:'aix',compare:['aix','marseille'],jperiod:'today'};
+  // Coupons fidelite : remise fixe (EUR) pour un cout en points.
+  var COUPONS=[{e:10,p:750},{e:20,p:1350},{e:50,p:3000},{e:100,p:5250}];
+
+  // --- Client vers le serveur Comptoir (optionnel : repli sur données locales si absent) ---
+  var API={base:'',token:'',on:false,ptsPerEuro:1};
+  function ptsRate(){return (API&&API.ptsPerEuro)||1;}
+  function loadLoyaltyRate(){ if(!API.on)return; apiGet('/api/loyalty/status').then(function(s){ if(s&&s.pointsParEuro!=null){API.ptsPerEuro=s.pointsParEuro; if(st.view==='reglages'||st.view==='pos')render();} }).catch(function(){}); }
+  var LOCAL_SNAPSHOT=null;
+  function apiHeaders(){return {'content-type':'application/json','x-comptoir-token':API.token};}
+  function apiGet(path){return fetch(API.base+path,{headers:apiHeaders()}).then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.json();});}
+  function apiPost(path,body){return fetch(API.base+path,{method:'POST',headers:apiHeaders(),body:JSON.stringify(body)}).then(function(r){return r.json().catch(function(){return {};}).then(function(d){if(!r.ok)throw new Error(d.error||('HTTP '+r.status));return d;});});}
+  function apiDelete(path){return fetch(API.base+path,{method:'DELETE',headers:apiHeaders()}).then(function(r){return r.json().catch(function(){return {};}).then(function(d){if(!r.ok)throw new Error(d.error||('HTTP '+r.status));return d;});});}
+  // Convertit un produit renvoye par le serveur en produit local (photo, packs, desc, stock, perso).
+  function mapServerProduct(p){
+    var o={id:p.id,name:p.name,cat:p.cat,unit:p.unit,onBorne:true,onWeb:true,cbd:p.desc||p.cat,img:p.img||'',desc:p.desc||'',custom:!!p.custom};
+    if(p.vat!=null)o.vat=p.vat;
+    if(p.unit==='g'){o.tiers=p.tiers||[];o.stockG=p.stockG||0;o.lots=[{lot:'serveur',g:p.stockG||0,exp:'—',coa:'—'}];}
+    else{o.price=p.price;o.stockU=p.stockU||0;if(p.packs&&p.packs.length)o.packs=p.packs;}
+    return o;
+  }
+  function reloadProducts(cb){ if(!API.on){if(cb)cb();return;} apiGet('/api/products').then(function(d){ products=(d.products||[]).map(mapServerProduct); if(cb)cb(); if(st.view==='produits'||st.view==='pos')render(); }).catch(function(){if(cb)cb();}); }
+  function doApiConnect(){
+    API.base=(document.getElementById('rg-api-url').value||'').trim().replace(/\/$/,'');
+    API.token=(document.getElementById('rg-api-token').value||'').trim();
+    var resEl=document.getElementById('rg-api-res');
+    if(resEl)resEl.innerHTML='<span class="muted" style="font-size:12px">Connexion…</span>';
+    if(!LOCAL_SNAPSHOT)LOCAL_SNAPSHOT=JSON.parse(JSON.stringify(products));
+    fetch(API.base+'/api/health').then(function(r){return r.json();}).then(function(h){if(!h||!h.ok)throw new Error('réponse inattendue');return apiGet('/api/products');}).then(function(data){
+      products=(data.products||[]).map(mapServerProduct);
+      API.on=true;st.cart=[];st.client=null;render();loadLoyaltyRate();toast('Connecté au serveur — produits chargés depuis le moteur');
+    }).catch(function(e){API.on=false;var el=document.getElementById('rg-api-res');if(el)el.innerHTML='<span class="tag tag-low">Échec : '+(e.message||e)+'</span> <span class="muted" style="font-size:12px">— le serveur tourne-t-il ? (node comptoir-server.js)</span>';});
+  }
+  // Connexion automatique quand l'app est servie par le serveur Comptoir (meme origine).
+  function autoConnect(){
+    if(API.on)return;
+    API.token=(st.user&&st.user.token)||'';
+    if(!API.token)return;
+    API.base='';
+    if(!LOCAL_SNAPSHOT)LOCAL_SNAPSHOT=JSON.parse(JSON.stringify(products));
+    fetch('/api/health').then(function(r){return r.ok?r.json():null;}).then(function(h){
+      if(!h||!h.ok)throw new Error('pas de serveur');
+      return apiGet('/api/products');
+    }).then(function(data){
+      products=(data.products||[]).map(mapServerProduct);
+      API.on=true;render();loadLoyaltyRate();toast('Connecté au serveur — fidélité et produits en direct');
+    }).catch(function(){API.on=false;});
+  }
+  function finalizeSaleApi(method){
+    var items=st.cart.map(function(l){return l.grams?{productId:l.productId,grams:l.grams}:(l.packQty?{productId:l.productId,packQty:l.packQty,count:l.qty||1}:{productId:l.productId,qty:l.qty||1});});
+    var payload={items:items,payment:method};
+    if(st.client&&st.client.email)payload.customerRef=st.client.email;
+    if(st.coupon){payload.couponEur=st.coupon.e;payload.couponPoints=st.coupon.p;}
+    else if(st.redeemPts)payload.usePoints=st.redeemPts;
+    apiPost('/api/sales',payload).then(function(r){
+      var f=r.facture||{};var fid=r.fidelite;var m=r.montants||{};
+      var rcLines=(r.lignes||[]).map(function(l){return {name:l.produit,detail:l.detail,price:l.prix};});
+      var lines=rcLines.map(function(l){return '<div style="display:flex;justify-content:space-between;padding:5px 0;font-size:13px"><span>'+esc(l.name)+' <span class="muted">'+esc(l.detail||'')+'</span></span><b>'+eur(l.price)+'</b></div>';}).join('');
+      var ht=(m.totalHT!=null?m.totalHT:Math.round(f.total/1.2*100)/100), tva=(m.totalTVA!=null?m.totalTVA:Math.round((f.total-ht)*100)/100);
+      st.lastReceipt={num:f.numero,date:new Date().toLocaleString('fr-FR'),boutique:st.boutique,lines:rcLines,total:f.total,ht:ht,tva:tva,method:method,client:(fid&&fid.membre)?fid.membre:null,earned:(fid&&fid.pointsGagnes)||0,newBal:(fid&&fid.nouveauSolde!=null)?fid.nouveauSolde:null,disc:(m.remise||0),usedPts:(fid&&fid.pointsUtilises)||0};
+      st.cart=[];st.client=null;st.redeemPts=0;st.coupon=null;
+      var fidHtml;
+      if(fid&&fid.membre){
+        if(fid.nouveauSolde!=null){ fidHtml='<div style="background:var(--gold-soft);border-radius:10px;padding:10px;margin-top:12px;text-align:center;color:#7a5f1e;font-size:13px">'+(fid.pointsUtilises?'−'+fid.pointsUtilises+' pts utilisés · ':'')+'+'+fid.pointsGagnes+' pts · nouveau solde myCred <b>'+fid.nouveauSolde+'</b></div>'; }
+        else if(fid.erreur){ fidHtml='<div style="background:#fbeae6;border:1px solid #e7c4bb;border-radius:10px;padding:10px;margin-top:12px;color:#b4452f;font-size:12.5px;text-align:center">&#9888; Points NON appliqués : '+esc(fid.erreur)+'</div>'; }
+        else { fidHtml='<div class="muted" style="text-align:center;margin-top:12px;font-size:12.5px">Membre : '+esc(fid.membre)+'</div>'; }
+      } else { fidHtml='<div class="muted" style="text-align:center;margin-top:12px;font-size:12.5px">Client au comptoir</div>'; }
+      openModal('<div class="modal-h">Paiement accepté (serveur)</div><div class="modal-b"><div style="text-align:center;margin-bottom:14px"><div style="width:54px;height:54px;border-radius:50%;background:var(--green);color:#fff;display:flex;align-items:center;justify-content:center;font-size:28px;margin:0 auto 10px">✓</div><div class="muted" style="font-size:12px">Facture '+f.numero+' · '+method+' · empreinte '+(f.empreinte||'')+'</div></div>'+lines+((m.remise>0)?'<div style="display:flex;justify-content:space-between;font-size:13px;color:#7a5f1e;padding:4px 0"><span>Remise points</span><b>−'+eur(m.remise)+'</b></div>':'')+'<div style="display:flex;justify-content:space-between;border-top:1px solid var(--line);margin-top:8px;padding-top:10px;font-family:var(--serif);font-size:19px;font-weight:700"><span>Total</span><span>'+eur(f.total)+'</span></div>'+fidHtml+'<div style="display:flex;gap:10px;margin-top:16px"><button class="btn" style="flex:1" data-act="printticket">Imprimer le ticket</button><button class="btn btn-gold" style="flex:1" data-act="closemodal">Nouveau ticket</button></div></div>');
+      render();
+    }).catch(function(e){toast('Erreur serveur : '+(e.message||e));});
+  }
+  var addCat='Fleurs';
+
+  // ---------- Comptes & connexion par rôle ----------
+  var ACCOUNTS={
+    admin:{name:'Lenny K.',role:'admin',roleLabel:'Admin réseau',boutiqueId:null,token:'admin-token',initials:'LK',pass:'kingston'},
+    aix:{name:'Manager Aix',role:'manager',roleLabel:'Manager · Aix-en-Provence',boutiqueId:'aix',token:'aix-token',initials:'AX',pass:'kingston'},
+    marseille:{name:'Manager Marseille',role:'manager',roleLabel:'Manager · Marseille Prado',boutiqueId:'marseille',token:'marseille-token',initials:'MP',pass:'kingston'}
+  };
+  function boutiqueName(id){return {aix:'Aix-en-Provence',marseille:'Marseille Prado',avignon:'Avignon Centre'}[id]||id;}
+  function showLogin(){
+    document.getElementById('login-root').innerHTML='<div class="login-bg"><div class="login-card"><div class="login-wm">'+crown()+' KINGSTON</div><div class="login-sub">Comptoir</div>'+
+      '<div class="fld" style="margin:20px 0 12px"><label>Compte</label><select id="lg-user"><option value="admin">Lenny K. — Admin réseau</option><option value="aix">Manager — Aix-en-Provence</option><option value="marseille">Manager — Marseille Prado</option></select></div>'+
+      '<div class="fld" style="margin-bottom:16px"><label>Mot de passe</label><input id="lg-pass" type="password" placeholder="mot de passe"/></div>'+
+      '<button class="btn btn-gold" style="width:100%" data-act="login">Se connecter</button>'+
+      '<div id="lg-err" style="font-size:12px;margin-top:10px;text-align:center;color:#e0917a"></div>'+
+      '<div style="font-size:11px;margin-top:16px;text-align:center;color:#8a8273">Démo : mot de passe « kingston » pour chaque compte.</div>'+
+      '</div></div>';
+  }
+  function viewDashBoutique(){
+    var nm=boutiqueName(st.user.boutiqueId);var b=boutiques.find(function(x){return x.name===nm;})||{ca:0,tickets:0};var avg=b.tickets?b.ca/b.tickets:0;
+    return '<div class="vhead"><div><h1>Bonjour '+st.user.name+'</h1><p>Boutique '+nm+' · '+new Date().toLocaleDateString('fr-FR',{weekday:'long',day:'numeric',month:'long'})+'</p></div></div>'+
+      '<div class="net-note">'+crown('#b8902f')+' Tu vois uniquement les données de ta boutique. Le réseau et les autres boutiques ne te sont pas accessibles.</div>'+
+      '<div class="kpis">'+kpi("Chiffre d\'affaires (jour)",eur(b.ca),'')+kpi('Tickets',b.tickets,'')+kpi('Panier moyen',eur(avg),'')+kpi('Boutique',nm,'')+'</div>';
+  }
+
+  // ---------- Helpers ----------
+  function eur(n){return n.toLocaleString('fr-FR',{minimumFractionDigits:2,maximumFractionDigits:2})+' €';}
+  function pById(id){return products.find(function(p){return p.id===id;});}
+  // Stock PAR BOUTIQUE : on échange le stock courant des produits selon la ville active.
+  var BSTOCK={
+    aix:{ p1:{lots:[{lot:'BOOF-2604',g:70,exp:'04/2027',coa:'COA-1041'},{lot:'BOOF-2605',g:50,exp:'06/2027',coa:'COA-1062'}]}, p2:{lots:[{lot:'SKNK-2603',g:80,exp:'03/2027',coa:'COA-0991'}]}, p3:{lots:[{lot:'KING-2602',g:45,exp:'02/2027',coa:'COA-0955'}]}, p4:{units:60}, p5:{units:40}, p6:{units:12}, p8:{units:25}, p9:{units:30}, p7:{units:5}, p10:{units:3}, p11:{units:2} },
+    marseille:{ p1:{lots:[{lot:'BOOF-M01',g:120,exp:'05/2027',coa:'COA-2001'}]}, p3:{lots:[{lot:'KING-M01',g:90,exp:'04/2027',coa:'COA-2002'}]}, p4:{units:100}, p5:{units:20}, p7:{units:8}, p10:{units:4} },
+    avignon:{ p1:{lots:[{lot:'BOOF-A01',g:40,exp:'03/2027',coa:'COA-3001'}]}, p4:{units:25}, p9:{units:15} }
+  };
+  var BQNAME={aix:'Aix-en-Provence',marseille:'Marseille Prado',avignon:'Avignon Centre'};
+  function bIdOf(name){return {'Aix-en-Provence':'aix','Marseille Prado':'marseille','Avignon Centre':'avignon'}[name]||null;}
+  function loadStock(bId){var b=BSTOCK[bId]||{};products.forEach(function(p){var s=b[p.id];if(p.unit==='g'){p.lots=(s&&s.lots)?JSON.parse(JSON.stringify(s.lots)):[];}else{p.stockU=(s&&typeof s.units==='number')?s.units:0;}});}
+  function saveStock(bId){if(!bId)return;BSTOCK[bId]=BSTOCK[bId]||{};products.forEach(function(p){if(p.unit==='g'){BSTOCK[bId][p.id]={lots:JSON.parse(JSON.stringify(p.lots||[]))};}else{BSTOCK[bId][p.id]={units:p.stockU||0};}});}
+  function stockOfB(bId,p){var s=(BSTOCK[bId]||{})[p.id];if(p.unit==='g'){return (s&&s.lots?s.lots.reduce(function(a,l){return a+l.g;},0):0)+' g';}return (s&&typeof s.units==='number'?s.units:0)+' u';}
+  function compareSection(){
+    saveStock(st.boutiqueId);
+    var checks=Object.keys(BSTOCK).map(function(id){var on=st.compare.indexOf(id)>=0;return '<button class="toggle '+(on?'on':'')+'" data-act="cmpbq" data-b="'+id+'">'+BQNAME[id]+'</button>';}).join(' ');
+    var sel=st.compare.filter(function(id){return BSTOCK[id];});
+    if(!sel.length){return '<div class="card" style="padding:16px"><div style="margin-bottom:10px">'+checks+'</div><div class="muted">Sélectionne au moins une boutique à comparer.</div></div>';}
+    var head='<tr><th>Produit</th>'+sel.map(function(id){return '<th>'+BQNAME[id]+'</th>';}).join('')+'</tr>';
+    var rows=products.map(function(p){return '<tr><td><b>'+esc(p.name)+'</b> <span class="muted" style="font-size:11px">'+p.cat+'</span></td>'+sel.map(function(id){return '<td>'+stockOfB(id,p)+'</td>';}).join('')+'</tr>';}).join('');
+    return '<div class="card" style="padding:16px"><div style="margin-bottom:12px">'+checks+'</div><table class="tbl"><thead>'+head+'</thead><tbody>'+rows+'</tbody></table></div>';
+  }
+  loadStock('aix');
+  function totalStockG(p){return (p.lots||[]).reduce(function(s,l){return s+l.g;},0);}
+  function cartBrut(){return Math.round(st.cart.reduce(function(s,l){return s+l.price;},0)*100)/100;}
+  function redeemEur(){return (st.client&&st.redeemPts)?Math.min(cartBrut(),Math.round(st.redeemPts)/100):0;}
+  function couponEur(){return st.coupon?Math.min(cartBrut(),st.coupon.e):0;}
+  function discountEur(){return st.coupon?couponEur():redeemEur();}
+  function cartTotal(){return Math.round((cartBrut()-discountEur())*100)/100;}
+  function entryPrice(p){return p.unit==='g'?p.tiers[0][1]:p.price;}
+  function crown(c){return '<svg width="16" height="12" viewBox="0 0 26 20" aria-hidden="true" style="vertical-align:-1px"><path d="M2 17 L4 6 L9 12 L13 4 L17 12 L22 6 L24 17 Z" fill="'+(c||'#d8b252')+'"/></svg>';}
+  function toast(m){toastEl.textContent=m;toastEl.className='toast show';setTimeout(function(){toastEl.className='toast';},2200);}
+  function esc(s){return (''+s).replace(/&/g,'&amp;').replace(/</g,'&lt;');}
+
+  // ---------- Clients réels du site (via le serveur → myCred) ----------
+  var remoteCustomers=[];
+  function tierOf(p){p=p||0;return p>=1000?'Or':(p>=200?'Argent':'Bronze');}
+  function fetchCustomers(q,cb,errcb){apiGet('/api/loyalty/customers?search='+encodeURIComponent(q||'')).then(function(d){remoteCustomers=(d&&d.customers)||[];cb(remoteCustomers,d);}).catch(function(e){if(errcb)errcb(e);});}
+  function custRowsHtml(list,actName){if(!list.length)return '<div class="muted" style="padding:14px">Aucun client trouvé.</div>';return list.map(function(c,i){return '<div class="cust-row" data-act="'+actName+'" data-i="'+i+'"><div><b>'+esc(c.name||c.email)+'</b><div class="muted" style="font-size:12px">'+esc(c.email||'')+(c.phone?' · '+esc(c.phone):'')+'</div></div><div style="color:var(--gold);font-weight:700">'+Math.round(c.points||0)+' pts</div></div>';}).join('');}
+
+  // ---------- Vues ----------
+  var titles={dash:'Tableau de bord',pos:'Caisse',borne:'Borne',commandes:'Commandes — Centre de commande',journal:'Journal des ventes — Borne & Caisse',produits:'Produits',stock:'Stock (grammes & lots)',fidelite:'Fidélité — Kingston Club',factu:'Facturation',reglages:'Réglages — Fidélité myCred'};
+
+  function viewDash(){
+    if(st.user&&st.user.role!=='admin'){return viewDashBoutique();}
+    var totCA=boutiques.reduce(function(s,b){return s+b.ca;},0);
+    var totTk=boutiques.reduce(function(s,b){return s+b.tickets;},0);
+    var avg=totTk?totCA/totTk:0;
+    return '<div class="vhead"><div><h1>Bonjour Lenny</h1><p>Vue réseau · '+new Date().toLocaleDateString('fr-FR',{weekday:'long',day:'numeric',month:'long'})+'</p></div></div>'+
+    '<div class="net-note">'+crown('#b8902f')+' Tu vois l\'ensemble du réseau. Chaque franchisé, lui, ne voit que sa propre boutique (isolation des données).</div>'+
+    '<div class="kpis">'+
+      kpi("Chiffre d'affaires (jour)",eur(totCA),'+12% vs hier')+
+      kpi('Tickets',totTk,'4 boutiques')+
+      kpi('Panier moyen',eur(avg),'')+
+      kpi('Membres Club',customers.length+' · 1 720 pts','Or, Argent, Bronze')+
+    '</div>'+
+    '<div class="card"><table class="tbl"><thead><tr><th>Boutique</th><th>CA du jour</th><th>Tickets</th><th>Alertes stock</th><th>Statut</th></tr></thead><tbody>'+
+    boutiques.map(function(b){return '<tr><td><b>'+b.name+'</b></td><td>'+eur(b.ca)+'</td><td>'+b.tickets+'</td><td>'+(b.alertes?'<span class="tag tag-low">'+b.alertes+' à réappro</span>':'<span class="tag tag-ok">OK</span>')+'</td><td>'+(b.statut==='Ouverte'?'<span class="tag tag-ok">Ouverte</span>':'<span class="muted">Fermée</span>')+'</td></tr>';}).join('')+
+    '</tbody></table></div>';
+  }
+  function kpi(l,v,d){return '<div class="card kpi"><div class="lbl">'+l+'</div><div class="val">'+v+'</div>'+(d?'<div class="dlt">'+d+'</div>':'')+'</div>';}
+
+  function posGrid(){
+    var q=(st.posSearch||'').toLowerCase();
+    var html=products.filter(function(p){return (st.cat==='Tout'||p.cat===st.cat)&&(!q||p.name.toLowerCase().indexOf(q)>=0);}).map(function(p){
+      var stock=p.unit==='g'?totalStockG(p)+' g':p.stockU+' u';
+      var out=p.unit==='g'?totalStockG(p)<=0:p.stockU<=0;
+      return '<div class="pcard '+(out?'dis':'')+'" data-act="'+(out?'':'pick')+'" data-id="'+p.id+'">'+
+        '<div class="pc-img" style="background-image:url(\''+(p.img||PRODUCT_IMG[p.name]||'')+'\')"></div>'+
+        '<div class="pc-cat">'+p.cat+'</div><div class="pc-name">'+esc(p.name)+'</div><div class="pc-cbd">'+esc(p.cbd)+'</div>'+
+        '<div class="pc-foot"><span class="pc-price">'+(p.unit==='g'?'dès ':'')+eur(entryPrice(p))+'</span><span class="pc-stock">'+(out?'Épuisé':stock)+'</span></div></div>';
+    }).join('');
+    return html||'<div class="tk-empty" style="grid-column:1/-1">Aucun produit pour cette recherche.</div>';
+  }
+  function viewPos(){
+    var cats=['Tout','Fleurs','King','Accessoire','Collector'];
+    products.forEach(function(p){if(p.cat&&cats.indexOf(p.cat)<0)cats.push(p.cat);});
+    var grid=posGrid();
+    var lines=st.cart.length?st.cart.map(function(l,i){return '<div class="tk-line"><div><div class="tl-name">'+l.name+'</div><div class="tl-det">'+l.detail+'</div></div><div class="tl-r"><b>'+eur(l.price)+'</b><button class="tk-x" data-act="rmline" data-i="'+i+'">×</button></div></div>';}).join(''):'<div class="tk-empty">Touche un produit pour commencer le ticket.</div>';
+    var clientBox=st.client?'<div class="mem"><div><div style="font-weight:600">'+st.client.name+'</div><div style="font-size:11px;color:#a59c88">'+st.client.tier+' · solde myCred</div></div><div class="pts">'+st.client.points+' pts</div></div>':'<button class="btn" style="width:100%" data-act="pickclient">+ Associer un membre fidélité</button>';
+    var rewardBox='';
+    if(st.client&&cartBrut()>0){
+      if(st.coupon){
+        rewardBox='<div class="tk-redeem"><span>Coupon −'+eur(st.coupon.e)+' ('+st.coupon.p+' pts)</span><button data-act="rmcoupon">Annuler</button></div>';
+      }else{
+        var av=COUPONS.filter(function(c){return st.client.points>=c.p&&c.e<=cartBrut();});
+        if(av.length){
+          rewardBox='<div style="margin-top:8px"><div class="muted" style="font-size:11px;margin-bottom:5px">Coupons fidélité ('+st.client.points+' pts dispo)</div><div style="display:flex;gap:6px;flex-wrap:wrap">'+av.map(function(c){return '<button data-act="applycoupon" data-e="'+c.e+'" data-p="'+c.p+'" style="flex:1;min-width:64px;background:#f5edd8;color:#7a5f1e;border:1px solid #e0c98a;border-radius:9px;padding:7px 4px;font-weight:700;font-size:12px;cursor:pointer">−'+eur(c.e)+'<div style="font-weight:400;font-size:10px">'+c.p+' pts</div></button>';}).join('')+'</div></div>';
+        }else if(st.client.points<COUPONS[0].p){
+          rewardBox='<div class="muted" style="font-size:11px;margin-top:6px">Pas assez de points pour un coupon (min '+COUPONS[0].p+' pts).</div>';
+        }else{
+          rewardBox='<div class="muted" style="font-size:11px;margin-top:6px">Coupons disponibles dès '+eur(COUPONS[0].e)+' d\'achat.</div>';
+        }
+      }
+    }
+    return '<div class="pos"><div class="pos-left">'+
+      '<div class="cats">'+cats.map(function(c){return '<button class="cat '+(c===st.cat?'on':'')+'" data-act="poscat" data-c="'+c+'">'+c+'</button>';}).join('')+'</div>'+
+      '<input id="pos-search" class="pos-search" placeholder="Rechercher un produit…" value="'+esc(st.posSearch||'')+'"/>'+'<div class="pgrid">'+grid+'</div></div>'+
+      '<div class="ticket"><div class="tk-head"><h3>Ticket</h3><span class="muted" style="font-size:12px">'+st.boutique+'</span></div>'+
+      '<div class="tk-client">'+clientBox+rewardBox+'</div>'+
+      '<div class="tk-lines">'+lines+'</div>'+
+      '<div class="tk-foot"><div class="tk-tot"><span class="t1">Total TTC</span><span class="t2">'+eur(cartTotal())+'</span></div>'+
+      '<div class="tk-tva">dont TVA 20% : '+eur(Math.round((cartTotal()-cartTotal()/1.2)*100)/100)+' · HT : '+eur(Math.round(cartTotal()/1.2*100)/100)+'</div>'+
+      '<div class="tk-pts">'+(st.client?'Le membre gagnera '+Math.round(cartTotal()*ptsRate())+' points':'+ '+Math.round(cartTotal()*ptsRate())+' points avec un compte membre')+'</div>'+
+      '<div class="tk-pay"><button class="btn btn-gold" data-act="pay" data-m="Carte Monetico">Carte Monetico</button><button class="btn" data-act="pay" data-m="Espèces">Espèces</button></div></div></div></div>';
+  }
+
+  function viewProduits(){
+    var rows=products.map(function(p){
+      var stock=p.unit==='g'?(totalStockG(p)+' g'):((p.stockU||0)+' u');
+      var detail=p.unit==='g'
+        ? 'Paliers : '+(p.tiers||[]).map(function(t){return t[0]+' g = '+eur(t[1]);}).join(' · ')
+        : eur(p.price)+' / unité'+((p.packs&&p.packs.length)?'  ·  Packs : '+p.packs.map(function(k){return 'x'+k.qty+' = '+eur(k.price);}).join(' · '):'');
+      var thumb=p.img
+        ? '<div style="width:48px;height:48px;border-radius:9px;background:#15110a center/cover no-repeat;background-image:url(\''+esc(p.img)+'\');flex:0 0 48px"></div>'
+        : '<div style="width:48px;height:48px;border-radius:9px;background:var(--ink);flex:0 0 48px;display:flex;align-items:center;justify-content:center;color:var(--muted)">'+(p.unit==='g'?'g':'u')+'</div>';
+      var actions=p.custom
+        ? '<button class="toggle" data-act="editprod" data-id="'+p.id+'">Modifier</button><button class="toggle" data-act="delprod" data-id="'+p.id+'" style="color:#b4452f;border-color:#e7c4bb">Supprimer</button>'
+        : '<span class="tag" style="font-size:10.5px">catalogue de base</span>';
+      return '<div class="prow" style="gap:12px"><div style="display:flex;gap:12px;align-items:center;flex:1;min-width:220px">'+thumb+'<div><div style="font-weight:700">'+esc(p.name)+'</div><div class="muted" style="font-size:11.5px">'+esc(p.cat)+' · '+stock+' en stock</div><div class="muted" style="font-size:11px;margin-top:2px">'+detail+'</div></div></div>'+
+        '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">'+actions+'</div></div>';
+    }).join('');
+    var note=API.on?'':'<div class="net-note" style="margin-bottom:14px">'+crown('#b8902f')+' Connecte le serveur (Réglages) pour ajouter des produits qui se sauvegardent et apparaissent sur la borne.</div>';
+    return '<div class="vhead"><div><h1>Produits</h1><p>Ton catalogue. Les produits que tu ajoutes ici sont sauvegardés et apparaissent en caisse ET sur la borne.</p></div>'+(API.on?'<button class="btn btn-gold" data-act="openprod">+ Ajouter un produit</button>':'')+'</div>'+
+      note+'<div class="card">'+(rows||'<div class="muted" style="padding:14px">Aucun produit pour le moment.</div>')+'</div>';
+  }
+
+  function viewStock(){
+    var fleurs=products.filter(function(p){return p.unit==='g';});
+    var acc=products.filter(function(p){return p.unit==='u';});
+    var cards=fleurs.map(function(p){
+      var tot=totalStockG(p);var low=tot<30;
+      var lots=(p.lots||[]).map(function(l){return '<tr><td><b>'+l.lot+'</b></td><td>'+l.g+' g</td><td>'+l.exp+'</td><td class="muted">'+l.coa+'</td></tr>';}).join('');
+      return '<div class="card" style="padding:16px"><div style="display:flex;justify-content:space-between;align-items:center"><div><div style="font-family:var(--serif);font-size:17px;font-weight:700">'+p.name+'</div><div class="muted" style="font-size:12px">'+p.cat+' · '+p.cbd+'</div></div><span class="tag '+(low?'tag-low':'tag-ok')+'">'+tot+' g'+(low?' · bas':'')+'</span></div>'+
+        '<div class="bar"><i style="width:'+Math.min(100,tot/2)+'%"></i></div>'+
+        '<table class="lots"><thead><tr><th>Lot</th><th>Quantité</th><th>Péremption</th><th>COA</th></tr></thead><tbody>'+lots+'</tbody></table></div>';
+    }).join('');
+    var accRows=acc.map(function(p){var low=p.stockU<15;return '<tr><td><b>'+p.name+'</b></td><td>'+p.cat+'</td><td>'+p.stockU+' u</td><td>'+(low?'<span class="tag tag-low">à réappro</span>':'<span class="tag tag-ok">OK</span>')+'</td></tr>';}).join('');
+    return '<div class="vhead"><div><h1>Stock — '+(BQNAME[st.boutiqueId]||st.boutique)+'</h1><p>Stock de la boutique sélectionnée (change la ville en haut à droite). Fleurs au gramme, par lot, avec péremption et COA.</p></div><div style="display:flex;gap:8px"><button class="btn" data-act="restockall">Réappro. tout</button><button class="btn btn-gold" data-act="recept">+ Réceptionner un lot</button></div></div>'+
+    '<div class="stock-grid">'+cards+'</div>'+
+    '<h3 style="font-family:var(--serif);margin:22px 0 10px">Accessoires & collectors</h3><div class="card"><table class="tbl"><thead><tr><th>Produit</th><th>Catégorie</th><th>Stock</th><th>Statut</th></tr></thead><tbody>'+accRows+'</tbody></table></div>'+
+    '<h3 style="font-family:var(--serif);margin:26px 0 10px">Comparatif multi‑boutiques</h3>'+compareSection();
+  }
+
+  function viewFidelite(){
+    var tiers='<div class="tiers">'+
+      tierCard('Bronze','#a9743f','0 → 199 pts')+
+      tierCard('Argent','#9aa0a6','200 → 999 pts')+
+      tierCard('Or','#d8b252','1000 pts et +')+'</div>';
+    var head='<div class="vhead"><div><h1>Kingston Club</h1><p>Règle : 1 € dépensé = 1 point. Parrainage = +1350 pts. Points utilisables en caisse et sur la borne.</p></div></div>';
+    if(API.on){
+      setTimeout(loadFidelite,0);
+      return head+tiers+
+        '<div class="card" style="padding:14px">'+
+          '<input id="fid-search" placeholder="Rechercher un client du site (nom, e-mail, téléphone)…" value="'+esc(st.fidQ||'')+'" style="width:100%;background:var(--ink);border:1px solid var(--line);border-radius:10px;padding:11px 13px;color:var(--cream);margin-bottom:10px"/>'+
+          '<div id="fid-list"><div class="muted" style="padding:14px">Chargement des clients de ton site…</div></div>'+
+        '</div>';
+    }
+    var rows=customers.map(function(c){var w=Math.min(100,c.points/15);return '<tr><td><b>'+c.name+'</b></td><td class="muted">'+c.phone+'</td><td><b>'+c.points+'</b> pts<div class="bar" style="width:120px"><i style="width:'+w+'%"></i></div></td><td><span class="tag tag-g">'+c.tier+'</span></td></tr>';}).join('');
+    return head+tiers+
+    '<div class="net-note" style="margin:0 0 14px">'+crown('#b8902f')+' Liste de démonstration. Connecte le serveur (Réglages) pour afficher les vrais clients de ton site.</div>'+
+    '<div class="card"><table class="tbl"><thead><tr><th>Membre</th><th>Téléphone</th><th>Points</th><th>Palier</th></tr></thead><tbody>'+rows+'</tbody></table></div>';
+  }
+  var fidList=[], fidTarget=null;
+  function loadFidelite(){
+    if(!document.getElementById('fid-list'))return;
+    fetchCustomers(st.fidQ,function(list){
+      fidList=list;
+      var box=document.getElementById('fid-list'); if(!box)return;
+      var rows=list.map(function(c,i){var w=Math.min(100,(c.points||0)/15);return '<tr><td><b>'+esc(c.name||c.email)+'</b><div class="muted" style="font-size:11px">'+esc(c.email||'')+'</div></td><td class="muted">'+esc(c.phone||'—')+'</td><td><b>'+Math.round(c.points||0)+'</b> pts<div class="bar" style="width:120px"><i style="width:'+w+'%"></i></div></td><td><span class="tag tag-g">'+tierOf(c.points)+'</span></td><td style="text-align:right"><button class="toggle" data-act="fidadjust" data-i="'+i+'">Ajuster les points</button></td></tr>';}).join('');
+      box.innerHTML='<table class="tbl"><thead><tr><th>Client</th><th>Téléphone</th><th>Points</th><th>Palier</th><th></th></tr></thead><tbody>'+(rows||'<tr><td colspan="5" class="muted" style="padding:14px">Aucun client trouvé.</td></tr>')+'</tbody></table>';
+    },function(e){
+      var box=document.getElementById('fid-list'); if(!box)return;
+      box.innerHTML='<div class="tag tag-low" style="margin:10px;display:inline-block">Liste indisponible ('+esc(e.message||e)+')</div><div class="muted" style="font-size:12px;padding:6px 2px">Mets à jour le plugin « Comptoir ↔ myCred » sur ton site puis relance le serveur.</div>';
+    });
+  }
+  function fidAdjustModal(c){
+    fidTarget=c;
+    openModal('<div class="modal-h">Ajuster les points</div><div class="modal-b">'+
+      '<div style="margin-bottom:12px"><b>'+esc(c.name||c.email)+'</b><div class="muted" style="font-size:12px">'+esc(c.email||'')+' · solde actuel : <b>'+Math.round(c.points||0)+' pts</b></div></div>'+
+      '<div class="fld"><label>Nombre de points</label><input id="fid-amt" type="number" min="1" step="1" value="100" style="width:150px"/></div>'+
+      '<div id="fid-amsg" class="muted" style="font-size:12px;min-height:16px;margin-top:8px"></div>'+
+      '<div style="display:flex;gap:10px;margin-top:14px"><button class="btn btn-gold" style="flex:1" data-act="fidcredit">+ Ajouter</button><button class="btn" style="flex:1;color:#b4452f;border-color:#e7c4bb" data-act="fiddebit">− Retirer</button></div>'+
+      '</div>');
+  }
+  function tierCard(n,c,t){return '<div class="card tier"><div class="dot" style="background:'+c+'"></div><div class="nm">'+n+'</div><div class="th">'+t+'</div></div>';}
+
+  function viewFactu(){
+    var rows=invoices.slice().reverse().map(function(f){
+      var statut=f.total<0?'<span class="tag tag-g">Avoir</span>':(f.refunded?'<span class="tag tag-low">Remboursée</span>':'<span class="tag tag-ok">Émise</span>');
+      var action=(f.total>=0&&!f.refunded&&f.lines)?'<button class="toggle" data-act="refund" data-num="'+f.num+'" style="color:#b4452f;border-color:#e7c4bb">Rembourser</button>':'';
+      return '<tr><td><b>'+f.num+'</b></td><td class="muted">'+f.date+'</td><td>'+esc(f.client)+'</td><td>'+f.pay+'</td><td>'+eur(f.total)+'</td><td>'+statut+'</td><td style="text-align:right">'+action+'</td></tr>';
+    }).join('');
+    return '<div class="vhead"><div><h1>Facturation</h1><p>Numérotation séquentielle et inaltérable (conformité fiscale). Aucune facture ne peut être supprimée, seulement corrigée.</p></div><button class="btn" data-act="exportfec">Exporter (FEC)</button></div>'+
+    '<div class="card"><table class="tbl"><thead><tr><th>N° facture</th><th>Date</th><th>Client</th><th>Paiement</th><th>Montant</th><th>Statut</th><th></th></tr></thead><tbody>'+rows+'</tbody></table></div>';
+  }
+
+  function viewBorne(){
+    return '<div class="vhead"><div><h1>Borne libre-service</h1><p>La borne en boutique, style Burger King : catégories, fiches produit (arômes, terpènes, goût), panier modifiable, fidélité et paiement Monetico.</p></div></div>'+
+    '<div class="card" style="padding:40px;text-align:center">'+
+    '<div style="font-family:var(--serif);font-size:22px;margin-bottom:6px">Mode borne</div>'+
+    '<p class="muted" style="max-width:460px;margin:0 auto 22px">Lance la borne en plein écran pour tester le parcours client complet, exactement comme il s\'affichera sur la borne physique.</p>'+
+    '<button class="btn btn-gold btn-lg" data-act="openborne">Ouvrir la borne (plein écran)</button></div>';
+  }
+
+  // ---------- Terminal de paiement (TPE) via le pont local ----------
+  var PONT_URL='http://localhost:3002';
+  function tpeFetch(path,opts){return fetch(PONT_URL+path,opts).then(function(r){return r.json();});}
+  function tpeReadForm(){var m=(document.getElementById('tpe-mode')||{}).value||'simulation';var body={mode:m};if(m==='ip'){body.ip=((document.getElementById('tpe-ip')||{}).value||'').trim();body.tcpPort=parseInt((document.getElementById('tpe-port')||{}).value,10)||8888;}if(m==='serial'){body.serialPort=(document.getElementById('tpe-serial')||{}).value||'';}return body;}
+  function tpeApply(){return tpeFetch('/config',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(tpeReadForm())});}
+  function tpeToggle(){var m=(document.getElementById('tpe-mode')||{}).value;var ipb=document.getElementById('tpe-ip-box'),sb=document.getElementById('tpe-serial-box');if(ipb)ipb.style.display=(m==='ip')?'flex':'none';if(sb)sb.style.display=(m==='serial')?'block':'none';}
+  function tpeShow(html,ok){var r=document.getElementById('tpe-res');if(r)r.innerHTML='<span class="tag '+(ok?'tag-ok':'tag-low')+'" style="display:inline-block">'+esc(html)+'</span>';}
+  function isPrivateIp(ip){ip=(ip||'').trim();return /^10\./.test(ip)||/^192\.168\./.test(ip)||/^172\.(1[6-9]|2[0-9]|3[01])\./.test(ip)||/^127\./.test(ip);}
+  function tpeInit(){
+    var badge=document.getElementById('tpe-state'); if(!badge)return;
+    tpeFetch('/health').then(function(h){ if(h&&h.ok){badge.className='tag tag-ok';badge.textContent='Pont actif';} else throw 0; })
+      .catch(function(){ badge.className='tag tag-low'; badge.textContent='Pont non démarré'; var r=document.getElementById('tpe-res'); if(r&&!r.innerHTML)r.innerHTML='<span class="muted" style="font-size:12px">Lance « lancer-pont-paiement.command » pour activer le terminal.</span>'; });
+    tpeFetch('/config').then(function(c){ if(!c)return; var ms=document.getElementById('tpe-mode'); if(ms&&c.mode)ms.value=c.mode; var ip=document.getElementById('tpe-ip'); if(ip&&c.ip)ip.value=c.ip; var po=document.getElementById('tpe-port'); if(po&&c.tcpPort)po.value=c.tcpPort; tpeToggle(); }).catch(function(){});
+  }
+  function loyInit(){
+    if(!API.on){var b0=document.getElementById('loy-mode');if(b0){b0.className='tag tag-low';b0.textContent='Hors ligne';}return;}
+    apiGet('/api/loyalty/status').then(function(s){
+      if(s&&s.pointsParEuro!=null){API.ptsPerEuro=s.pointsParEuro;var r=document.getElementById('rg-rule');if(r)r.value=s.pointsParEuro;}
+      var b=document.getElementById('loy-mode');if(b){var prod=/production/i.test((s&&s.mode)||'');b.className='tag '+(prod?'tag-ok':'tag-low');b.textContent=prod?'Relié à ton myCred (réel)':'Mode démo (points fictifs)';}
+    }).catch(function(){var b=document.getElementById('loy-mode');if(b){b.className='tag tag-low';b.textContent='Serveur injoignable';}});
+  }
+  function viewReglages(){
+    setTimeout(tpeInit,0);setTimeout(loyInit,0);
+    var apiStatus=API.on?'<span class="tag tag-ok">Connecté · '+API.base+'</span>':'<span class="tag tag-low">Hors ligne (données locales)</span>';
+    return '<div class="vhead"><div><h1>Réglages</h1><p>Branche l\'application sur le vrai serveur Comptoir, et relie la fidélité à ton myCred.</p></div></div>'+
+      '<div class="card" style="padding:18px;max-width:660px;margin-bottom:16px"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px"><b style="font-family:var(--serif);font-size:16px">Serveur Comptoir (moteur)</b>'+apiStatus+'</div>'+
+        '<div style="display:flex;gap:12px;margin-bottom:14px;flex-wrap:wrap"><div class="fld" style="flex:1;min-width:200px"><label>Adresse du serveur</label><input id="rg-api-url" value="'+(API.base||'http://localhost:3000')+'"/></div><div class="fld" style="width:170px"><label>Jeton (rôle)</label><input id="rg-api-token" value="'+(API.token||'aix-token')+'"/></div></div>'+
+        '<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">'+(API.on?'<button class="btn" data-act="apidisconnect">Se déconnecter</button>':'<button class="btn btn-gold" data-act="apiconnect">Connecter au serveur</button>')+'<span class="muted" style="font-size:12px">Lance d\'abord  node comptoir-server.js  sur ta machine.</span></div>'+
+        '<div id="rg-api-res" style="margin-top:12px"></div>'+
+      '</div>'+
+      '<div class="card" style="padding:18px;max-width:660px"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px"><b style="font-family:var(--serif);font-size:16px">Fidélité myCred</b><span id="loy-mode" class="tag tag-low">Vérification…</span></div>'+
+        '<div class="fld" style="margin-bottom:12px"><label>Adresse du site WordPress</label><input id="rg-url" value="https://kingston-cbd.fr"/></div>'+
+        '<div style="display:flex;gap:12px;margin-bottom:14px;flex-wrap:wrap"><div class="fld" style="flex:1;min-width:180px"><label>Type de points myCred</label><input id="rg-type" value="mycred_default"/></div><div class="fld" style="width:160px"><label>Points par € dépensé</label><input id="rg-rule" type="number" value="'+ptsRate()+'" step="0.5" min="0"/></div></div>'+
+        '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><button class="btn btn-gold" data-act="saverate">Enregistrer le taux</button><button class="btn" data-act="testconn">Tester la connexion</button><span class="muted" style="font-size:12px">La clé secrète reste sur le serveur — jamais saisie ici.</span></div>'+
+        '<div id="rg-res" style="margin-top:14px"></div>'+
+      '</div>'+
+      '<div class="card" id="tpe-card" style="padding:18px;max-width:660px;margin-top:16px"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px"><b style="font-family:var(--serif);font-size:16px">Terminal de paiement (TPE)</b><span id="tpe-state" class="tag tag-low">Pont non démarré</span></div>'+
+        '<div class="fld" style="margin-bottom:12px"><label>Type de connexion</label><select id="tpe-mode"><option value="simulation">Simulation (sans terminal)</option><option value="ip">Réseau / IP — recommandé</option><option value="serial">USB / série</option></select></div>'+
+        '<div id="tpe-ip-box" style="display:none;gap:12px;margin-bottom:12px"><div class="fld" style="flex:1"><label>Adresse IP du terminal</label><input id="tpe-ip" placeholder="ex : 192.168.1.50"/></div><div class="fld" style="width:120px"><label>Port</label><input id="tpe-port" value="8888"/></div></div>'+
+        '<div id="tpe-serial-box" style="display:none;margin-bottom:12px"><div class="fld"><label>Port du terminal (USB / série)</label><div style="display:flex;gap:8px"><select id="tpe-serial" style="flex:1"><option value="">— détecter —</option></select><button class="btn" data-act="tpedetect">Détecter</button></div></div></div>'+
+        '<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><button class="btn" data-act="tpetest">Tester</button><button class="btn btn-gold" data-act="tpesave">Activer</button><span class="muted" style="font-size:12px">Aucun fichier à éditer — tout se règle ici.</span></div>'+
+        '<div id="tpe-res" style="margin-top:12px"></div>'+
+      '</div>'+
+      '<div class="net-note" style="margin-top:16px">'+crown('#b8902f')+' Connecté au serveur, la caisse lit les vrais produits/stocks et chaque vente passe par le moteur (facture chaînée + points myCred). Hors ligne, l\'app fonctionne sur ses données de démonstration.</div>';
+  }
+
+  // ---------- Commandes (borne -> centre de commande, temps réel) ----------
+  var ordersData={}, ordersES=null;
+  function ordersScope(){ return (st.user&&st.user.role==='admin')?'':(st.user?st.user.boutiqueId:''); }
+  function ensureOrdersStream(){
+    if(!API.on || ordersES) return;
+    try{
+      ordersES=new EventSource(API.base+'/api/orders/stream?boutique='+encodeURIComponent(ordersScope()));
+      ordersES.addEventListener('snapshot',function(e){try{JSON.parse(e.data).forEach(function(o){ordersData[o.id]=o;});refreshCmd();}catch(x){}});
+      ordersES.addEventListener('order',function(e){try{var o=JSON.parse(e.data);ordersData[o.id]=o;if(st.view==='commandes')toast('Nouvelle commande '+o.numero);refreshCmd();}catch(x){}});
+      ordersES.addEventListener('update',function(e){try{var o=JSON.parse(e.data);ordersData[o.id]=o;refreshCmd();}catch(x){}});
+    }catch(x){}
+  }
+  function cmdCounts(){var c={nouveau:0,preparation:0,prete:0,servie:0};Object.keys(ordersData).forEach(function(k){var s=ordersData[k].status;if(c[s]!=null)c[s]++;});return c;}
+  function refreshCmd(){ if(st.view!=='commandes')return; var b=document.getElementById('cmd-board'); if(b)b.innerHTML=cmdBoardHtml(); var p=document.getElementById('cmd-pend'); if(p)p.textContent=cmdCounts().nouveau; }
+  function bqLabel(id){return {aix:'Aix',marseille:'Marseille',avignon:'Avignon'}[id]||id;}
+  function cmdAgo(ts){var m=Math.floor((Date.now()-ts)/60000);return m<1?'à l’instant':(m+' min');}
+  function cmdCard(o){
+    var items=(o.items||[]).map(function(it){return '<div style="font-size:13px;display:flex;gap:6px"><span style="color:var(--gold);font-weight:700;min-width:22px">'+(it.qty||1)+'×</span><span>'+esc(it.name)+(it.detail?' <span class="muted">'+esc(it.detail)+'</span>':'')+'</span></div>';}).join('');
+    var act='';
+    if(o.status==='nouveau')act='<button class="btn btn-gold" style="padding:6px 11px;font-size:12px" data-act="ostatus" data-id="'+o.id+'" data-next="preparation">Préparer →</button>';
+    else if(o.status==='preparation')act='<button class="btn btn-gold" style="padding:6px 11px;font-size:12px" data-act="ostatus" data-id="'+o.id+'" data-next="prete">Prête →</button>';
+    else if(o.status==='prete')act='<button class="btn" style="padding:6px 11px;font-size:12px" data-act="ostatus" data-id="'+o.id+'" data-next="servie">Remise ✓</button>';
+    var admin=(st.user&&st.user.role==='admin');
+    return '<div class="card" style="padding:12px;margin-bottom:10px;border-left:3px solid var(--gold)">'+
+      '<div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px"><b style="font-family:var(--serif);font-size:17px">'+esc(o.numero)+'</b><span class="muted" style="font-size:11px;text-align:right">'+(admin?esc(bqLabel(o.boutiqueId))+' · ':'')+'borne '+esc(o.borneId)+'<br>'+cmdAgo(o.ts)+'</span></div>'+
+      '<div style="margin:8px 0;border-top:1px dashed var(--line);border-bottom:1px dashed var(--line);padding:8px 0">'+items+'</div>'+
+      '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><div><b>'+eur(o.total)+'</b>'+(o.customerRef?'<div class="muted" style="font-size:11px">'+esc(o.customerRef)+'</div>':'')+'</div>'+act+'</div>'+
+    '</div>';
+  }
+  function cmdColumn(title,status,color){
+    var list=Object.keys(ordersData).map(function(k){return ordersData[k];}).filter(function(o){return o.status===status;}).sort(function(a,b){return a.ts-b.ts;});
+    return '<div style="flex:1;min-width:0"><div style="text-transform:uppercase;letter-spacing:.12em;font-size:11px;color:'+color+';margin-bottom:10px;font-weight:700">'+title+' ('+list.length+')</div>'+(list.length?list.map(cmdCard).join(''):'<div class="muted" style="font-size:12px;font-style:italic;padding:8px 0">—</div>')+'</div>';
+  }
+  function cmdBoardHtml(){
+    return '<div style="display:flex;gap:16px;align-items:flex-start">'+cmdColumn('Nouveau','nouveau','#e0a93b')+cmdColumn('En préparation','preparation','#4ea3d8')+cmdColumn('Prête','prete','#5bbd7a')+'</div>';
+  }
+  function viewCommandes(){
+    if(!API.on){ return '<div class="vhead"><div><h1>Commandes</h1><p>Connecte l\'app au serveur pour voir les commandes des bornes en temps réel.</p></div></div><div class="net-note">'+crown('#b8902f')+' Va dans Réglages → Connecter au serveur (normalement automatique à la connexion).</div>'; }
+    ensureOrdersStream(); setTimeout(refreshCmd,0);
+    var admin=(st.user&&st.user.role==='admin');
+    var scopeTxt=admin?'toutes boutiques':bqLabel(st.user.boutiqueId);
+    var bq=admin?st.boutiqueId:st.user.boutiqueId;
+    var atelierUrl=(API.base||'')+'/commande?boutique='+encodeURIComponent(bq);
+    return '<div class="vhead"><div><h1>Commandes</h1><p>Bornes en temps réel ('+scopeTxt+'). En attente : <b id="cmd-pend">'+cmdCounts().nouveau+'</b></p></div><a class="btn" href="'+atelierUrl+'" target="_blank" rel="noopener">Ouvrir l\'écran atelier ↗</a></div>'+
+      '<div id="cmd-board">'+cmdBoardHtml()+'</div>';
+  }
+
+  // ---------- Journal des ventes (borne + caisse) : chiffres + exports comptables ----------
+  var journalData={ventes:[],stats:null,loading:false,loaded:false};
+  function jRange(){
+    var today=new Date(); var to=today.toISOString().slice(0,10); var from=to;
+    if(st.jperiod==='7'){from=new Date(today.getTime()-6*864e5).toISOString().slice(0,10);}
+    else if(st.jperiod==='30'){from=new Date(today.getTime()-29*864e5).toISOString().slice(0,10);}
+    else if(st.jperiod==='all'){from='';to='';}
+    else if(st.jperiod==='day'){from=st.jday||to; to=st.jday||to;}
+    else if(st.jperiod==='range'){from=st.jfrom||''; to=st.jto||'';}
+    return {from:from,to:to};
+  }
+  function frDate(d){ if(!d)return '—'; var p=String(d).split('-'); return p.length===3?(p[2]+'/'+p[1]+'/'+p[0]):d; }
+  function jPeriodLabel(){
+    var r=jRange();
+    if(st.jperiod==='all'||(!r.from&&!r.to))return 'Période affichée : tout l’historique';
+    if(r.from&&r.to&&r.from===r.to)return 'Période affichée : '+frDate(r.from);
+    if(r.from&&!r.to)return 'Période affichée : depuis le '+frDate(r.from);
+    return 'Période affichée : du '+frDate(r.from)+' au '+frDate(r.to);
+  }
+  function jQS(){ var r=jRange(); var q=[]; if(r.from)q.push('from='+r.from); if(r.to)q.push('to='+r.to); return q.length?'?'+q.join('&'):''; }
+  function dlAuth(path,filename){
+    if(!API.on){toast('Connecte le serveur d\'abord');return;}
+    fetch(API.base+path,{headers:apiHeaders()}).then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.blob();})
+      .then(function(b){var url=URL.createObjectURL(b);var a=document.createElement('a');a.href=url;a.download=filename;document.body.appendChild(a);a.click();a.remove();setTimeout(function(){URL.revokeObjectURL(url);},1500);toast('Export téléchargé : '+filename);})
+      .catch(function(){toast('Export indisponible (serveur ?)');});
+  }
+  function loadJournal(){
+    if(!API.on)return; journalData.loading=true; var qs=jQS();
+    Promise.all([apiGet('/api/journal'+qs),apiGet('/api/journal/stats'+qs)]).then(function(res){
+      journalData.ventes=(res[0]&&res[0].ventes)||[]; journalData.stats=res[1]; journalData.loading=false; journalData.loaded=true;
+      if(st.view==='journal')renderJournalBody();
+    }).catch(function(){journalData.loading=false;journalData.loaded=true;if(st.view==='journal')renderJournalBody();});
+  }
+  function jKpi(label,value,sub){return '<div class="card" style="padding:14px 16px;flex:1;min-width:148px"><div class="muted" style="font-size:11px;text-transform:uppercase;letter-spacing:.06em">'+label+'</div><div style="font-family:var(--serif);font-size:24px;margin-top:4px">'+value+'</div>'+(sub?'<div class="muted" style="font-size:11.5px;margin-top:2px">'+sub+'</div>':'')+'</div>';}
+  function jSrcBadge(s){ if(s==='borne')return '<span class="tag" style="background:#eaf3ea;color:#3f7d4f">Borne</span>'; if(s==='avoir')return '<span class="tag tag-low">Avoir</span>'; return '<span class="tag tag-ok">Caisse</span>'; }
+  function renderJournalBody(){
+    var el=document.getElementById('journal-body'); if(!el)return;
+    if(journalData.loading&&!journalData.loaded){el.innerHTML='<div class="muted" style="padding:20px">Chargement du journal…</div>';return;}
+    var s=journalData.stats;
+    if(!s){el.innerHTML='<div class="net-note">Impossible de lire le journal (le serveur répond-il ?).</div>';return;}
+    var src={}; (s.parSource||[]).forEach(function(x){src[x.source]=x;});
+    var borne=src.borne||{nb:0,ttc:0}, caisse=src.caisse||{nb:0,ttc:0};
+    var kpis='<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:14px">'+
+      jKpi('CA TTC',eur(s.ca.ttc),'HT '+eur(s.ca.ht)+' · TVA '+eur(s.ca.tva))+
+      jKpi('Ventes',s.nbVentes,'panier moyen '+eur(s.panierMoyen))+
+      jKpi('Borne',eur(borne.ttc),borne.nb+' vente'+(borne.nb>1?'s':''))+
+      jKpi('Caisse',eur(caisse.ttc),caisse.nb+' vente'+(caisse.nb>1?'s':''))+'</div>';
+    var pay=(s.parPaiement||[]).map(function(p){return '<span class="tag tag-ok" style="margin:0 6px 6px 0;display:inline-block">'+esc(p.moyen)+' · '+eur(p.montant)+'</span>';}).join('')||'<span class="muted">—</span>';
+    var top=(s.topProduits||[]).slice(0,6).map(function(t,i){return '<tr><td class="muted">'+(i+1)+'</td><td>'+esc(t.produit)+'</td><td style="text-align:right">'+t.quantite+'</td><td style="text-align:right">'+eur(t.ca)+'</td></tr>';}).join('')||'<tr><td colspan="4" class="muted" style="padding:12px">Aucune vente sur la période.</td></tr>';
+    var tva=(s.ventilationTVA||[]).map(function(v){return '<tr><td>'+esc(v.taux)+'</td><td style="text-align:right">'+eur(v.baseHT)+'</td><td style="text-align:right">'+eur(v.tva)+'</td><td style="text-align:right">'+eur(v.ttc)+'</td></tr>';}).join('');
+    var rows=(journalData.ventes||[]).map(function(v){
+      var arts=(v.lignes||[]).map(function(l){return (l.qty?l.qty+'× ':(l.grams?l.grams+'g ':''))+esc(l.produit);}).join(', ');
+      var dt=new Date(v.date); var hh=isNaN(dt)?esc((v.date||'').slice(0,10)):dt.toLocaleString('fr-FR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
+      return '<tr><td class="muted" style="white-space:nowrap">'+hh+'</td><td>'+jSrcBadge(v.source)+'</td><td><b>'+esc(v.numero)+'</b></td><td>'+esc(v.client||'—')+'</td><td style="font-size:12.5px">'+(arts||'—')+'</td><td class="muted" style="font-size:12px">'+esc(v.paiement||'')+'</td><td style="text-align:right;white-space:nowrap"><b>'+eur(v.totalTTC)+'</b></td></tr>';
+    }).join('')||'<tr><td colspan="7" class="muted" style="padding:18px;text-align:center">Aucune vente sur cette période.</td></tr>';
+    el.innerHTML=kpis+
+      '<div style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:14px">'+
+        '<div class="card" style="flex:2;min-width:280px;padding:14px 16px"><b style="font-family:var(--serif)">Meilleures ventes</b><table class="tbl" style="margin-top:8px"><thead><tr><th>#</th><th>Produit</th><th style="text-align:right">Qté</th><th style="text-align:right">CA</th></tr></thead><tbody>'+top+'</tbody></table></div>'+
+        '<div class="card" style="flex:1;min-width:230px;padding:14px 16px"><b style="font-family:var(--serif)">Encaissements</b><div style="margin-top:10px">'+pay+'</div>'+(tva?'<table class="tbl" style="margin-top:12px"><thead><tr><th>TVA</th><th style="text-align:right">HT</th><th style="text-align:right">TVA</th><th style="text-align:right">TTC</th></tr></thead><tbody>'+tva+'</tbody></table>':'')+'</div>'+
+      '</div>'+
+      '<div class="card" style="padding:0;overflow:auto"><table class="tbl"><thead><tr><th>Date</th><th>Source</th><th>N° facture</th><th>Client</th><th>Articles</th><th>Paiement</th><th style="text-align:right">Montant</th></tr></thead><tbody>'+rows+'</tbody></table></div>';
+  }
+  function viewJournal(){
+    if(!API.on){ return '<div class="vhead"><div><h1>Journal des ventes</h1><p>Connecte l\'app au serveur pour suivre toutes les ventes (borne + caisse), les chiffres du jour et les exports comptables.</p></div></div><div class="net-note">'+crown('#b8902f')+' Va dans Réglages → Connecter au serveur (normalement automatique à la connexion).</div>'; }
+    setTimeout(loadJournal,0);
+    var P=st.jperiod||'today';
+    function pb(k,l){return '<button class="btn'+(P===k?' btn-gold':'')+'" data-act="jperiod" data-p="'+k+'" style="padding:7px 13px">'+l+'</button>';}
+    return '<div class="vhead"><div><h1>Journal des ventes</h1><p>Toutes les ventes borne + caisse, en direct. Chiffres du jour, meilleures ventes et exports pour ta comptable (facturation électronique).</p></div>'+
+      '<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn" data-act="jcsv">Export comptable (CSV)</button><button class="btn" data-act="jereport">Résumé e-reporting</button></div></div>'+
+      '<div style="display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap;align-items:center">'+pb('today','Aujourd’hui')+pb('7','7 jours')+pb('30','30 jours')+pb('all','Tout')+
+        '<span style="width:1px;height:24px;background:var(--line);margin:0 4px"></span>'+
+        '<label class="muted" style="font-size:12px">Date précise</label>'+
+        '<input type="date" id="jday" value="'+(st.jday||'')+'" style="padding:6px 9px;border:1px solid var(--line);border-radius:8px;font-size:13px"/>'+
+        '<button class="btn'+(P==='day'?' btn-gold':'')+'" data-act="jday" style="padding:7px 12px">Voir ce jour</button>'+
+        '<span style="width:1px;height:24px;background:var(--line);margin:0 4px"></span>'+
+        '<label class="muted" style="font-size:12px">Du</label>'+
+        '<input type="date" id="jfrom" value="'+(st.jfrom||'')+'" style="padding:6px 9px;border:1px solid var(--line);border-radius:8px;font-size:13px"/>'+
+        '<label class="muted" style="font-size:12px">au</label>'+
+        '<input type="date" id="jto" value="'+(st.jto||'')+'" style="padding:6px 9px;border:1px solid var(--line);border-radius:8px;font-size:13px"/>'+
+        '<button class="btn'+(P==='range'?' btn-gold':'')+'" data-act="jrange" style="padding:7px 12px">Voir la période</button>'+
+      '</div>'+
+      '<div class="muted" style="font-size:12.5px;margin-bottom:14px">'+jPeriodLabel()+'</div>'+
+      '<div id="journal-body"><div class="muted" style="padding:20px">Chargement du journal…</div></div>'+
+      '<div class="net-note" style="margin-top:14px">'+crown('#b8902f')+' Pour ta comptable : « Export comptable (CSV) » = le journal détaillé (HT, TVA, TTC par vente). « Résumé e-reporting » = le total par TVA et par paiement, prêt pour la transmission e-reporting (ventes au détail).</div>';
+  }
+
+  // ---------- Conformité caisse (loi anti-fraude TVA / NF525) ----------
+  var fiscalData={loaded:false,loading:false,etat:null,clotures:[],evenements:[],verify:null};
+  function loadFiscal(){
+    if(!API.on||fiscalData.loading)return;
+    fiscalData.loading=true;
+    var q=st.boutiqueId?('?boutique='+st.boutiqueId):'';
+    Promise.all([
+      apiGet('/api/fiscal/etat'+q).catch(function(){return null;}),
+      apiGet('/api/fiscal/clotures'+q).catch(function(){return {clotures:[]};}),
+      apiGet('/api/fiscal/journal-evenements'+q).catch(function(){return {evenements:[]};}),
+      apiGet('/api/fiscal/verify').catch(function(){return null;})
+    ]).then(function(r){
+      fiscalData.etat=r[0]; fiscalData.clotures=(r[1]&&r[1].clotures)||[]; fiscalData.evenements=(r[2]&&r[2].evenements)||[]; fiscalData.verify=r[3];
+      fiscalData.loaded=true; fiscalData.loading=false;
+      if(st.view==='conformite')renderFiscalBody();
+    }).catch(function(){fiscalData.loading=false;fiscalData.loaded=true;if(st.view==='conformite')renderFiscalBody();});
+  }
+  function eur2(n){return (Math.round((n||0)*100)/100).toFixed(2)+' €';}
+  function fdate(iso){if(!iso)return '—';var d=new Date(iso);return d.toLocaleDateString('fr-FR')+' '+d.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'});}
+  function renderFiscalBody(){
+    var el=document.getElementById('fiscal-body'); if(!el)return;
+    var e=fiscalData.etat||{}, v=fiscalData.verify;
+    var badge=v?(v.conforme?'<span class="tag tag-ok">Chaîne intègre — conforme</span>':'<span class="tag tag-low">ALERTE : chaîne altérée</span>'):'<span class="muted">—</span>';
+    var kp='<div class="kpis">'+
+      kpi('Grand Total perpétuel',eur2(e.grandTotalPerpetuel),'cumul inaltérable des ventes')+
+      kpi('Tickets',e.nbTickets||0,(e.nbAvoirs||0)+' avoir(s)')+
+      kpi('Clôtures',e.nbClotures||0,'événements : '+(e.nbEvenements||0))+
+      kpi('Intégrité',badge,'dernière clôture : '+fdate(e.derniereCloture))+'</div>';
+    var clo=(fiscalData.clotures||[]).map(function(c){
+      var lbl=c.type.replace('CLOTURE_','Clôture ');var d=c.data||{};
+      return '<tr><td><b>'+lbl+' n°'+(d.numero||'')+'</b></td><td>'+fdate(c.date)+'</td><td>'+eur2(d.totalTTC)+'</td><td>'+(d.nbTickets||0)+'</td><td>'+eur2(d.grandTotalPerpetuel)+'</td><td class="muted" style="font-family:monospace;font-size:11px">'+(c.signature||'')+'…</td></tr>';
+    }).join('')||'<tr><td colspan="6" class="muted" style="padding:12px">Aucune clôture pour le moment. Fais ta première clôture Z en fin de journée.</td></tr>';
+    var ev=(fiscalData.evenements||[]).slice(0,40).map(function(x){
+      return '<tr><td>#'+x.seq+'</td><td><b>'+x.type+'</b></td><td>'+(x.boutique||'réseau')+'</td><td>'+fdate(x.date)+'</td><td class="muted" style="font-family:monospace;font-size:11px">'+(x.signature||'')+'…</td></tr>';
+    }).join('')||'<tr><td colspan="5" class="muted" style="padding:12px">Aucun événement.</td></tr>';
+    el.innerHTML=kp+
+      '<h3 style="font-family:var(--serif);margin:22px 0 10px">Clôtures (journalières / mensuelles / annuelles)</h3>'+
+      '<div class="card"><table class="tbl"><thead><tr><th>Clôture</th><th>Date</th><th>Total période</th><th>Tickets</th><th>Grand Total perpétuel</th><th>Sceau</th></tr></thead><tbody>'+clo+'</tbody></table></div>'+
+      '<h3 style="font-family:var(--serif);margin:22px 0 10px">Journal des événements (scellé &amp; chaîné)</h3>'+
+      '<div class="card"><table class="tbl"><thead><tr><th>#</th><th>Événement</th><th>Boutique</th><th>Date</th><th>Sceau HMAC-SHA256</th></tr></thead><tbody>'+ev+'</tbody></table></div>';
+  }
+  function doCloture(type){ if(!API.on){toast('Connecte-toi au serveur');return;} apiPost('/api/fiscal/cloture',{type:type,boutiqueId:st.boutiqueId}).then(function(d){var n=d&&d.cloture&&d.cloture.data?d.cloture.data.numero:'';toast('Clôture '+type+' n°'+n+' effectuée et scellée');fiscalData.loading=false;loadFiscal();}).catch(function(e){toast('Échec : '+(e.message||e));}); }
+  function exportArchive(){ if(!API.on)return; apiGet('/api/fiscal/archive'+(st.boutiqueId?('?boutique='+st.boutiqueId):'')).then(function(a){var blob=new Blob([JSON.stringify(a,null,2)],{type:'application/json'});var url=URL.createObjectURL(blob);var x=document.createElement('a');x.href=url;x.download='archive-fiscale-'+(st.boutiqueId||'reseau')+'-'+new Date().toISOString().slice(0,10)+'.json';document.body.appendChild(x);x.click();x.remove();URL.revokeObjectURL(url);toast('Archive scellée exportée');}).catch(function(e){toast('Échec export : '+(e.message||e));}); }
+  function viewConformite(){
+    if(!API.on){ return '<div class="vhead"><div><h1>Conformité caisse</h1><p>Connecte l\'app au serveur pour accéder aux clôtures, au journal des événements et à l\'archive scellée (loi anti-fraude TVA / NF525).</p></div></div>'; }
+    setTimeout(loadFiscal,0);
+    return '<div class="vhead"><div><h1>Conformité caisse <span class="tag tag-ok" style="vertical-align:middle">NF525 · anti-fraude TVA</span></h1><p>Inaltérabilité, sécurisation, conservation et archivage de tes ventes. Clôtures Z (jour), mensuelle et annuelle, journal des événements scellé, archive vérifiable en cas de contrôle.</p></div>'+
+      '<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-gold" data-act="cloture" data-t="Z">Clôture Z (jour)</button><button class="btn" data-act="cloture" data-t="M">Clôture mensuelle</button><button class="btn" data-act="cloture" data-t="A">Clôture annuelle</button><button class="btn" data-act="fiscverify">Vérifier l’intégrité</button><button class="btn" data-act="fiscarchive">Exporter l’archive</button></div></div>'+
+      '<div id="fiscal-body"><div class="muted" style="padding:20px">Chargement…</div></div>'+
+      '<div class="net-note" style="margin-top:14px">'+crown('#b8902f')+' Chaque vente est figée et scellée par signature HMAC-SHA256 chaînée à la précédente : impossible de modifier ou supprimer une vente sans casser la chaîne (les corrections passent par un avoir). Les clôtures conservent le Grand Total perpétuel. L’archive exportée est vérifiable par l’administration fiscale.</div>';
+  }
+
+  var viewsMap={dash:viewDash,pos:viewPos,produits:viewProduits,stock:viewStock,fidelite:viewFidelite,factu:viewFactu,borne:viewBorne,commandes:viewCommandes,journal:viewJournal,conformite:viewConformite,reglages:viewReglages};
+
+  function render(){
+    if(!st.user){showLogin();return;}
+    var lr=document.getElementById('login-root');if(lr)lr.innerHTML='';
+    view.innerHTML=(viewsMap[st.view]||viewDash)();
+    document.querySelectorAll('.nav-item').forEach(function(n){n.classList.toggle('active',n.getAttribute('data-view')===st.view);});
+    $("#topTitle").textContent=titles[st.view]||'';
+    var rb=document.querySelector('.role-badge');if(rb){rb.innerHTML='<span class="av">'+st.user.initials+'</span><div>'+st.user.roleLabel+'<br><b>'+st.user.name+'</b></div>';}
+    var sel=document.getElementById('boutiqueSel');if(sel){sel.style.display=st.user.role==='admin'?'':'none';}
+    var sf=document.getElementById('sideFoot');if(sf){sf.innerHTML='<b>'+st.user.name+'</b>'+st.user.roleLabel+' · KINGSTON<button class="btn" style="width:100%;margin-top:10px;background:transparent;color:#cfc9ba;border-color:rgba(255,255,255,.16)" data-act="logout">Se déconnecter</button>';}
+  }
+
+  // ---------- Modales ----------
+  function openModal(html){modalRoot.innerHTML='<div class="modal-backdrop" data-act="closemodal"><div class="modal">'+html+'</div></div>';}
+  function closeModal(){modalRoot.innerHTML='';}
+
+  function gramModal(p){
+    openModal('<div class="modal-h">'+p.name+' — choisis le poids</div><div class="modal-b"><div class="modal-grid">'+
+      p.tiers.map(function(t){return '<button class="gbtn" data-act="addgram" data-id="'+p.id+'" data-g="'+t[0]+'" data-pr="'+t[1]+'"><div class="g1">'+t[0]+' g</div><div class="g2">'+eur(t[1])+'</div></button>';}).join('')+
+      '</div></div>');
+  }
+  // Choix unité / pack pour un produit à l'unité qui a des packs.
+  function packModal(p){
+    var opts='<button class="gbtn" data-act="addunit" data-id="'+p.id+'"><div class="g1">À l\'unité</div><div class="g2">'+eur(p.price)+'</div></button>'+
+      p.packs.map(function(k){return '<button class="gbtn" data-act="addpack" data-id="'+p.id+'" data-q="'+k.qty+'" data-pr="'+k.price+'"><div class="g1">Pack de '+k.qty+'</div><div class="g2">'+eur(k.price)+'</div></button>';}).join('');
+    openModal('<div class="modal-h">'+p.name+' — unité ou pack</div><div class="modal-b"><div class="modal-grid">'+opts+'</div></div>');
+  }
+
+  // ---------- Formulaire produit (ajout / édition), sauvegardé côté serveur ----------
+  function blankPForm(){return {editId:null,name:'',cat:'Fleurs',unit:'g',tiers:[[2,5],[5,11]],price:2,packs:[],img:'',desc:'',initStock:0};}
+  function pfTierRows(){return st.pform.tiers.map(function(t,i){return '<div style="display:flex;gap:8px;margin-bottom:6px;align-items:center"><input class="pf-tg" type="number" min="0" step="0.5" value="'+t[0]+'" placeholder="poids" style="width:90px"/><span class="muted">g  →</span><input class="pf-tp" type="number" min="0" step="0.5" value="'+t[1]+'" placeholder="prix" style="width:90px"/><span class="muted">€</span><button class="toggle" data-act="pf-rmtier" data-i="'+i+'" style="color:#b4452f;border-color:#e7c4bb;padding:4px 9px">×</button></div>';}).join('');}
+  function pfPackRows(){return st.pform.packs.map(function(k,i){return '<div style="display:flex;gap:8px;margin-bottom:6px;align-items:center"><span class="muted">pack de</span><input class="pf-pq" type="number" min="2" step="1" value="'+k.qty+'" placeholder="qté" style="width:70px"/><span class="muted">→</span><input class="pf-pp" type="number" min="0" step="0.5" value="'+k.price+'" placeholder="prix" style="width:90px"/><span class="muted">€</span><button class="toggle" data-act="pf-rmpack" data-i="'+i+'" style="color:#b4452f;border-color:#e7c4bb;padding:4px 9px">×</button></div>';}).join('');}
+  function productModal(){
+    var f=st.pform;
+    var typeBtns='<div style="display:flex;gap:8px;margin:2px 0 10px"><button class="btn'+(f.unit==='g'?' btn-gold':'')+'" data-act="pf-type" data-u="g">Au gramme</button><button class="btn'+(f.unit==='u'?' btn-gold':'')+'" data-act="pf-type" data-u="u">À l\'unité / pack</button></div>';
+    var block=f.unit==='g'
+      ? '<div class="fld"><label>Poids vendus (gramme → prix)</label>'+pfTierRows()+'<button class="btn" data-act="pf-addtier" style="padding:6px 12px;margin-top:2px">+ Ajouter un poids</button></div>'
+      : '<div class="fld"><label>Prix à l\'unité (€)</label><input id="pf-price" type="number" min="0" step="0.5" value="'+f.price+'" style="width:120px"/></div><div class="fld"><label>Packs — prix réduit par quantité (facultatif)</label>'+pfPackRows()+'<button class="btn" data-act="pf-addpack" style="padding:6px 12px;margin-top:2px">+ Ajouter un pack</button></div>';
+    var prev=f.img?'<img src="'+esc(f.img)+'" style="width:64px;height:64px;object-fit:cover;border-radius:9px;margin-top:8px"/>':'';
+    return '<div class="modal-h">'+(f.editId?'Modifier le produit':'Ajouter un produit')+'</div><div class="modal-b">'+
+      '<div class="fld"><label>Nom</label><input id="pf-name" value="'+esc(f.name)+'" placeholder="ex : Amnesia Haze"/></div>'+
+      '<div class="fld"><label>Catégorie</label><input id="pf-cat" value="'+esc(f.cat)+'" placeholder="ex : Fleurs, Feuilles, Plateaux…"/></div>'+
+      typeBtns+block+
+      '<div class="fld"><label>Photo</label><input id="pf-file" type="file" accept="image/*" style="font-size:12px"/><input id="pf-imgurl" value="'+esc(f.img)+'" placeholder="ou colle un lien d\'image (https://…)" style="margin-top:6px"/>'+prev+'</div>'+
+      '<div class="fld"><label>Description (facultatif)</label><input id="pf-desc" value="'+esc(f.desc)+'" placeholder="ex : Indica douce, 18% CBD"/></div>'+
+      (f.editId?'':'<div class="fld"><label>Stock initial ('+(f.unit==='g'?'grammes':'unités')+', boutique courante)</label><input id="pf-stock" type="number" min="0" value="'+f.initStock+'" style="width:120px"/></div>')+
+      '<div id="pf-msg" class="muted" style="font-size:12px;min-height:15px"></div></div>'+
+      '<div style="display:flex;gap:10px;padding:0 2px 2px"><button class="btn" style="flex:1" data-act="closemodal">Annuler</button><button class="btn btn-gold" style="flex:2" data-act="saveprod">'+(f.editId?'Enregistrer':'Ajouter au catalogue')+'</button></div>';
+  }
+  function readProdForm(){
+    var f=st.pform,g=function(id){var e=document.getElementById(id);return e?e.value:undefined;};
+    if(g('pf-name')!==undefined)f.name=g('pf-name');
+    if(g('pf-cat')!==undefined)f.cat=g('pf-cat');
+    if(g('pf-desc')!==undefined)f.desc=g('pf-desc');
+    if(g('pf-imgurl')!==undefined)f.img=(g('pf-imgurl')||'').trim();
+    if(g('pf-stock')!==undefined)f.initStock=parseFloat(g('pf-stock'))||0;
+    if(g('pf-price')!==undefined)f.price=parseFloat(g('pf-price'))||0;
+    var tg=document.querySelectorAll('.pf-tg'),tp=document.querySelectorAll('.pf-tp');
+    if(tg.length){var ts=[];for(var i=0;i<tg.length;i++)ts.push([parseFloat(tg[i].value)||0,parseFloat(tp[i].value)||0]);f.tiers=ts;}
+    var pq=document.querySelectorAll('.pf-pq'),pp=document.querySelectorAll('.pf-pp');
+    if(document.getElementById('pf-price')){var ks=[];for(var j=0;j<pq.length;j++)ks.push({qty:parseInt(pq[j].value,10)||0,price:parseFloat(pp[j].value)||0});f.packs=ks;}
+  }
+  function saveProduct(){
+    readProdForm();var f=st.pform,msg=document.getElementById('pf-msg');
+    if(!(f.name||'').trim()){if(msg)msg.textContent='Donne un nom au produit.';return;}
+    var payload={name:f.name.trim(),cat:(f.cat||'Divers').trim(),unit:f.unit,desc:(f.desc||'').trim(),boutiqueId:st.boutiqueId};
+    if(f.unit==='g'){var ts=f.tiers.filter(function(t){return t[0]>0;});if(!ts.length){if(msg)msg.textContent='Ajoute au moins un palier (poids + prix).';return;}payload.tiers=ts;}
+    else{payload.price=f.price||0;payload.packs=f.packs.filter(function(k){return k.qty>1;});}
+    if(!f.editId)payload.initStock=f.initStock||0;
+    if(msg)msg.textContent='Enregistrement…';
+    var fileEl=document.getElementById('pf-file');var file=fileEl&&fileEl.files&&fileEl.files[0];
+    var send=function(){
+      var req=f.editId?apiPost('/api/products/'+encodeURIComponent(f.editId),payload):apiPost('/api/products',payload);
+      req.then(function(){closeModal();reloadProducts();toast(f.editId?'Produit modifié (caisse + borne)':'Produit ajouté (caisse + borne)');}).catch(function(e){if(msg)msg.textContent='Échec : '+(e.message||e);});
+    };
+    if(file){if(file.size>4*1024*1024){if(msg)msg.textContent='Photo trop lourde (max 4 Mo).';return;}var rd=new FileReader();rd.onload=function(){apiPost('/api/products/image',{dataUrl:rd.result}).then(function(d){payload.img=d.url;send();}).catch(function(){payload.img=f.img||'';send();});};rd.readAsDataURL(file);}
+    else{payload.img=f.img||'';send();}
+  }
+  function clientModal(){
+    if(API.on){
+      openModal('<div class="modal-h">Associer un membre Kingston Club</div><div class="modal-b">'+
+        '<input id="cm-search" placeholder="Nom, e-mail ou téléphone…" style="width:100%;background:var(--ink);border:1px solid var(--line);border-radius:10px;padding:11px 13px;color:var(--cream);margin-bottom:10px"/>'+
+        '<div id="cm-list"><div class="muted" style="padding:8px">Chargement…</div></div></div>');
+      setTimeout(function(){loadClientSearch('');var i=document.getElementById('cm-search');if(i)i.focus();},0);
+      return;
+    }
+    openModal('<div class="modal-h">Associer un membre Kingston Club</div><div class="modal-b">'+
+      customers.map(function(c){return '<div class="cust-row" data-act="setclient" data-id="'+c.id+'"><div><b>'+c.name+'</b><div class="muted" style="font-size:12px">'+c.phone+' · '+c.tier+'</div></div><div style="color:var(--gold);font-weight:700">'+c.points+' pts</div></div>';}).join('')+
+      '</div>');
+  }
+  function loadClientSearch(q){
+    if(!document.getElementById('cm-list'))return;
+    fetchCustomers(q,function(list){var b=document.getElementById('cm-list');if(b)b.innerHTML=custRowsHtml(list,'setclientremote');},function(e){var b=document.getElementById('cm-list');if(b)b.innerHTML='<div class="tag tag-low" style="margin:8px;display:inline-block">Recherche indisponible ('+esc(e.message||e)+'). Mets à jour le plugin de ton site puis relance le serveur.</div>';});
+  }
+  // Paiement carte en caisse : pilote le vrai TPE via le pont (CAISSE-AP). Repli manuel si pont injoignable.
+  function payByCardTerminal(){
+    var amount=cartTotal();
+    openModal('<div class="modal-h">Paiement carte</div><div class="modal-b"><div class="term"><div class="tdot"></div><div style="font-size:15px">Présentez la carte sur le terminal</div><div style="font-family:var(--serif);font-size:26px;margin-top:10px;color:#d8b252">'+eur(amount)+'</div><div class="muted" style="font-size:12px;margin-top:10px">En attente du terminal…</div></div></div>');
+    fetch(PONT_URL+'/pay',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({amount:amount,ref:'CAISSE-'+Date.now()})})
+      .then(function(r){return r.json();})
+      .then(function(d){
+        if(d&&d.approved){ closeModal(); finalizeSale('Carte Monetico'); return; }
+        var motif=(d&&d.echec==='11')?'Paiement annulé':((d&&d.echec==='04')?'Paiement refusé':((d&&d.echec==='08')?'Délai dépassé':'Paiement non abouti'));
+        openModal('<div class="modal-h">Paiement non abouti</div><div class="modal-b"><div style="text-align:center;color:#c0594a;font-size:16px;margin-bottom:6px">'+motif+'</div><div class="muted" style="font-size:12px;text-align:center">Code '+((d&&d.codeReponse)||'?')+((d&&d.echec)?' / '+d.echec:'')+'</div><div style="display:flex;gap:10px;margin-top:16px"><button class="btn" style="flex:1" data-act="closemodal">Fermer</button><button class="btn btn-gold" style="flex:1" data-act="pay" data-m="Carte Monetico">Réessayer</button></div></div>');
+      })
+      .catch(function(){
+        openModal('<div class="modal-h">Terminal injoignable</div><div class="modal-b"><div class="muted" style="font-size:13px;margin-bottom:4px">Le terminal ne répond pas (le pont est-il lancé ?). Si le client a payé sur le terminal, valide à la main.</div><div style="display:flex;gap:10px;margin-top:14px"><button class="btn" style="flex:1" data-act="closemodal">Annuler</button><button class="btn btn-gold" style="flex:1" data-act="payok" data-m="Carte Monetico">Valider à la main</button></div></div>');
+      });
+  }
+  function payModal(method){
+    if(method==='Carte Monetico'){
+      payByCardTerminal();
+    } else {
+      openModal('<div class="modal-h">Paiement espèces</div><div class="modal-b"><p>Montant à encaisser : <b>'+eur(cartTotal())+'</b></p><button class="btn btn-gold" style="width:100%" data-act="payok" data-m="Espèces">Confirmer l\'encaissement</button></div>');
+    }
+  }
+  function receptModal(){
+    var opts=products.filter(function(p){return p.unit==='g';}).map(function(p){return '<option value="'+p.id+'">'+p.name+'</option>';}).join('');
+    openModal('<div class="modal-h">Réceptionner un lot</div><div class="modal-b"><div class="fld" style="margin-bottom:12px"><label>Produit</label><select id="rc-prod">'+opts+'</select></div><div class="fld" style="margin-bottom:12px"><label>N° de lot</label><input id="rc-lot" placeholder="ex : BOOF-2607"/></div><div style="display:flex;gap:10px;margin-bottom:14px"><div class="fld"><label>Quantité (g)</label><input id="rc-g" type="number" value="50"/></div><div class="fld"><label>Péremption</label><input id="rc-exp" placeholder="08/2027"/></div></div><button class="btn btn-gold" style="width:100%" data-act="recok">Ajouter au stock</button></div>');
+  }
+
+  function printReceipt(){
+    var r=st.lastReceipt; if(!r){return;}
+    var rows=r.lines.map(function(l){return '<tr><td>'+esc(l.name)+(l.detail?' <span style="color:#777">'+esc(l.detail)+'</span>':'')+'</td><td style="text-align:right">'+eur(l.price)+'</td></tr>';}).join('');
+    document.getElementById('receipt').innerHTML='<div class="rc"><div class="rc-h">KINGSTON</div><div class="rc-sub">CBD · '+esc(r.boutique||'')+'</div><div class="rc-meta">Facture '+esc(r.num)+'<br>'+esc(r.date)+'</div><table class="rc-t">'+rows+'</table><div class="rc-line"></div><table class="rc-t">'+((r.disc>0)?'<tr><td>Remise '+(r.usedPts||0)+' pts</td><td style="text-align:right">−'+eur(r.disc)+'</td></tr>':'')+'<tr><td>Total HT</td><td style="text-align:right">'+eur(r.ht)+'</td></tr><tr><td>TVA 20%</td><td style="text-align:right">'+eur(r.tva)+'</td></tr><tr class="rc-tot"><td>TOTAL TTC</td><td style="text-align:right">'+eur(r.total)+'</td></tr></table><div class="rc-pay">Paiement : '+esc(r.method)+'</div>'+(r.client?'<div class="rc-pay">Membre : '+esc(r.client)+' · +'+r.earned+' pts'+(r.newBal!=null?' (solde '+r.newBal+')':'')+'</div>':'')+'<div class="rc-legal">Produits CBD · THC &lt; 0,3 % · non destiné à un usage médical · vente interdite aux mineurs.<br>Merci et à bientôt chez KINGSTON.</div></div>';
+    window.print();
+  }
+  function finalizeSale(method){
+    if(API.on){finalizeSaleApi(method);return;}
+    if(!st.cart.length)return;
+    var total=cartTotal();var disc=Math.round((cartBrut()-total)*100)/100;var usedPts=st.redeemPts||0;
+    var num='KING-2026-'+String(nextInvoice++).padStart(4,'0');
+    invoices.push({num:num,date:new Date().toLocaleDateString('fr-FR')+' '+new Date().toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'}),client:st.client?st.client.name:'Comptoir',total:total,pay:method,lines:st.cart.map(function(l){return {name:l.name,detail:l.detail,price:l.price,productId:l.productId,grams:l.grams,qty:l.qty};}),refunded:false});
+    // décrément stock
+    st.cart.forEach(function(l){
+      var p=pById(l.productId);if(!p)return;
+      if(l.grams){var g=l.grams;(p.lots||[]).sort(function(a,b){return a.exp>b.exp?1:-1;});(p.lots||[]).forEach(function(lot){var t=Math.min(lot.g,g);lot.g-=t;g-=t;});p.lots=(p.lots||[]).filter(function(lot){return lot.g>0;});}
+      else{p.stockU=Math.max(0,p.stockU-(l.qty||1));}
+    });
+    var earned=Math.round(total),newBal=null;
+    if(st.client){st.client.points-=(st.redeemPts||0);st.client.points+=earned;newBal=st.client.points;}
+    var clientName=st.client?st.client.name:null;
+    var ht=Math.round(total/1.2*100)/100, tva=Math.round((total-ht)*100)/100;
+    var rcLines=st.cart.map(function(l){return {name:l.name,detail:l.detail,price:l.price};});
+    var linesHtml=rcLines.map(function(l){return '<div style="display:flex;justify-content:space-between;padding:5px 0;font-size:13px"><span>'+esc(l.name)+' <span class="muted">'+esc(l.detail||'')+'</span></span><b>'+eur(l.price)+'</b></div>';}).join('');
+    st.lastReceipt={num:num,date:new Date().toLocaleString('fr-FR'),boutique:st.boutique,lines:rcLines,total:total,ht:ht,tva:tva,method:method,client:clientName,earned:earned,newBal:newBal,disc:disc,usedPts:usedPts};
+    st.cart=[];st.client=null;st.redeemPts=0;st.coupon=null;
+    openModal('<div class="modal-h">Paiement accepté'+'</div><div class="modal-b"><div style="text-align:center;margin-bottom:14px"><div style="width:54px;height:54px;border-radius:50%;background:var(--green);color:#fff;display:flex;align-items:center;justify-content:center;font-size:28px;margin:0 auto 10px">✓</div><div class="muted" style="font-size:12px">Facture '+num+' · '+method+'</div></div>'+linesHtml+(disc>0?'<div style="display:flex;justify-content:space-between;font-size:13px;color:#7a5f1e;padding:4px 0"><span>Remise '+usedPts+' pts</span><b>−'+eur(disc)+'</b></div>':'')+'<div style="display:flex;justify-content:space-between;border-top:1px solid var(--line);margin-top:8px;padding-top:10px;font-family:var(--serif);font-size:19px;font-weight:700"><span>Total</span><span>'+eur(total)+'</span></div>'+(clientName?'<div style="background:var(--gold-soft);border-radius:10px;padding:10px;margin-top:12px;text-align:center;color:#7a5f1e;font-size:13px">+'+earned+' points pour '+clientName+' · nouveau solde '+newBal+' · synchronisé avec myCred</div>':'<div class="muted" style="text-align:center;margin-top:12px;font-size:12.5px">Client au comptoir — aucun point crédité</div>')+'<div style="display:flex;gap:10px;margin-top:16px"><button class="btn" style="flex:1" data-act="printticket">Imprimer le ticket</button><button class="btn btn-gold" style="flex:1" data-act="closemodal">Nouveau ticket</button></div></div>');
+    render();
+    boutiques[0].ca+=total;boutiques[0].tickets+=1;
+  }
+
+  // ---------- Borne (plein écran) ----------
+  var bst={step:'welcome',customer:null,cat:null,pending:null,cart:[],earned:0,order:1042};
+  var bAddons=[{n:'Tyson Paper',p:2},{n:'Feuille Cloudz',p:3.5},{n:'Briquet',p:2},{n:'Grinder KINGSTON',p:15}];
+  function bEur(n){return n.toLocaleString('fr-FR',{minimumFractionDigits:2,maximumFractionDigits:2})+' €';}
+  function bTotal(){return bst.cart.reduce(function(s,l){return s+l.price;},0);}
+  function bHasAddon(n){return bst.cart.some(function(l){return l.n===n&&l.addon;});}
+  function openBorne(){
+    borneRoot.innerHTML='<div style="position:fixed;inset:0;z-index:80;background:#0c0a06">'+
+      '<button data-act="closeborne" style="position:absolute;top:16px;right:18px;z-index:90;border:1px solid rgba(255,255,255,.25);background:rgba(0,0,0,.45);color:#f0e9d8;border-radius:10px;padding:9px 15px;font-size:13px;font-weight:700;cursor:pointer">Fermer la borne</button>'+
+      '<iframe src="borne-kingston.html" title="Borne KINGSTON" allow="camera" style="width:100%;height:100%;border:0;display:block"></iframe></div>';
+    borneRoot.style.display='block';
+  }
+  function closeBorne(){borneRoot.innerHTML='';borneRoot.style.display='none';}
+  function bStage(){
+    var map={welcome:0,loyalty:1,categories:2,product:2,grams:2,extras:3,cart:4,pay:4,thanks:4};
+    var labels=['Compte','Produit','Extras','Paiement'],cur=map[bst.step];
+    if(bst.step==='welcome')return '';
+    return '<div class="b-stage">'+labels.map(function(l,i){return '<span class="'+((i+1)<=cur?'on':'')+'"><i></i>'+l+'</span>';}).join('')+'</div>';
+  }
+  function renderBorne(){
+    var s='',f='',pts=bst.customer?'<span class="b-pts">'+bst.customer.points+' pts</span>':'';
+    if(bst.step==='welcome'){
+      s='<div style="text-align:center;padding:60px 0"><div style="font-family:var(--serif);font-size:46px;letter-spacing:.16em;color:#d8b252">KINGSTON</div><div style="color:#9a9180;letter-spacing:.3em;font-size:13px;margin-top:6px">CBD · BOUTIQUE</div><div class="b-h2" style="margin-top:40px;font-size:18px">Touchez pour commencer votre commande</div></div>';
+      f='<button class="b-cta" data-b="go" data-to="loyalty">Commencer</button>';
+    } else if(bst.step==='loyalty'){
+      s='<div class="b-h1">Vous êtes membre&nbsp;?</div><div class="b-h2">Identifiez-vous pour retrouver vos points et en gagner.</div>'+
+        '<div class="b-card" data-b="login"><div><div class="bc1">Je suis membre du Club</div><div class="bc2">Scanner mon QR ou n° de téléphone</div></div><span class="b-add">Identifier</span></div>';
+      f='<button class="b-ghost" data-b="go" data-to="categories">Continuer sans compte</button>';
+    } else if(bst.step==='categories'){
+      var cats=[];products.forEach(function(p){if(p.onBorne&&cats.indexOf(p.cat)<0)cats.push(p.cat);});
+      s='<div class="b-h1">Que voulez-vous&nbsp;?</div><div class="b-grid">'+cats.map(function(c){var n=products.filter(function(p){return p.onBorne&&p.cat===c;}).length;return '<div class="b-tile" data-b="cat" data-cat="'+c+'"><div class="t1">'+c+'</div><div class="t2">'+n+' produits</div></div>';}).join('')+'</div>';
+    } else if(bst.step==='product'){
+      var list=products.filter(function(p){return p.onBorne&&p.cat===bst.cat;});
+      s='<div class="b-back" data-b="go" data-to="categories">‹ Catégories</div><div class="b-h1" style="margin-top:8px">'+bst.cat+'</div>'+
+        list.map(function(p){return '<div class="b-card" data-b="prod" data-id="'+p.id+'"><div style="display:flex;align-items:center;gap:14px"><div class="b-thumb" style="background-image:url('+(PRODUCT_IMG[p.name]||'')+')"></div><div><div class="bc1">'+p.name+'</div><div class="bc2">'+p.cbd+'</div></div></div><span class="price">'+(p.unit==='g'?'dès ':'')+bEur(entryPrice(p))+'</span></div>';}).join('');
+    } else if(bst.step==='grams'){
+      var p=bst.pending;
+      s='<div class="b-back" data-b="go" data-to="product">‹ '+bst.cat+'</div><div class="b-h1" style="margin-top:8px">'+p.name+'</div><div class="b-h2">'+p.cbd+' — choisissez le poids</div><div class="b-grid">'+
+        p.tiers.map(function(t){return '<div class="b-tile" data-b="addgram" data-g="'+t[0]+'" data-pr="'+t[1]+'"><div class="t1">'+t[0]+' g</div><div class="t2" style="color:#d8b252">'+bEur(t[1])+'</div></div>';}).join('')+'</div>';
+    } else if(bst.step==='extras'){
+      s='<div class="b-h1">On complète&nbsp;?</div><div class="b-h2">Les indispensables qui vont avec.</div>'+
+        bAddons.map(function(a){return '<div class="b-card" data-b="addon" data-n="'+a.n+'" data-p="'+a.p+'"><div><div class="bc1">'+a.n+'</div><div class="bc2">'+bEur(a.p)+'</div></div><span class="b-add '+(bHasAddon(a.n)?'on':'')+'">'+(bHasAddon(a.n)?'Ajouté':'+ Ajouter')+'</span></div>';}).join('')+
+        (bst.customer?'<div class="b-promo">Plus que '+Math.max(0,300-bst.customer.points)+' points pour débloquer −10% sur votre prochain achat.</div>':'<div class="b-promo">Créez un compte pour gagner des points sur cette commande.</div>');
+      f='<button class="b-cta" data-b="go" data-to="cart">Continuer · '+bEur(bTotal())+'</button>';
+    } else if(bst.step==='cart'){
+      s='<div class="b-h1">Votre commande</div>'+bst.cart.map(function(l){return '<div class="b-line"><span>'+l.name+' <span style="color:#9a9180">'+(l.detail||'')+'</span></span><b>'+bEur(l.price)+'</b></div>';}).join('')+
+        '<div class="b-tot"><span>Total</span><span>'+bEur(bTotal())+'</span></div>'+
+        '<div class="b-promo">'+(bst.customer?'Vous gagnez '+Math.round(bTotal())+' points · solde '+bst.customer.points:'Cette commande rapporterait '+Math.round(bTotal())+' points avec un compte')+'</div>'+
+        '<div class="b-back" style="margin-top:14px" data-b="go" data-to="categories">+ Ajouter d\'autres produits</div>';
+      f='<button class="b-cta" data-b="go" data-to="pay">Payer · '+bEur(bTotal())+'</button>';
+    } else if(bst.step==='pay'){
+      s='<div style="text-align:center;padding:50px 0"><div class="tdot" style="border-color:rgba(216,178,82,.25);border-top-color:#d8b252"></div><div class="b-h1">Paiement en cours</div><div class="b-h2">Présentez votre carte sur le terminal Monetico…</div><div style="font-family:var(--serif);font-size:30px;color:#d8b252">'+bEur(bTotal())+'</div></div>';
+      setTimeout(function(){if(bst.step==='pay'){bst.earned=Math.round(bTotal());if(bst.customer)bst.customer.points+=bst.earned;bst.step='thanks';renderBorne();}},2200);
+    } else if(bst.step==='thanks'){
+      s='<div style="text-align:center;padding:30px 0"><div class="b-check">✓</div><div class="b-h1">Merci'+(bst.customer?' '+bst.customer.name:'')+'&nbsp;!</div><div class="b-h2">Commande #'+bst.order+' confirmée.</div><div class="b-promo" style="max-width:380px;margin:0 auto">'+(bst.customer?'+'+bst.earned+' points · nouveau solde '+bst.customer.points:'Vous auriez gagné '+bst.earned+' points — créez un compte la prochaine fois')+'</div><div class="b-h2" style="margin-top:16px">Récupérez votre commande au comptoir.</div></div>';
+      f='<button class="b-ghost" data-b="restart">Nouvelle commande</button>';
+    }
+    borneRoot.innerHTML='<div class="borne"><div class="b-top"><div class="b-wm">'+crown()+' KINGSTON</div><div style="display:flex;gap:12px;align-items:center">'+pts+'<button class="b-close" data-b="close">Quitter</button></div></div>'+bStage()+'<div class="b-body">'+s+'</div><div class="b-foot">'+f+'</div></div>';
+  }
+
+  // ---------- Événements ----------
+  document.body.addEventListener('click',function(ev){
+    var n=ev.target.closest('[data-view]');
+    if(n){st.view=n.getAttribute('data-view');render();return;}
+    var b=ev.target.closest('[data-b]');
+    if(b){handleBorne(b,ev);return;}
+    var el=ev.target.closest('[data-act]');
+    if(!el)return;
+    var a=el.getAttribute('data-act');
+    if(a==='login'){
+      var ukey=document.getElementById('lg-user').value;var pass=(document.getElementById('lg-pass').value||'');
+      var er=document.getElementById('lg-err');if(er){er.style.color='#8a8273';er.textContent='Connexion…';}
+      fetch((API.base||'')+'/api/login',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({user:ukey,password:pass})})
+        .then(function(r){return r.json().then(function(d){if(!r.ok)throw new Error(d.error||'Identifiants invalides');return d;});})
+        .then(function(d){var meta=ACCOUNTS[ukey]||{};st.user={name:d.name,role:d.role,roleLabel:meta.roleLabel||d.role,boutiqueId:d.boutiqueId,initials:meta.initials||'',token:d.token};st.boutique=d.boutiqueId?boutiqueName(d.boutiqueId):'Réseau (toutes boutiques)';API.token=d.token;render();autoConnect();toast('Bienvenue, '+d.name);})
+        .catch(function(e){var e2=document.getElementById('lg-err');if(e2){e2.style.color='#e0917a';e2.textContent=(e.message||'Erreur de connexion');}});
+      return;
+    }
+    if(a==='logout'){st.user=null;st.client=null;st.cart=[];API.on=false;render();return;}
+    if(a==='closemodal'){if(ev.target.classList.contains('modal-backdrop')){closeModal();}else if(!el.classList.contains('modal-backdrop')){closeModal();}return;}
+    if(a==='poscat'){st.cat=el.getAttribute('data-c');st.posSearch='';render();return;}
+    if(a==='pick'){var p=pById(el.getAttribute('data-id'));if(p.unit==='g')gramModal(p);else if(p.packs&&p.packs.length)packModal(p);else{st.cart.push({name:p.name,detail:'Unité',price:p.price,productId:p.id,qty:1});render();}return;}
+    if(a==='addgram'){var pg=pById(el.getAttribute('data-id'));var g=+el.getAttribute('data-g');var pr=+el.getAttribute('data-pr');st.cart.push({name:pg.name,detail:g+' g',price:pr,productId:pg.id,grams:g});closeModal();render();return;}
+    if(a==='addunit'){var puu=pById(el.getAttribute('data-id'));st.cart.push({name:puu.name,detail:'Unité',price:puu.price,productId:puu.id,qty:1});closeModal();render();return;}
+    if(a==='addpack'){var ppk=pById(el.getAttribute('data-id'));var pq=+el.getAttribute('data-q'),ppr=+el.getAttribute('data-pr');st.cart.push({name:ppk.name,detail:'Pack de '+pq,price:ppr,productId:ppk.id,packQty:pq,qty:1});closeModal();render();return;}
+    if(a==='rmline'){st.cart.splice(+el.getAttribute('data-i'),1);render();return;}
+    if(a==='pickclient'){clientModal();return;}
+    if(a==='setclient'){st.client=customers.find(function(c){return c.id===el.getAttribute('data-id');});st.redeemPts=0;closeModal();render();return;}
+    if(a==='setclientremote'){var rc=remoteCustomers[+el.getAttribute('data-i')];if(rc){st.client={name:rc.name||rc.email,email:rc.email,phone:rc.phone||'',points:Math.round(rc.points||0),tier:tierOf(rc.points)};st.redeemPts=0;}closeModal();render();return;}
+    if(a==='ostatus'){var oid=parseInt(el.getAttribute('data-id'),10);var nx=el.getAttribute('data-next');el.disabled=true;apiPost('/api/orders/'+oid+'/status',{status:nx}).then(function(o){if(o&&o.id){ordersData[o.id]=o;refreshCmd();}}).catch(function(){el.disabled=false;toast('Erreur : statut commande');});return;}
+    if(a==='redeem'){if(st.client){st.redeemPts=Math.min(st.client.points,Math.round(cartBrut()*100));}render();return;}
+    if(a==='unredeem'){st.redeemPts=0;render();return;}
+    if(a==='applycoupon'){st.coupon={e:+el.getAttribute('data-e'),p:+el.getAttribute('data-p')};st.redeemPts=0;render();return;}
+    if(a==='rmcoupon'){st.coupon=null;render();return;}
+    if(a==='pay'){if(!st.cart.length){toast('Le ticket est vide');return;}payModal(el.getAttribute('data-m'));return;}
+    if(a==='payok'){finalizeSale(el.getAttribute('data-m'));return;}
+    if(a==='printticket'){printReceipt();return;}
+    if(a==='tgl'){var pt=pById(el.getAttribute('data-id'));var k=el.getAttribute('data-k');pt[k]=!pt[k];render();toast('Mise à jour synchronisée (caisse · borne)');return;}
+    if(a==='delprod'){var dpp=pById(el.getAttribute('data-id'));if(!dpp)return;if(API.on&&dpp.custom){apiDelete('/api/products/'+encodeURIComponent(dpp.id)).then(function(){reloadProducts();toast('Produit supprimé');}).catch(function(e){toast('Échec : '+(e.message||e));});return;}products=products.filter(function(p){return p.id!==dpp.id;});render();toast('Produit retiré');return;}
+    if(a==='openprod'){st.pform=blankPForm();openModal(productModal());return;}
+    if(a==='editprod'){var pe=pById(el.getAttribute('data-id'));if(!pe)return;st.pform={editId:pe.id,name:pe.name,cat:pe.cat,unit:pe.unit,tiers:(pe.tiers||[]).map(function(t){return [t[0],t[1]];}),price:pe.price||0,packs:(pe.packs||[]).map(function(k){return {qty:k.qty,price:k.price};}),img:pe.img||'',desc:pe.desc||'',initStock:0};openModal(productModal());return;}
+    if(a==='pf-type'){readProdForm();st.pform.unit=el.getAttribute('data-u');if(st.pform.unit==='g'&&!st.pform.tiers.length)st.pform.tiers=[[2,5]];openModal(productModal());return;}
+    if(a==='pf-addtier'){readProdForm();st.pform.tiers.push([0,0]);openModal(productModal());return;}
+    if(a==='pf-rmtier'){readProdForm();st.pform.tiers.splice(+el.getAttribute('data-i'),1);openModal(productModal());return;}
+    if(a==='pf-addpack'){readProdForm();st.pform.packs.push({qty:0,price:0});openModal(productModal());return;}
+    if(a==='pf-rmpack'){readProdForm();st.pform.packs.splice(+el.getAttribute('data-i'),1);openModal(productModal());return;}
+    if(a==='saveprod'){saveProduct();return;}
+    if(a==='refund'){var fnum=el.getAttribute('data-num');var f=invoices.filter(function(x){return x.num===fnum;})[0];if(!f||f.refunded||f.total<0){return;}(f.lines||[]).forEach(function(l){var p=pById(l.productId);if(!p)return;if(l.grams){p.lots=p.lots||[];p.lots.push({lot:'RETOUR-'+f.num,g:l.grams,exp:'12/2099',coa:'—'});}else if(l.qty){p.stockU=(p.stockU||0)+l.qty;}});f.refunded=true;var anum='KING-2026-'+String(nextInvoice++).padStart(4,'0');invoices.push({num:anum,date:new Date().toLocaleDateString('fr-FR')+' '+new Date().toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'}),client:f.client,total:-f.total,pay:'Avoir',avoirDe:f.num,refunded:true});render();toast('Avoir '+anum+' créé · stock réapprovisionné');return;}
+    if(a==='price'){var pp=pById(el.getAttribute('data-id'));pp.price=Math.max(0.5,Math.round((pp.price+(+el.getAttribute('data-d'))*0.5)*100)/100);render();return;}
+    if(a==='recept'){receptModal();return;}
+    if(a==='restockall'){if(!API.on){toast('Connecte-toi au serveur pour réapprovisionner');return;}apiPost('/api/stock/restock-all',{}).then(function(d){toast((d.restocked||0)+' produits réapprovisionnés');reloadProducts(function(){render();});}).catch(function(e){toast('Échec : '+(e.message||e));});return;}
+    if(a==='cloture'){doCloture(el.getAttribute('data-t'));return;}
+    if(a==='fiscverify'){fiscalData.loading=false;loadFiscal();toast('Vérification de l’intégrité…');return;}
+    if(a==='fiscarchive'){exportArchive();return;}
+    if(a==='recok'){var rp=pById($('#rc-prod').value);var lot=($('#rc-lot').value||'LOT-NEW').trim();var gg=parseInt($('#rc-g').value,10)||0;var exp=($('#rc-exp').value||'12/2027').trim();rp.lots=rp.lots||[];rp.lots.push({lot:lot,g:gg,exp:exp,coa:'COA-'+Math.floor(Math.random()*9000+1000)});saveStock(st.boutiqueId);closeModal();render();toast('Lot '+lot+' réceptionné (+'+gg+' g) · '+(BQNAME[st.boutiqueId]||''));return;}
+    if(a==='cmpbq'){var bb=el.getAttribute('data-b');var ci=st.compare.indexOf(bb);if(ci>=0)st.compare.splice(ci,1);else st.compare.push(bb);render();return;}
+    if(a==='apiconnect'){doApiConnect();return;}
+    if(a==='apidisconnect'){API.on=false;API.base='';if(LOCAL_SNAPSHOT)products=JSON.parse(JSON.stringify(LOCAL_SNAPSHOT));st.cart=[];st.client=null;render();toast('Déconnecté — retour aux données locales');return;}
+    if(a==='saverate'){
+      if(!API.on){toast('Connecte d\'abord le serveur (Réglages)');return;}
+      var rv=parseFloat((document.getElementById('rg-rule')||{}).value);
+      if(!(rv>=0)){toast('Taux invalide');return;}
+      apiPost('/api/loyalty/config',{pointsPerEuro:rv}).then(function(d){API.ptsPerEuro=d.pointsParEuro;toast('Taux enregistré : '+d.pointsParEuro+' point(s) par €');}).catch(function(e){toast('Échec : '+(e.message||e));});
+      return;
+    }
+    if(a==='testconn'){
+      var res=document.getElementById('rg-res'); if(!res)return;
+      var show=function(stt,bal){ var prod=/production/i.test(stt.mode||''); res.innerHTML='<div style="background:#15100a;color:#e8e2d2;border-radius:12px;padding:14px;font-family:ui-monospace,Menlo,monospace;font-size:11.5px;line-height:1.8;overflow:auto"><span style="color:#8a8273">// Mode fidélité du serveur</span><br>'+esc(stt.mode||'?')+(stt.wpUrl?' &rarr; '+esc(stt.wpUrl):'')+'<br><br><span style="color:#8a8273">// Solde réel d\'un membre (lu dans myCred)</span><br><span style="color:#9fe1cb">&rarr; '+(bal&&bal.points!=null?esc(bal.email||'membre')+' : '+bal.points+' pts':'membre exemple introuvable (normal si l\'e-mail n\'existe pas dans ton myCred)')+'</span></div><div class="tag '+(prod?'tag-ok':'tag-low')+'" style="margin-top:10px;display:inline-block">'+(prod?'Relié à ton myCred (production)':'Serveur en mode démo — renseigne COMPTOIR_WP_URL et COMPTOIR_API_KEY pour le vrai site')+'</div>'; toast('Test fidélité effectué via le serveur'); };
+      if(API.on){ res.innerHTML='<span class="muted" style="font-size:12px">Test via le serveur…</span>'; apiGet('/api/loyalty/status').then(function(stt){ apiGet('/api/customers/'+encodeURIComponent('lenny@kingston-cbd.fr')).then(function(b){show(stt,b);}).catch(function(){show(stt,null);}); }).catch(function(e){ res.innerHTML='<span class="tag tag-low">Échec : '+esc(e.message||e)+'</span> <span class="muted" style="font-size:12px">— le serveur répond-il ?</span>'; }); return; }
+      var url=($('#rg-url').value||'').trim()||'https://kingston-cbd.fr';var type=($('#rg-type').value||'mycred_default').trim();var rule=parseFloat($('#rg-rule').value)||1;var gain=Math.round(31*rule);
+      res.innerHTML='<div style="background:#15100a;color:#e8e2d2;border-radius:12px;padding:14px;font-family:ui-monospace,Menlo,monospace;font-size:11.5px;line-height:1.8;overflow:auto"><span style="color:#8a8273">// Lecture du solde d\'un membre</span><br>GET '+esc(url)+'/wp-json/comptoir/v1/balance?user=membre<br><span style="color:#9fe1cb">&rarr; { "points": 240, "type": "'+esc(type)+'" }</span><br><br><span style="color:#8a8273">// Achat ('+rule+' pt/€) &rarr; crédit myCred (anti-doublon)</span><br><span style="color:#9fe1cb">&rarr; { "points": '+(240+gain)+' }</span></div><div class="tag tag-low" style="margin-top:10px;display:inline-block">Aperçu — connecte le serveur (Réglages) pour un test réel sur ton myCred</div>';
+      toast('Aperçu fidélité (connecte le serveur pour un test réel)'); return;
+    }
+    if(a==='exportfec'){toast('Export FEC généré (démo)');return;}
+    if(a==='jperiod'){st.jperiod=el.getAttribute('data-p');journalData.loaded=false;render();return;}
+    if(a==='jday'){var dv=(document.getElementById('jday')||{}).value||'';if(!dv){toast('Choisis une date');return;}st.jday=dv;st.jperiod='day';journalData.loaded=false;render();return;}
+    if(a==='jrange'){var jf=(document.getElementById('jfrom')||{}).value||'';var jt=(document.getElementById('jto')||{}).value||'';if(!jf&&!jt){toast('Choisis au moins une date');return;}st.jfrom=jf;st.jto=jt;st.jperiod='range';journalData.loaded=false;render();return;}
+    if(a==='jcsv'){dlAuth('/api/journal/export.csv'+jQS(),'journal-kingston.csv');return;}
+    if(a==='jereport'){dlAuth('/api/journal/ereporting'+jQS(),'e-reporting-kingston.json');return;}
+    if(a==='fidadjust'){var fc=fidList[+el.getAttribute('data-i')];if(fc)fidAdjustModal(fc);return;}
+    if(a==='fidcredit'||a==='fiddebit'){
+      if(!fidTarget)return;
+      var amt=parseInt((document.getElementById('fid-amt')||{}).value,10)||0;
+      var msg=document.getElementById('fid-amsg');
+      if(amt<=0){if(msg)msg.textContent='Entre un nombre de points positif.';return;}
+      var signed=(a==='fidcredit')?amt:-amt; var ref=fidTarget.email||fidTarget.name;
+      if(msg)msg.textContent='Enregistrement…';
+      apiPost('/api/loyalty/adjust',{customerRef:ref,amount:signed}).then(function(d){closeModal();toast((signed>0?'+':'')+signed+' pts · nouveau solde myCred '+(d.points!=null?d.points:'?'));loadFidelite();}).catch(function(e){if(msg)msg.textContent='Échec : '+(e.message||e);});
+      return;
+    }
+    if(a==='tpedetect'){tpeFetch('/ports').then(function(d){var sel=document.getElementById('tpe-serial');if(!sel)return;var ps=(d&&d.ports)||[];sel.innerHTML='<option value="">— choisir —</option>'+ps.map(function(p){return '<option value="'+esc(p.path)+'">'+esc(p.path)+(p.manufacturer?' ('+esc(p.manufacturer)+')':'')+'</option>';}).join('');tpeShow(ps.length?(ps.length+' port(s) détecté(s) — choisis le terminal.'):'Aucun port — branche le terminal puis réessaie.',ps.length>0);}).catch(function(){tpeShow('Pont non démarré (lance le pont).',false);});return;}
+    if(a==='tpetest'){var f=tpeReadForm();if(f.mode==='ip'&&f.ip&&!isPrivateIp(f.ip)){tpeShow('⚠️ '+f.ip+' n\'est PAS une adresse locale. Ton terminal est en 192.168.x.x (cette IP, c\'est ta box ou un serveur banque, pas le TPE).',false);return;}tpeShow('Test en cours…',true);tpeApply().then(function(){return tpeFetch('/test',{method:'POST',headers:{'content-type':'application/json'},body:'{}'});}).then(function(r){var d=(r&&r.detail)||'Test effectué';if(f.mode==='ip')d+=' — réseau seulement : ça ne prouve pas que c\'est ton TPE en mode caisse.';tpeShow(d,!!(r&&r.ok));}).catch(function(){tpeShow('Pont non démarré (lance le pont).',false);});return;}
+    if(a==='tpesave'){tpeApply().then(function(r){tpeShow('Terminal activé — mode '+((r&&r.mode)||'?')+'.',true);toast('Terminal de paiement enregistré');}).catch(function(){tpeShow('Pont non démarré (lance le pont).',false);});return;}
+    if(a==='openborne'){openBorne();return;}
+    if(a==='closeborne'){closeBorne();return;}
+  });
+
+  function handleBorne(b,ev){
+    var a=b.getAttribute('data-b');
+    if(a==='close'){closeBorne();return;}
+    if(a==='go'){bst.step=b.getAttribute('data-to');renderBorne();return;}
+    if(a==='login'){bst.customer={name:'Lenny',points:240};bst.step='categories';renderBorne();return;}
+    if(a==='cat'){bst.cat=b.getAttribute('data-cat');bst.step='product';renderBorne();return;}
+    if(a==='prod'){var p=pById(b.getAttribute('data-id'));if(p.unit==='g'){bst.pending=p;bst.step='grams';}else{bst.cart.push({name:p.name,detail:p.cbd,price:p.price});bst.step='extras';}renderBorne();return;}
+    if(a==='addgram'){var g=+b.getAttribute('data-g');var pr=+b.getAttribute('data-pr');bst.cart.push({name:bst.pending.name,detail:g+' g',price:pr});bst.step='extras';renderBorne();return;}
+    if(a==='addon'){var nm=b.getAttribute('data-n');var pp=+b.getAttribute('data-p');var i=bst.cart.findIndex(function(l){return l.n===nm&&l.addon;});if(i>=0)bst.cart.splice(i,1);else bst.cart.push({name:nm,n:nm,addon:true,price:pp,detail:'extra'});renderBorne();return;}
+    if(a==='restart'){openBorne();return;}
+  }
+
+  // boutique selector
+  $("#boutiqueSel").addEventListener('change',function(e){var nid=bIdOf(e.target.value);if(nid&&!API.on){saveStock(st.boutiqueId);st.boutiqueId=nid;loadStock(nid);}else if(nid){st.boutiqueId=nid;}st.boutique=e.target.value;render();toast('Boutique : '+e.target.value);});
+  var custSearchTimer=null;
+  document.body.addEventListener('input',function(e){
+    if(e.target&&e.target.id==='pos-search'){ st.posSearch=e.target.value; var g=document.querySelector('.pgrid'); if(g){g.innerHTML=posGrid();} return; }
+    if(e.target&&e.target.id==='cm-search'){ var q=e.target.value; clearTimeout(custSearchTimer); custSearchTimer=setTimeout(function(){loadClientSearch(q);},250); return; }
+    if(e.target&&e.target.id==='fid-search'){ st.fidQ=e.target.value; clearTimeout(custSearchTimer); custSearchTimer=setTimeout(loadFidelite,250); return; }
+    if(e.target&&e.target.id==='tpe-mode'){ tpeToggle(); return; }
+  });
+  document.body.addEventListener('change',function(e){ if(e.target&&e.target.id==='tpe-mode'){ tpeToggle(); } });
+
+  render();
+})();
+</script>
+</body>
+</html>

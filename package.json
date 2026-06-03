@@ -1,0 +1,18 @@
+{
+  "name": "comptoir-server",
+  "version": "0.1.0",
+  "private": true,
+  "description": "API serveur Comptoir (prototype) — caisse, borne, stock grammes/lots, facturation chaînée, fidélité myCred.",
+  "main": "comptoir-server.js",
+  "scripts": {
+    "start": "node comptoir-server.js",
+    "test": "node test-comptoir.js",
+    "loyalty:demo": "node comptoir-loyalty-connector.js --demo",
+    "efacture:demo": "node efacture.js --demo"
+  },
+  "dependencies": {
+    "pg": "^8.11.0",
+    "bcryptjs": "^2.4.3"
+  },
+  "engines": { "node": ">=18" }
+}

@@ -1,0 +1,555 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0"/>
+<title>Borne KINGSTON</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=Anton&family=Open+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
+<style>
+:root{
+  --bg:#f3f1ea; --card:#ffffff; --ink:#1b1813; --muted:#7c776c; --line:#e7e3d9;
+  --gold:#b8902f; --gold2:#d8b252; --dark:#15110a; --green:#3f7d4f;
+  /* Typographie KINGSTON : Anton (titres / logo) + Open Sans (texte courant). */
+  --serif:'Anton','Open Sans',system-ui,sans-serif; --sans:'Open Sans',system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+html,body{margin:0;height:100%;}
+body{font-family:var(--sans);background:var(--bg);color:var(--ink);overflow:hidden;}
+#app{position:fixed;inset:0;display:flex;flex-direction:column;}
+
+/* Header */
+.head{height:62px;flex:0 0 62px;background:var(--dark);display:flex;align-items:center;justify-content:space-between;padding:0 22px;}
+.wm{display:flex;align-items:center;gap:9px;font-family:var(--serif);letter-spacing:.14em;font-size:21px;font-weight:400;color:#f4efe3;}
+.restart{border:1px solid rgba(255,255,255,.18);background:transparent;color:#cfc9ba;border-radius:10px;padding:9px 14px;font-size:13px;cursor:pointer;}
+.head-r{display:flex;align-items:center;gap:10px;}
+.promo{background:var(--dark);overflow:hidden;white-space:nowrap;border-bottom:1px solid rgba(216,178,82,.18);}
+.promo-track{display:inline-block;padding:9px 0;animation:marq 26s linear infinite;color:var(--gold2);font-size:12.5px;letter-spacing:.03em;font-weight:600;}
+.promo-track span{margin:0 16px;}
+.promo-track .sep{opacity:.45;margin:0 2px;}
+@keyframes marq{from{transform:translateX(0)}to{transform:translateX(-50%)}}
+.hpts{display:flex;align-items:center;gap:6px;background:linear-gradient(135deg,var(--gold2),var(--gold));color:#15110a;font-weight:800;font-size:14px;padding:8px 14px;border-radius:999px;}
+.hbtn{border:1px solid rgba(255,255,255,.2);background:transparent;color:#f0e9d8;border-radius:10px;padding:9px 14px;font-size:13px;font-weight:700;cursor:pointer;}
+.hbtn.gold{border:0;background:linear-gradient(135deg,var(--gold2),var(--gold));color:#15110a;}
+.hero{position:relative;border-radius:20px;padding:24px 26px;margin-bottom:20px;display:flex;align-items:center;justify-content:space-between;gap:18px;background:radial-gradient(130% 180% at 0% 0%,#2c2210,#15110a);color:#f4efe3;box-shadow:0 10px 30px rgba(20,16,9,.18);overflow:hidden;}
+.hero:after{content:"";position:absolute;right:-40px;top:-40px;width:180px;height:180px;border-radius:50%;background:radial-gradient(circle,rgba(216,178,82,.25),transparent 70%);}
+.hero-t{font-family:var(--serif);font-size:28px;letter-spacing:.01em;color:#f4efe3;}
+.hero-s{color:#c9bfa6;margin-top:6px;font-size:14.5px;}
+.hero-cta{position:relative;border:0;border-radius:13px;padding:14px 22px;font-weight:800;font-size:14px;cursor:pointer;background:linear-gradient(135deg,var(--gold2),var(--gold));color:#15110a;white-space:nowrap;}
+.badge{position:absolute;margin:10px;background:var(--gold);color:#fff;font-size:11px;font-weight:800;padding:4px 10px;border-radius:999px;letter-spacing:.03em;z-index:2;box-shadow:0 3px 8px rgba(184,144,47,.4);}
+.av-pts{text-align:center;margin-bottom:6px;}
+.av-n{font-family:var(--serif);font-size:50px;color:var(--ink);line-height:1;}
+.av-l{color:var(--muted);font-size:13px;margin-top:4px;}
+.gauge{height:14px;border-radius:999px;background:#eceae2;overflow:hidden;margin:10px 0 6px;}
+.gauge>i{display:block;height:100%;background:linear-gradient(90deg,var(--gold),var(--gold2));}
+.av-prog{text-align:center;color:#6f5717;font-size:13px;margin-bottom:14px;}
+.av-row{display:flex;gap:12px;align-items:flex-start;padding:12px 0;border-top:1px solid var(--line);}
+.av-dot{width:10px;height:10px;border-radius:50%;background:var(--gold);margin-top:5px;flex:0 0 10px;}
+.av-t{font-weight:700;}
+.av-d{color:var(--muted);font-size:13px;margin-top:2px;}
+
+/* Body : rail + menu */
+.body{flex:1;display:flex;min-height:0;}
+.rail{width:158px;flex:0 0 158px;background:var(--card);border-right:1px solid var(--line);overflow:auto;padding:10px 0;}
+.railitem{display:flex;flex-direction:column;align-items:center;gap:7px;padding:14px 8px;cursor:pointer;border-left:4px solid transparent;color:var(--muted);}
+.railitem .ri-ph{width:58px;height:58px;border-radius:14px;background:#eceae2 center/cover no-repeat;}
+.railitem .ri-lbl{font-size:13px;font-weight:700;text-align:center;line-height:1.2;}
+.railitem.on{border-left-color:var(--gold);background:rgba(184,144,47,.08);color:var(--ink);}
+.railitem.on .ri-ph{box-shadow:0 0 0 2px var(--gold);}
+.railitem:active{transform:scale(.97);}
+
+.menu{flex:1;overflow:auto;padding:20px 22px 18px;}
+.menu-h{font-family:var(--serif);font-size:24px;margin:0 0 14px;}
+.pgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(216px,1fr));gap:16px;}
+.pcard{position:relative;background:var(--card);border:1px solid var(--line);border-radius:18px;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 2px 6px rgba(20,16,9,.05);transition:transform .12s,box-shadow .15s;}
+.pcard:hover{transform:translateY(-3px);box-shadow:0 14px 30px rgba(20,16,9,.13);}
+.pcard .ph{height:188px;background:#eceae2 center/cover no-repeat;}
+.pcard .info{padding:13px 15px 15px;display:flex;flex-direction:column;flex:1;}
+.pcard .nm{font-family:var(--serif);font-size:19px;line-height:1.15;}
+.pcard .ds{color:var(--muted);font-size:12.5px;margin-top:3px;}
+.pcard .row{margin-top:auto;display:flex;align-items:center;justify-content:space-between;padding-top:12px;}
+.pcard .pr{font-weight:800;font-size:18px;}
+.add{border:0;background:var(--gold);color:#fff;font-weight:800;border-radius:12px;padding:11px 16px;font-size:15px;cursor:pointer;transition:transform .08s,background .15s;}
+.add:hover{background:#a37e26;} .add:active{transform:scale(.9);}
+.pcard{cursor:pointer;}
+.ovl.right{justify-content:flex-end;align-items:stretch;padding:0;}
+.drawer{background:var(--card);width:440px;max-width:92vw;height:100%;overflow:auto;position:relative;animation:slidein .28s cubic-bezier(.2,.8,.2,1);box-shadow:-12px 0 44px rgba(0,0,0,.28);}
+@keyframes slidein{from{transform:translateX(100%)}to{transform:none}}
+.welcome-pop{animation:popin .26s cubic-bezier(.2,.8,.2,1);}
+@keyframes popin{from{transform:scale(.92);opacity:0}to{transform:none;opacity:1}}
+.dx{position:absolute;top:14px;right:14px;z-index:2;background:rgba(255,255,255,.92);}
+.d-ph{height:300px;background:#eceae2 center/cover no-repeat;}
+.d-body{padding:22px 24px 30px;}
+.d-cat{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--gold);font-weight:800;}
+.d-name{font-family:var(--serif);font-size:30px;margin:4px 0 12px;}
+.d-desc{color:var(--muted);font-size:15px;line-height:1.55;margin-bottom:14px;}
+.d-row{display:flex;justify-content:space-between;gap:16px;padding:12px 0;border-top:1px solid var(--line);}
+.d-l{color:var(--muted);font-size:12.5px;text-transform:uppercase;letter-spacing:.05em;}
+.d-v{font-weight:600;text-align:right;}
+.d-sec{font-family:var(--serif);font-size:18px;margin:20px 0 10px;}
+.d-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+.chip2{border:1px solid var(--line);background:#fff;border-radius:14px;padding:15px;cursor:pointer;display:flex;justify-content:space-between;align-items:center;font-size:16px;}
+.chip2:hover{border-color:var(--gold);} .chip2 b{font-family:var(--serif);} .chip2 span{color:var(--ink);font-weight:800;}
+.d-add{width:100%;border:0;border-radius:14px;padding:17px;font-size:16px;font-weight:800;color:#fff;background:linear-gradient(135deg,var(--gold2),var(--gold));cursor:pointer;margin-top:8px;}
+.d-legal{margin-top:16px;font-size:11px;color:var(--muted);line-height:1.5;border-top:1px solid var(--line);padding-top:12px;}
+
+/* Order bar */
+.orderbar{flex:0 0 auto;background:var(--card);border-top:1px solid var(--line);box-shadow:0 -4px 20px rgba(20,16,9,.07);
+  display:flex;align-items:center;gap:16px;padding:14px 22px;}
+.ob-info{display:flex;flex-direction:column;}
+.ob-count{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;}
+.ob-total{font-family:var(--serif);font-size:26px;font-weight:700;}
+.ob-btn{margin-left:auto;border:0;border-radius:14px;padding:18px 30px;font-size:17px;font-weight:800;cursor:pointer;color:#fff;
+  background:linear-gradient(135deg,var(--gold2),var(--gold));box-shadow:0 8px 22px rgba(184,144,47,.32);transition:transform .08s;}
+.ob-btn:active{transform:scale(.97);}
+.ob-btn[disabled]{background:#d9d5cb;color:#fff;box-shadow:none;cursor:default;}
+
+/* Overlay (welcome, modal, cart, pay, done) */
+.ovl{position:fixed;inset:0;z-index:40;display:flex;align-items:center;justify-content:center;padding:22px;}
+.ovl.dim{background:rgba(20,15,8,.55);}
+.sheet{background:var(--card);border-radius:22px;width:100%;max-width:520px;overflow:hidden;box-shadow:0 24px 70px rgba(0,0,0,.35);}
+.sheet-full{max-width:680px;display:flex;flex-direction:column;max-height:90vh;}
+.sheet-h{padding:18px 22px;border-bottom:1px solid var(--line);font-family:var(--serif);font-size:21px;display:flex;align-items:center;justify-content:space-between;}
+.sheet-b{padding:20px 22px;overflow:auto;}
+.x{border:0;background:#f0eee7;color:var(--muted);width:34px;height:34px;border-radius:50%;font-size:18px;cursor:pointer;}
+.opt{width:100%;display:flex;align-items:center;justify-content:space-between;border:1px solid var(--line);background:var(--card);border-radius:14px;padding:16px 18px;margin-bottom:10px;cursor:pointer;font-size:17px;}
+.opt:hover{border-color:var(--gold);} .opt:active{transform:scale(.99);}
+.opt b{font-family:var(--serif);} .opt .op{color:var(--ink);font-weight:800;}
+
+.cl{display:flex;align-items:center;gap:14px;padding:14px 0;border-bottom:1px solid var(--line);}
+.cl .cph{width:60px;height:60px;border-radius:12px;background:#eceae2 center/cover no-repeat;flex:0 0 60px;}
+.cl .cn{font-weight:700;} .cl .cd{color:var(--muted);font-size:12.5px;}
+.stp{display:flex;align-items:center;gap:12px;margin-left:auto;}
+.stp button{width:34px;height:34px;border-radius:10px;border:1px solid var(--line);background:#fff;font-size:18px;cursor:pointer;}
+.stp button:active{transform:scale(.9);}
+.stp b{min-width:22px;text-align:center;}
+.cl .clp{width:78px;text-align:right;font-weight:800;}
+.del{margin-left:10px;border:1px solid var(--line);background:#fff;color:#b4452f;width:38px;height:38px;border-radius:10px;font-size:19px;cursor:pointer;flex:0 0 38px;}
+.del:hover{border-color:#b4452f;background:rgba(180,69,47,.06);}
+.ob-cart{position:relative;display:flex;align-items:center;cursor:pointer;}
+.ob-cart .cnt{position:absolute;top:-7px;right:-9px;background:var(--gold);color:#fff;font-size:11px;font-weight:800;min-width:19px;height:19px;border-radius:999px;display:flex;align-items:center;justify-content:center;padding:0 4px;}
+.totrow{display:flex;justify-content:space-between;align-items:baseline;padding:16px 0 4px;font-family:var(--serif);font-size:26px;font-weight:700;}
+.loy{display:flex;align-items:center;justify-content:space-between;background:rgba(184,144,47,.08);border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin-top:12px;font-size:13.5px;color:#6f5717;}
+.loy button{border:1px solid var(--gold);background:#fff;color:var(--gold);font-weight:700;border-radius:999px;padding:7px 13px;font-size:13px;cursor:pointer;}
+/* Coupons fidelite */
+.cpn-sec{margin-top:14px;border:1px solid var(--line);border-radius:14px;padding:14px;background:rgba(184,144,47,.05);}
+.cpn-h{font-weight:800;font-size:13.5px;color:#6f5717;margin-bottom:11px;display:flex;align-items:center;gap:7px;}
+.cpn-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+.cpn{position:relative;border:1.5px solid var(--line);background:#fff;border-radius:13px;padding:12px 10px 11px;cursor:pointer;text-align:center;display:flex;flex-direction:column;gap:2px;transition:transform .08s,border-color .15s;}
+.cpn:active{transform:scale(.96);} .cpn:hover{border-color:var(--gold);}
+.cpn .cpn-e{font-family:var(--serif);font-size:21px;font-weight:700;color:var(--ink);}
+.cpn .cpn-p{font-size:12.5px;font-weight:800;color:var(--gold);}
+.cpn .cpn-x{font-size:11px;color:var(--muted);margin-top:2px;}
+.cpn.on{border-color:var(--gold);background:linear-gradient(135deg,rgba(216,178,82,.22),rgba(184,144,47,.12));box-shadow:0 0 0 2px var(--gold) inset;}
+.cpn[disabled]{opacity:.5;cursor:default;}
+.cpn[disabled]:hover{border-color:var(--line);}
+.cpn-applied{margin-top:11px;display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:13.5px;font-weight:700;color:#6f5717;background:rgba(63,125,79,.1);border:1px solid rgba(63,125,79,.25);border-radius:11px;padding:10px 13px;}
+.cpn-applied button{border:1px solid var(--line);background:#fff;color:#b4452f;font-weight:700;border-radius:999px;padding:6px 12px;font-size:12.5px;cursor:pointer;}
+.totrow.sub,.totrow.disc{font-family:var(--sans);font-size:15px;font-weight:600;padding:6px 0;}
+.totrow.sub{color:var(--muted);} .totrow.disc{color:var(--green);}
+.sheet-f{padding:16px 22px;border-top:1px solid var(--line);display:flex;gap:12px;}
+.btn-primary{flex:1;border:0;border-radius:14px;padding:17px;font-size:16px;font-weight:800;color:#fff;background:linear-gradient(135deg,var(--gold2),var(--gold));cursor:pointer;}
+.btn-light{border:1px solid var(--line);background:#fff;color:var(--ink);border-radius:14px;padding:17px 20px;font-size:15px;font-weight:700;cursor:pointer;}
+
+/* Welcome */
+.welcome{position:fixed;inset:0;z-index:60;background:radial-gradient(120% 90% at 50% 0%,#241a0c,#0c0a06);color:#f4efe3;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;text-align:center;}
+.w-logo{font-family:var(--serif);font-size:64px;letter-spacing:.08em;color:#f4efe3;}
+.w-tag{letter-spacing:.34em;font-size:13px;color:#9a9180;text-transform:uppercase;margin-top:8px;}
+.w-touch{margin-top:48px;font-size:18px;font-weight:600;animation:pulse 1.8s ease-in-out infinite;}
+@keyframes pulse{0%,100%{opacity:.55}50%{opacity:1}}
+
+.term{text-align:center;padding:30px 10px;}
+.spin{width:54px;height:54px;border:5px solid var(--line);border-top-color:var(--gold);border-radius:50%;margin:0 auto 14px;animation:rot .9s linear infinite;}
+@keyframes rot{to{transform:rotate(360deg)}}
+.check{width:90px;height:90px;border-radius:50%;margin:6px auto;display:flex;align-items:center;justify-content:center;font-size:46px;color:#fff;background:var(--green);}
+.bump{animation:bump .3s ease;}
+@keyframes bump{0%{transform:scale(1)}40%{transform:scale(1.12)}100%{transform:scale(1)}}
+</style>
+</head>
+<body>
+<div id="app">
+  <div class="head">
+    <div class="wm"><svg width="22" height="17" viewBox="0 0 26 20"><path d="M2 17 L4 6 L9 12 L13 4 L17 12 L22 6 L24 17 Z" fill="#d8b252"/></svg> KINGSTON</div>
+    <div class="head-r" id="headr"></div>
+  </div>
+  <div class="promo"><div class="promo-track" id="promotrack"></div></div>
+  <div class="body">
+    <div id="rail" class="rail"></div>
+    <div id="menu" class="menu"></div>
+  </div>
+  <div id="orderbar" class="orderbar"></div>
+</div>
+<div id="ovl"></div>
+<script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
+<script>
+(function(){
+  "use strict";
+  var railEl=document.getElementById('rail'), menuEl=document.getElementById('menu'),
+      obEl=document.getElementById('orderbar'), ovl=document.getElementById('ovl'), appEl=document.getElementById('app');
+
+  var CATALOG=[
+    {id:'boof',name:'Super BOOF',cat:'Fleurs',desc:'Fleur CBD · 18%',info:'Indica douce et résineuse, cultivée en indoor. Taux de CBD à 18%.',aromes:'Fruits rouges, terre humide',terpenes:'Myrcène, Caryophyllène',gout:'Boisé, légèrement sucré',unit:'g',new:true,tiers:[[2,5],[5,11],[10,20],[25,45]],img:'https://kingston-cbd.fr/wp-content/uploads/2026/05/IMG_3303-683x1024.jpeg'},
+    {id:'skunk',name:'Super Skunk',cat:'Fleurs',desc:'Fleur CBD · 15%',info:'La Skunk classique, puissante et terreuse. Taux de CBD à 15%.',aromes:'Skunk, agrumes',terpenes:'Myrcène, Limonène',gout:'Terreux, piquant',unit:'g',tiers:[[2,5],[5,11],[10,20],[25,45]],img:'https://kingston-cbd.fr/wp-content/uploads/2026/05/IMG_3300-683x1024.jpeg'},
+    {id:'king51',name:'King #5.1',cat:'King',desc:'Premium · 22%',info:'Notre fleur signature, dense et très résineuse. Sélection premium à 22% de CBD.',aromes:'Pin, épices, fruits mûrs',terpenes:'Pinène, Caryophyllène, Linalol',gout:'Épicé, boisé, ample',unit:'g',new:true,tiers:[[2,12],[5,28],[10,52],[25,120]],img:'https://kingston-cbd.fr/wp-content/uploads/2026/04/IMG_1776-768x1024.jpeg'},
+    {id:'tyson',name:'Tyson Paper',cat:'Feuilles',desc:'Feuilles + tips',unit:'u',price:2,img:'https://kingston-cbd.fr/wp-content/uploads/2026/04/IMG_3240-1024x683.jpg'},
+    {id:'cloudz',name:'Feuille Cloudz',cat:'Feuilles',desc:'Slim',unit:'u',price:3.5,img:'https://kingston-cbd.fr/wp-content/uploads/2026/04/IMG_1324-768x1024.jpeg'},
+    {id:'zushi',name:'Elements Zushi',cat:'Feuilles',desc:'Feuilles + tips',unit:'u',price:7,img:'https://kingston-cbd.fr/wp-content/uploads/2026/04/IMG_3250-1024x683.jpeg'},
+    {id:'phantom',name:'Element Phantom',cat:'Feuilles',desc:'Slim',unit:'u',price:3,img:'https://kingston-cbd.fr/wp-content/uploads/2026/04/BB7C2F5B-21BE-45E6-9FD6-BD938BA747D4-1024x683.jpeg'},
+    {id:'gold',name:'Plateau Raw Gold',cat:'Plateaux',desc:'Édition limitée',unit:'u',price:50,img:'https://kingston-cbd.fr/wp-content/uploads/2026/04/EAC49747-3D58-44E8-B63F-61E7EF6A7598-990x1024.png'},
+    {id:'lemonade',name:'Plateau Lemonade',cat:'Plateaux',desc:'RAW · édition limitée',unit:'u',new:true,price:60,img:'https://kingston-cbd.fr/wp-content/uploads/2026/04/DFE4AB2F-E3C5-4DE2-83B6-84628BDF3156-1024x989.png'},
+    {id:'hotdog',name:'Plateau Hot DOG',cat:'Plateaux',desc:'RAW · édition limitée',unit:'u',price:60,img:'https://kingston-cbd.fr/wp-content/uploads/2026/04/615B60AF-B17A-457D-A6C9-F6E1D6B862B5-1005x1024.png'}
+  ];
+  var CATS=[]; CATALOG.forEach(function(p){ if(CATS.indexOf(p.cat)<0)CATS.push(p.cat); });
+  var RAIL=['Nouveautés'].concat(CATS);
+  function isNew(p){ return !!p.new; }
+
+  // Coupons fidelite : remise fixe en euros contre un cout fixe en points (identique a la caisse).
+  var COUPONS=[{e:10,p:750},{e:20,p:1350},{e:50,p:3000},{e:100,p:5250}];
+  var s={cat:'Nouveautés', cart:[], member:null, coupon:null, order:1042};
+  // Identite de la borne : /borne?boutique=aix&borne=B1  (defaut aix / B1)
+  var QP=new URLSearchParams(location.search);
+  var BORNE={boutique:(QP.get('boutique')||'aix'), id:(QP.get('borne')||'B1')};
+
+  function eur(n){return n.toFixed(2).replace('.',',')+' €';}
+  function byCat(c){return CATALOG.filter(function(p){return p.cat===c;});}
+  function find(id){return CATALOG.filter(function(p){return p.id===id;})[0];}
+  function rebuildCats(){ CATS=[]; CATALOG.forEach(function(p){ if(CATS.indexOf(p.cat)<0)CATS.push(p.cat); }); RAIL=['Nouveautés'].concat(CATS); }
+  // Produits ajoutes depuis l'app (serveur) : on les fusionne au catalogue de la borne.
+  function mapBorneProduct(p){
+    var o={id:p.id,name:p.name,cat:p.cat||'Divers',desc:p.desc||'',info:p.desc||'',unit:p.unit,img:p.img||'',custom:true,new:!!p.new};
+    if(p.unit==='g'){ o.tiers=(p.tiers||[]).map(function(t){return [t[0],t[1]];}); }
+    else { o.price=p.price; if(p.packs&&p.packs.length)o.packs=p.packs; }
+    return o;
+  }
+  function loadServerProducts(){
+    fetch('/api/menu').then(function(r){return r.ok?r.json():null;}).then(function(d){
+      if(!d||!d.products||!d.products.length)return;
+      // Le serveur fait foi : on remplace le catalogue de la borne par le vrai catalogue (pas de doublon).
+      CATALOG=d.products.map(mapBorneProduct);
+      rebuildCats();
+      // Si aucun produit n'est marqué "nouveau", on retire l'onglet Nouveautés et on ouvre la 1re catégorie.
+      if(!CATALOG.some(isNew)){ RAIL=CATS.slice(); if(s.cat==='Nouveautés') s.cat=CATS[0]||'Nouveautés'; }
+      renderBase();
+    }).catch(function(){});
+  }
+  function count(){return s.cart.reduce(function(a,l){return a+l.qty;},0);}
+  function total(){return Math.round(s.cart.reduce(function(a,l){return a+l.price*l.qty;},0)*100)/100;}
+  // Remise du coupon, plafonnee au sous-total (on ne rend jamais d'argent).
+  function couponEur(){return s.coupon?Math.min(total(),s.coupon.e):0;}
+  // Total reellement paye sur le terminal apres coupon.
+  function netTotal(){return Math.round((total()-couponEur())*100)/100;}
+  function entry(p){return p.unit==='g'?p.tiers[0][1]:p.price;}
+
+  function addLine(line){
+    var ex=s.cart.filter(function(l){return l.key===line.key;})[0];
+    if(ex){ex.qty++;}else{s.cart.push(line);}
+    renderOrderBar(true);
+  }
+
+  /* ---------- Rail + menu ---------- */
+  function catProducts(c){ return c==='Nouveautés' ? CATALOG.filter(isNew) : byCat(c); }
+  function railThumb(c){ var p = c==='Nouveautés' ? CATALOG.filter(isNew)[0] : byCat(c)[0]; return p?p.img:''; }
+  function pcard(p){
+    return '<div class="pcard" data-a="detail" data-id="'+p.id+'">'+(isNew(p)?'<div class="badge">Nouveau</div>':'')+'<div class="ph" style="background-image:url('+p.img+')"></div><div class="info"><div class="nm">'+p.name+'</div><div class="ds">'+p.desc+'</div>'+
+      '<div class="row"><div class="pr">'+(p.unit==='g'?'dès ':'')+eur(entry(p))+'</div><button class="add" data-a="detail" data-id="'+p.id+'">Voir</button></div></div></div>';
+  }
+  function dRow(l,v){ return v?'<div class="d-row"><span class="d-l">'+l+'</span><span class="d-v">'+v+'</span></div>':''; }
+  function openDetail(p){
+    var attrs = p.unit==='g' ? dRow('Arômes',p.aromes)+dRow('Terpènes',p.terpenes)+dRow('Goût',p.gout) : '';
+    var add = p.unit==='g'
+      ? '<div class="d-sec">Choisissez le poids</div><div class="d-grid">'+p.tiers.map(function(t){return '<button class="chip2" data-a="addg" data-id="'+p.id+'" data-g="'+t[0]+'" data-pr="'+t[1]+'"><b>'+t[0]+' g</b><span>'+eur(t[1])+'</span></button>';}).join('')+'</div>'
+      : (p.packs&&p.packs.length
+        ? '<div class="d-sec">Choisissez</div><div class="d-grid"><button class="chip2" data-a="addu" data-id="'+p.id+'"><b>À l\'unité</b><span>'+eur(p.price)+'</span></button>'+p.packs.map(function(k){return '<button class="chip2" data-a="addpack" data-id="'+p.id+'" data-q="'+k.qty+'" data-pr="'+k.price+'"><b>Pack de '+k.qty+'</b><span>'+eur(k.price)+'</span></button>';}).join('')+'</div>'
+        : '<button class="d-add" data-a="addu" data-id="'+p.id+'">Ajouter au panier · '+eur(p.price)+'</button>');
+    ovl.innerHTML='<div class="ovl right dim" data-a="bg"><div class="drawer"><button class="x dx" data-a="closeovl">&times;</button>'+
+      '<div class="d-ph" style="background-image:url('+p.img+')"></div>'+
+      '<div class="d-body"><div class="d-cat">'+p.cat+'</div><div class="d-name">'+p.name+'</div>'+
+      '<div class="d-desc">'+(p.info||p.desc||'')+'</div>'+attrs+add+'<div class="d-legal">THC &lt; 0,3 % · non destiné à un usage médical · interdit aux mineurs</div></div></div></div>';
+  }
+  function renderHeader(){
+    var h=document.getElementById('headr'); if(!h)return;
+    if(s.member){
+      h.innerHTML='<div class="hpts"><svg width="15" height="11" viewBox="0 0 26 20"><path d="M2 17 L4 6 L9 12 L13 4 L17 12 L22 6 L24 17 Z" fill="#15110a"/></svg>'+s.member.points+' pts</div><button class="hbtn" data-a="avantages">Mes avantages</button><button class="restart" data-a="restart">Recommencer</button>';
+    } else {
+      h.innerHTML='<button class="hbtn gold" data-a="login">Se connecter</button><button class="restart" data-a="restart">Recommencer</button>';
+    }
+  }
+  function renderRail(){
+    railEl.innerHTML=RAIL.map(function(c){
+      return '<div class="railitem '+(c===s.cat?'on':'')+'" data-a="cat" data-c="'+c+'"><div class="ri-ph" style="background-image:url('+railThumb(c)+')"></div><div class="ri-lbl">'+c+'</div></div>';
+    }).join('');
+  }
+  function renderMenu(){
+    var html='';
+    if(s.cat==='Nouveautés'){
+      html+='<div class="hero"><div><div class="hero-t">'+(s.member?'Bonjour '+s.member.name:'Bienvenue chez KINGSTON')+'</div><div class="hero-s">'+(s.member?'Vous avez '+s.member.points+' points fidélité.':'Parrainez un ami : 20 € offerts à chacun.')+'</div></div>'+(s.member?'<button class="hero-cta" data-a="avantages">Mes avantages</button>':'<button class="hero-cta" data-a="login">Devenir membre</button>')+'</div>';
+      html+='<h2 class="menu-h">Nouvelles arrivées</h2>';
+    } else {
+      html+='<h2 class="menu-h">'+s.cat+'</h2>';
+    }
+    html+='<div class="pgrid">'+catProducts(s.cat).map(pcard).join('')+'</div>';
+    menuEl.innerHTML=html;
+  }
+  function renderOrderBar(doBump){
+    var n=count();
+    obEl.innerHTML='<div class="ob-cart" data-a="cart"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#15110a" stroke-width="1.7"><path d="M5 7h15l-1.4 9.5a2 2 0 0 1-2 1.7H8.4a2 2 0 0 1-2-1.7z"/><path d="M5 7 4 3H2"/><circle cx="9" cy="21" r="1.3"/><circle cx="17" cy="21" r="1.3"/></svg>'+(n?'<span class="cnt">'+n+'</span>':'')+'</div>'+
+      '<div class="ob-info"><span class="ob-count">'+(n?n+' article'+(n>1?'s':''):'Votre commande')+'</span><span class="ob-total">'+eur(netTotal())+'</span></div>'+
+      '<button class="ob-btn" '+(n?'':'disabled')+' data-a="cart">Voir ma commande</button>';
+    if(doBump){var t=obEl.querySelector('.ob-total');if(t){t.classList.remove('bump');void t.offsetWidth;t.classList.add('bump');}}
+  }
+  function renderBase(){ renderHeader(); renderRail(); renderMenu(); renderOrderBar();
+    var pt=document.getElementById('promotrack');
+    if(pt){ var P=['Livraison anonyme','Livraison offerte dès 50 €','Meilleur programme de fidélité','Parraine un ami : 20 € offerts'].map(function(x){return '<span>'+x+'</span>';}).join('<span class="sep">·</span>'); pt.innerHTML=P+'<span class="sep">·</span>'+P; }
+  }
+
+  /* ---------- Overlays ---------- */
+  function closeOvl(){ stopQrCam(); ovl.innerHTML=''; }
+  function ageGate(){
+    ovl.innerHTML='<div class="welcome"><div class="w-logo">KINGSTON</div><div class="w-tag">CBD · Vente interdite aux mineurs</div>'+
+      '<div style="margin-top:42px;font-size:21px;font-weight:600">Avez-vous 18 ans ou plus&nbsp;?</div>'+
+      '<div style="display:flex;gap:14px;margin-top:26px">'+
+        '<button data-a="agevalid" style="border:0;border-radius:14px;padding:16px 26px;font-weight:800;font-size:16px;color:#15110a;background:linear-gradient(135deg,var(--gold2),var(--gold));cursor:pointer">Oui, j\'ai 18 ans ou +</button>'+
+        '<button data-a="agerefus" style="border:1px solid rgba(255,255,255,.25);background:transparent;color:#cfc9ba;border-radius:14px;padding:16px 24px;font-size:15px;cursor:pointer">Non</button>'+
+      '</div>'+
+      '<div style="margin-top:34px;font-size:12px;color:#8a8273;max-width:430px;text-align:center;line-height:1.5">Produits CBD à taux de THC &lt; 0,3 %. Non destinés à un usage médical. Tenir hors de portée des enfants.</div></div>';
+  }
+  function ageRefus(){
+    ovl.innerHTML='<div class="welcome"><div class="w-logo">KINGSTON</div><div style="margin-top:34px;font-size:21px;font-weight:600">Vente strictement interdite aux mineurs.</div><div class="w-tag" style="margin-top:14px">Merci de votre visite.</div><button data-a="agestart" style="margin-top:30px;border:1px solid rgba(255,255,255,.25);background:transparent;color:#cfc9ba;border-radius:14px;padding:14px 22px;font-size:15px;cursor:pointer">Retour</button></div>';
+  }
+  function welcome(){
+    ovl.innerHTML='<div class="welcome" data-a="start"><div class="w-logo">KINGSTON</div><div class="w-tag">CBD · Sentez la différence</div><div class="w-touch">Touchez pour commander</div></div>';
+  }
+  // Première page façon McDo : membre du KINGSTON CLUB ?
+  function clubGate(){
+    stopQrCam();
+    ovl.innerHTML='<div class="welcome"><div class="w-logo">KINGSTON</div><div class="w-tag">KINGSTON CLUB · Fidélité</div>'+
+      '<div style="margin-top:44px;font-size:24px;font-weight:700">Faites-vous partie du KINGSTON CLUB&nbsp;?</div>'+
+      '<div style="color:#9a9180;margin-top:12px;font-size:14.5px;max-width:460px;line-height:1.5">Scannez votre carte pour cumuler des points et utiliser vos coupons. Sinon, commandez librement.</div>'+
+      '<div style="display:flex;gap:16px;margin-top:36px;flex-wrap:wrap;justify-content:center">'+
+        '<button data-a="clubyes" style="border:0;border-radius:16px;padding:22px 30px;font-weight:800;font-size:17px;color:#15110a;background:linear-gradient(135deg,var(--gold2),var(--gold));cursor:pointer;min-width:230px">Oui, je scanne ma carte</button>'+
+        '<button data-a="clubno" style="border:1px solid rgba(255,255,255,.28);background:transparent;color:#efe8d7;border-radius:16px;padding:22px 30px;font-size:16px;cursor:pointer;min-width:230px">Non / Première visite</button>'+
+      '</div>'+
+      '<div data-a="clubno" style="margin-top:26px;font-size:13px;color:#8a8273;cursor:pointer">Continuer sans compte&nbsp;→</div>'+
+      '<div style="margin-top:30px;font-size:12px;color:#6f6857;max-width:450px;line-height:1.5">Réservé aux 18 ans et plus. En continuant, vous certifiez avoir 18 ans ou +. Produits CBD (THC &lt; 0,3 %), non destinés à un usage médical, interdits aux mineurs.</div>'+
+    '</div>';
+  }
+  // ---------- Identification client par QR (caméra ou douchette/saisie) ----------
+  var qrStream=null, qrRAF=null;
+  function stopQrCam(){ if(qrRAF){cancelAnimationFrame(qrRAF);qrRAF=null;} if(qrStream){qrStream.getTracks().forEach(function(t){t.stop();});qrStream=null;} }
+  function identifyModal(){
+    stopQrCam();
+    ovl.innerHTML='<div class="ovl dim" data-a="bg"><div class="sheet">'+
+      '<div class="sheet-h">M’identifier<button class="x" data-a="closeid">&times;</button></div>'+
+      '<div class="sheet-b">'+
+        '<p style="color:var(--muted);margin:0 0 12px">Scanne ton QR code KINGSTON (carte de fidélité ou compte du site) pour retrouver tes points et tes coupons.</p>'+
+        '<div id="qr-cam-wrap" style="display:none;border-radius:14px;overflow:hidden;background:#000;margin-bottom:12px"><video id="qr-video" playsinline style="width:100%;display:block"></video></div>'+
+        '<canvas id="qr-canvas" style="display:none"></canvas>'+
+        '<button class="d-add" data-a="qrcam" style="margin-bottom:14px">📷 Scanner avec la caméra</button>'+
+        '<div style="font-size:12px;color:var(--muted);text-align:center;margin-bottom:8px">— ou scanne avec la douchette / saisis ton code —</div>'+
+        '<input id="qr-input" autocomplete="off" placeholder="Code, e-mail ou n° de membre" style="width:100%;border:1px solid var(--line);border-radius:12px;padding:14px;font-size:16px"/>'+
+        '<div id="qr-msg" style="min-height:18px;font-size:13px;margin-top:8px;text-align:center"></div>'+
+      '</div>'+
+      '<div class="sheet-f"><button class="btn-light" data-a="closeid">Annuler</button><button class="btn-primary" data-a="qrgo">Valider</button></div>'+
+      '</div></div>';
+    setTimeout(function(){ var i=document.getElementById('qr-input'); if(i){ i.focus(); i.addEventListener('keydown',function(e){ if(e.key==='Enter'){ doIdentify(i.value); } }); } },60);
+  }
+  function qrMsg(t,err){ var m=document.getElementById('qr-msg'); if(m){ m.textContent=t; m.style.color=err?'#b4452f':'var(--green)'; } }
+  function startQrCam(){
+    var wrap=document.getElementById('qr-cam-wrap'), video=document.getElementById('qr-video'), canvas=document.getElementById('qr-canvas');
+    if(!wrap||!video||!canvas)return;
+    if(typeof jsQR==='undefined'){ qrMsg('Caméra indisponible — utilise la douchette ou saisis le code.',true); return; }
+    if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){ qrMsg('Caméra non supportée sur cette borne.',true); return; }
+    wrap.style.display='block'; qrMsg('Présente ton QR devant la caméra…',false);
+    navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}}).then(function(stream){
+      qrStream=stream; video.srcObject=stream; video.setAttribute('playsinline',true); video.play();
+      var ctx=canvas.getContext('2d');
+      var tick=function(){
+        if(!qrStream)return;
+        if(video.readyState===video.HAVE_ENOUGH_DATA){
+          canvas.width=video.videoWidth; canvas.height=video.videoHeight;
+          ctx.drawImage(video,0,0,canvas.width,canvas.height);
+          var img=ctx.getImageData(0,0,canvas.width,canvas.height);
+          var code=jsQR(img.data,img.width,img.height);
+          if(code&&code.data){ stopQrCam(); doIdentify(code.data); return; }
+        }
+        qrRAF=requestAnimationFrame(tick);
+      };
+      qrRAF=requestAnimationFrame(tick);
+    }).catch(function(){ qrMsg('Accès caméra refusé — utilise la douchette ou saisis le code.',true); });
+  }
+  function doIdentify(code){
+    code=(code||'').trim(); if(!code){ qrMsg('Scanne ou saisis un code.',true); return; }
+    qrMsg('Recherche…',false);
+    fetch('/api/borne/identify',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({code:code})})
+      .then(function(r){return r.json().catch(function(){return {};});})
+      .then(function(d){
+        if(d&&d.found){ stopQrCam(); s.member={name:d.name,email:d.email||d.ref,points:Math.round(d.points||0)}; renderHeader(); renderMenu(); welcomeBack(); }
+        else { qrMsg('Client introuvable. Vérifie ton QR ou crée un compte sur kingston-cbd.fr.',true); }
+      })
+      .catch(function(){ qrMsg('Connexion au serveur impossible.',true); });
+  }
+  // Petit message d'accueil personnalisé une fois le client identifié.
+  function welcomeBack(){
+    if(!s.member) return;
+    var fn=(s.member.name||'').trim().split(/\s+/)[0]||'cher membre';
+    var pts=s.member.points|0;
+    var sub=pts>0
+      ? 'Content de te revoir. Tu as <b style="color:#6f5717">'+pts+' points</b> — transforme-les en bons d\'achat.'
+      : 'Bienvenue dans le KINGSTON CLUB. Tu cumules 5 points par euro dépensé.';
+    ovl.innerHTML='<div class="ovl dim" data-a="bg"><div class="sheet welcome-pop" style="max-width:430px;text-align:center;position:relative">'+
+      '<button class="x" data-a="closeovl" style="position:absolute;top:14px;right:14px">&times;</button>'+
+      '<div class="sheet-b" style="padding:38px 30px 12px">'+
+        '<div style="font-size:11.5px;letter-spacing:.2em;color:var(--muted);font-weight:800">KINGSTON CLUB</div>'+
+        '<div style="font-family:var(--serif);font-size:33px;color:var(--ink);margin-top:10px">Salut '+fn+'&nbsp;!</div>'+
+        '<div style="color:var(--muted);font-size:14.5px;margin-top:10px;line-height:1.55">'+sub+'</div>'+
+      '</div>'+
+      '<div class="sheet-f"><button class="btn-light" data-a="closeovl">Commander</button><button class="btn-primary" data-a="avantages">Mes avantages</button></div>'+
+    '</div></div>';
+  }
+  function gramModal(p){
+    ovl.innerHTML='<div class="ovl dim" data-a="bg"><div class="sheet">'+
+      '<div class="sheet-h">'+p.name+'<button class="x" data-a="closeovl">&times;</button></div>'+
+      '<div class="sheet-b">'+p.tiers.map(function(t){return '<button class="opt" data-a="addg" data-id="'+p.id+'" data-g="'+t[0]+'" data-pr="'+t[1]+'"><b>'+t[0]+' g</b><span class="op">'+eur(t[1])+'</span></button>';}).join('')+'</div>'+
+      '</div></div>';
+  }
+  // Panneau coupons fidelite (affiche seulement si un membre est identifie).
+  function couponPanel(){
+    if(!s.member || !s.cart.length) return '';
+    var pts=s.member.points|0;
+    var chips=COUPONS.map(function(c){
+      var active=s.coupon&&s.coupon.e===c.e&&s.coupon.p===c.p;
+      var afford=pts>=c.p, fits=total()>=c.e;
+      var dis=!active&&(!afford||!fits);
+      var hint=!afford?('manque '+(c.p-pts)+' pts'):(!fits?('panier &lt; '+c.e+' €'):'');
+      return '<button class="cpn'+(active?' on':'')+'"'+(dis?' disabled':'')+' data-a="'+(active?'rmcoupon':'applycoupon')+'" data-e="'+c.e+'" data-p="'+c.p+'">'+
+        '<span class="cpn-e">−'+c.e+' €</span><span class="cpn-p">'+c.p+' pts</span>'+(dis&&hint?'<span class="cpn-x">'+hint+'</span>':'')+'</button>';
+    }).join('');
+    var applied=s.coupon?'<div class="cpn-applied"><span>Coupon −'+eur(couponEur())+' · '+s.coupon.p+' pts utilisés</span><button data-a="rmcoupon">Retirer</button></div>':'';
+    return '<div class="cpn-sec"><div class="cpn-h">★ Payer avec vos points · '+pts+' pts disponibles</div><div class="cpn-grid">'+chips+'</div>'+applied+'</div>';
+  }
+  function cart(){
+    var lines=s.cart.length?s.cart.map(function(l,i){return '<div class="cl"><div class="cph" style="background-image:url('+(l.img||'')+')"></div><div><div class="cn">'+l.name+'</div><div class="cd">'+(l.detail||'')+' · '+eur(l.price)+'</div></div><div class="stp"><button data-a="dec" data-i="'+i+'">−</button><b>'+l.qty+'</b><button data-a="inc" data-i="'+i+'">+</button></div><div class="clp">'+eur(l.price*l.qty)+'</div><button class="del" data-a="del" data-i="'+i+'" title="Supprimer">&times;</button></div>';}).join(''):'<p style="color:var(--muted)">Votre commande est vide.</p>';
+    var totals=s.coupon
+      ? '<div class="totrow sub"><span>Sous-total</span><span>'+eur(total())+'</span></div><div class="totrow disc"><span>Coupon fidélité</span><span>−'+eur(couponEur())+'</span></div><div class="totrow"><span>Total</span><span>'+eur(netTotal())+'</span></div>'
+      : '<div class="totrow"><span>Total</span><span>'+eur(total())+'</span></div>';
+    var loy=s.member?'<div class="loy"><span>Membre KINGSTON — vous cumulez <b>'+Math.round(netTotal())+' points</b></span></div>':'<div class="loy"><span>Membre KINGSTON&nbsp;? Cumulez et dépensez vos points.</span><button data-a="member">M\'identifier</button></div>';
+    ovl.innerHTML='<div class="ovl dim" data-a="bg"><div class="sheet sheet-full">'+
+      '<div class="sheet-h">Ma commande<button class="x" data-a="closeovl">&times;</button></div>'+
+      '<div class="sheet-b">'+lines+totals+(s.cart.length?loy+couponPanel():'')+'</div>'+
+      '<div class="sheet-f"><button class="btn-light" data-a="closeovl">+ Ajouter des produits</button><button class="btn-primary" '+(s.cart.length?'':'disabled')+' data-a="pay">Payer '+eur(netTotal())+'</button></div>'+
+      '</div></div>';
+  }
+  function avItem(t,d){ return '<div class="av-row"><div class="av-dot"></div><div><div class="av-t">'+t+'</div><div class="av-d">'+d+'</div></div></div>'; }
+  function avantages(){
+    if(!s.member){ identifyModal(); return; }
+    var pts=s.member.points|0;
+    var coupons=COUPONS.map(function(c){
+      var ok=pts>=c.p;
+      return '<div style="display:flex;justify-content:space-between;align-items:center;padding:11px 13px;border:1px solid var(--line);border-radius:12px;margin-bottom:8px;'+(ok?'background:rgba(184,144,47,.10);border-color:var(--gold)':'opacity:.5')+'">'+
+        '<div><b style="font-family:var(--serif);font-size:18px">'+eur(c.e)+'</b> <span style="color:var(--muted);font-size:12.5px">en bon d\'achat</span></div>'+
+        '<div style="font-weight:800;color:var(--gold);font-size:13.5px">'+c.p+' pts'+(ok?' · dispo':'')+'</div></div>';
+    }).join('');
+    ovl.innerHTML='<div class="ovl dim" data-a="bg"><div class="sheet">'+
+      '<div class="sheet-h">Mes avantages<button class="x" data-a="closeovl">&times;</button></div>'+
+      '<div class="sheet-b"><div class="av-pts"><div class="av-n">'+pts+'</div><div class="av-l">points fidélité</div></div>'+
+      '<div style="text-align:center;background:linear-gradient(135deg,rgba(216,178,82,.15),rgba(184,144,47,.08));border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:16px"><div style="font-weight:800;color:#6f5717;font-size:15px">★ 5 points par euro dépensé</div><div style="color:var(--muted);font-size:12.5px;margin-top:3px">cumulés en boutique, sur la borne et en ligne</div></div>'+
+      '<div style="font-family:var(--serif);font-size:17px;margin:4px 0 4px">Vos coupons fidélité</div>'+
+      '<div style="color:var(--muted);font-size:12px;margin-bottom:10px">Échangez vos points contre un bon d\'achat, utilisable au paiement en caisse comme sur la borne.</div>'+
+      coupons+
+      '<div style="margin-top:14px">'+
+      avItem('Parrainage','20 € offerts à vous et à votre filleul')+
+      avItem('Livraison offerte','dès 50 € d\'achat')+
+      avItem('Éditions limitées','accès prioritaire aux nouveautés')+
+      '</div>'+
+      '</div><div class="sheet-f"><button class="btn-primary" data-a="closeovl">Fermer</button></div></div></div>';
+  }
+  // Paiement carte sur la borne via le PONT DE PAIEMENT (protocole CAISSE-AP).
+  // Le pont (pont-paiement.js) tourne en local sur le port 3002 et parle au vrai TPE
+  // (serie/USB ou IP). S'il est injoignable, on retombe sur une simulation pour ne pas
+  // bloquer la borne. Appeler cb(true) si paiement accepte, cb(false) sinon.
+  var PONT_URL='http://localhost:3002';
+  function payOnTerminal(amountEuros, cb){
+    // SÉCURITÉ : on n'encaisse JAMAIS « par défaut ». Le paiement n'est validé que si le
+    // vrai terminal répond « accepté ». Si le pont/TPE est injoignable -> on REFUSE la vente.
+    fetch(PONT_URL+'/pay',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({amount:amountEuros,ref:'BORNE-'+Date.now()})})
+      .then(function(r){return r.json().catch(function(){return {};});})
+      .then(function(d){ cb(!!(d&&d.approved), d||{}); })
+      .catch(function(){ cb(false, {error:'Terminal de paiement injoignable'}); }); // injoignable -> refus, pas d'auto-acceptation
+  }
+  function submitOrder(cb){
+    var items=s.cart.map(function(l){return {name:l.name, detail:l.detail||'', qty:l.qty, price:l.price};});
+    var body={boutiqueId:BORNE.boutique, borneId:BORNE.id, items:items, total:netTotal(), customerRef:(s.member&&s.member.email)||(s.member&&s.member.name)||null, payment:'Carte (borne)'};
+    if(s.coupon){ body.couponEur=s.coupon.e; body.couponPoints=s.coupon.p; }
+    fetch('/api/orders',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)})
+      .then(function(r){return r.json().catch(function(){return {};});})
+      .then(function(d){ cb((d&&d.numero)||('CMD-'+s.order)); })
+      .catch(function(){ cb('CMD-'+s.order); });
+  }
+  function pay(){
+    // Commande à 0 € (entièrement réglée par coupon / points) : on NE passe PAS par le terminal.
+    if(netTotal()<=0){
+      ovl.innerHTML='<div class="ovl dim"><div class="sheet"><div class="sheet-b"><div class="term"><div class="spin"></div><div style="font-family:var(--serif);font-size:21px">Validation de la commande…</div><div style="color:var(--muted);margin:8px 0 4px">Réglée avec vos points fidélité — aucun paiement carte nécessaire.</div></div></div></div></div>';
+      submitOrder(function(numero){ done(numero); });
+      return;
+    }
+    ovl.innerHTML='<div class="ovl dim"><div class="sheet"><div class="sheet-b"><div class="term"><div class="spin"></div><div style="font-family:var(--serif);font-size:21px">Paiement en cours</div><div style="color:var(--muted);margin:8px 0 12px">Présentez votre carte sur le terminal</div><div style="font-family:var(--serif);font-size:30px;color:var(--ink)">'+eur(netTotal())+'</div></div></div></div></div>';
+    payOnTerminal(netTotal(), function(ok){
+      if(!ok){ ovl.innerHTML='<div class="ovl dim"><div class="sheet"><div class="sheet-b"><div class="term"><div style="font-family:var(--serif);font-size:22px">Paiement refusé</div><div style="color:var(--muted);margin:8px 0 12px">Réessayez, ou voyez un conseiller.</div></div></div><div class="sheet-f"><button class="btn-primary" data-a="cart">Retour au panier</button></div></div></div>'; return; }
+      submitOrder(function(numero){ done(numero); });
+    });
+  }
+  function done(numero){
+    var earned=Math.round(netTotal());
+    var used=s.coupon?s.coupon.p:0;
+    var fn=s.member?((s.member.name||'').trim().split(/\s+/)[0]):'';
+    var fid=s.member?'<div style="margin-top:14px;color:#6f5717;font-weight:700">+'+earned+' points fidélité'+(used?' · −'+used+' points (coupon)':'')+'</div>':'';
+    var hello=fn?('Merci '+fn+' !'):'Merci !';
+    var appel=fn?('On t\'appelle très bientôt par ton prénom, <b>'+fn+'</b>.'):'On t\'appelle très bientôt.';
+    ovl.innerHTML='<div class="ovl dim"><div class="sheet"><div class="sheet-b"><div class="term"><div class="check">&#10003;</div>'+
+      '<div style="font-family:var(--serif);font-size:25px">'+hello+'</div>'+
+      '<div style="font-size:17px;font-weight:700;margin:12px 0 4px">Ta commande est en préparation</div>'+
+      '<div style="color:var(--muted);font-size:14.5px;line-height:1.5">'+appel+' Installe-toi, on s\'occupe du reste.</div>'+
+      fid+'</div></div><div class="sheet-f"><button class="btn-primary" data-a="newOrder">Nouvelle commande</button></div></div></div>';
+  }
+
+  /* ---------- Événements ---------- */
+  document.body.addEventListener('click',function(ev){
+    var el=ev.target.closest('[data-a]'); if(!el)return;
+    var a=el.getAttribute('data-a');
+    if(a==='start'){ closeOvl(); return; }
+    if(a==='agevalid'){ clubGate(); return; }
+    if(a==='clubyes'){ identifyModal(); return; }
+    if(a==='clubno'){ closeOvl(); return; }
+    if(a==='agerefus'){ ageRefus(); return; }
+    if(a==='agestart'){ ageGate(); return; }
+    if(a==='login'){ identifyModal(); return; }
+    if(a==='qrcam'){ startQrCam(); return; }
+    if(a==='qrgo'){ var qi=document.getElementById('qr-input'); doIdentify(qi?qi.value:''); return; }
+    if(a==='closeid'){ stopQrCam(); closeOvl(); return; }
+    if(a==='avantages'){ avantages(); return; }
+    if(a==='cat'){ s.cat=el.getAttribute('data-c'); renderRail(); renderMenu(); return; }
+    if(a==='detail'){ openDetail(find(el.getAttribute('data-id'))); return; }
+    if(a==='addu'){ var pu=find(el.getAttribute('data-id')); addLine({key:pu.id,name:pu.name,detail:'',price:pu.price,qty:1,img:pu.img}); closeOvl(); return; }
+    if(a==='addg'){ var pg=find(el.getAttribute('data-id')); var g=+el.getAttribute('data-g'),pr=+el.getAttribute('data-pr'); addLine({key:pg.id+'-'+g,name:pg.name,detail:g+' g',price:pr,qty:1,img:pg.img}); closeOvl(); return; }
+    if(a==='addpack'){ var ppk=find(el.getAttribute('data-id')); var pq=+el.getAttribute('data-q'),ppr=+el.getAttribute('data-pr'); addLine({key:ppk.id+'-p'+pq,name:ppk.name,detail:'Pack de '+pq,price:ppr,qty:1,img:ppk.img}); closeOvl(); return; }
+    if(a==='bg'){ if(ev.target.classList.contains('ovl'))closeOvl(); return; }
+    if(a==='closeovl'){ closeOvl(); return; }
+    if(a==='cart'){ if(count())cart(); return; }
+    if(a==='inc'){ s.cart[+el.getAttribute('data-i')].qty++; cart(); renderOrderBar(); return; }
+    if(a==='dec'){ var i=+el.getAttribute('data-i'); s.cart[i].qty--; if(s.cart[i].qty<=0)s.cart.splice(i,1); if(!s.cart.length)s.coupon=null; cart(); renderOrderBar(); return; }
+    if(a==='del'){ s.cart.splice(+el.getAttribute('data-i'),1); if(!s.cart.length)s.coupon=null; cart(); renderOrderBar(); return; }
+    if(a==='applycoupon'){ s.coupon={e:+el.getAttribute('data-e'),p:+el.getAttribute('data-p')}; cart(); renderOrderBar(); return; }
+    if(a==='rmcoupon'){ s.coupon=null; cart(); renderOrderBar(); return; }
+    if(a==='member'){ identifyModal(); return; }
+    if(a==='pay'){ if(count())pay(); return; }
+    if(a==='newOrder' || a==='restart'){ s={cat:'Nouveautés',cart:[],member:null,coupon:null,order:s.order+1}; renderBase(); clubGate(); return; }
+  });
+
+  renderBase();
+  clubGate();
+  loadServerProducts();
+})();
+</script>
+</body>
+</html>
