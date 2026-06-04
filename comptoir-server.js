@@ -208,6 +208,78 @@ let proRate = Number(process.env.COMPTOIR_PRO_RATE || 0.5);   // 0.5 = -50% du p
 let supplyOrders = [];      // commandes de réassort (B2B)
 let supplySeq = 1;
 
+// ---- Synchro catalogue WooCommerce (réassort « en direct ») : ajoute les nouveaux produits ET met à
+// jour les prix des produits déjà liés au site. Ne touche PAS au nom, à la catégorie, ni au prix de
+// gros (proPrice) fixé manuellement par l'admin. Tourne au démarrage puis toutes les heures. ----
+let lastWooSync = 0, lastWooSyncInfo = null, wooSyncing = false;
+async function syncWooCatalog(opts) {
+  opts = opts || {};
+  if (PG) return { error: 'mode PostgreSQL : synchro gérée ailleurs' };
+  if (wooSyncing) return { busy: true };
+  if (typeof fetch === 'undefined') return { error: 'fetch indisponible (Node 18+ requis)' };
+  wooSyncing = true;
+  try {
+    const baseUrl = (opts.siteUrl || process.env.COMPTOIR_WP_URL || 'https://kingston-cbd.fr').replace(/\/$/, '');
+    const apiBase = baseUrl + '/wp-json/wc/store/v1/products';
+    const bId = opts.boutiqueId || 'aix';
+    const defStock = opts.defaultStock != null ? Number(opts.defaultStock) : 200;
+    let list;
+    try { const r = await fetch(apiBase + '?per_page=100'); list = await r.json(); } catch (e) { return { error: 'Site injoignable : ' + e.message }; }
+    if (!Array.isArray(list)) return { error: 'Réponse du site inattendue (Store API WooCommerce introuvable)' };
+    const byWoo = {}, byName = {};
+    customProducts.forEach((p) => { if (p.wooId != null) byWoo[p.wooId] = p; if (p.name) byName[p.name.toLowerCase()] = p; });
+    let created = 0, updated = 0, errors = 0;
+    for (const wp of list) {
+      const name = (wp.name || '').trim();
+      if (!name) continue;
+      try {
+        const mu = (wp.prices && wp.prices.currency_minor_unit) || 2;
+        const div = Math.pow(10, mu);
+        let unit = 'u', price = null, tiers = null;
+        if (wp.type === 'variable' && Array.isArray(wp.variations) && wp.variations.length) {
+          const t = [];
+          for (const v of wp.variations) {
+            let vp; try { vp = await (await fetch(apiBase + '/' + v.id)).json(); } catch (e) { continue; }
+            const grams = parseFloat(String((v.attributes || []).map((a) => a.value).join(' ')).replace(',', '.'));
+            const pr = Math.round((Number(vp.prices && vp.prices.price) / div) * 100) / 100;
+            if (grams > 0 && isFinite(pr)) t.push([grams, pr]);
+          }
+          t.sort((a, b) => a[0] - b[0]);
+          if (!t.length) continue;
+          unit = 'g'; tiers = t;
+        } else {
+          unit = 'u'; price = Math.round((Number(wp.prices && wp.prices.price) / div) * 100) / 100;
+        }
+        const existing = byWoo[wp.id] || byName[name.toLowerCase()];
+        if (existing) {
+          existing.wooId = wp.id;                                   // lie le produit au site pour les synchros suivantes
+          if (unit === 'g') { existing.unit = 'g'; existing.tiers = tiers; } else { existing.unit = 'u'; existing.price = price; }
+          if (!existing.img && wp.images && wp.images[0]) existing.img = wp.images[0].src;
+          updated++;
+        } else {
+          const prod = {
+            id: 'cp' + Date.now().toString(36) + created, wooId: wp.id, source: 'woo', custom: true, name: name,
+            cat: (wp.categories && wp.categories[0] && wp.categories[0].name) || 'Boutique',
+            img: (wp.images && wp.images[0] && wp.images[0].src) || '',
+            desc: (wp.short_description || wp.description || '').replace(/<[^>]*>/g, ' ').replace(/&[a-z]+;/gi, ' ').replace(/\s+/g, ' ').trim().slice(0, 140),
+          };
+          if (unit === 'g') { prod.unit = 'g'; prod.tiers = tiers; } else { prod.unit = 'u'; prod.price = price; }
+          customProducts.push(prod); ensureStock(prod);
+          if (defStock > 0) { if (prod.unit === 'g') stock[bId][prod.id] = { lots: [{ lot: 'SITE', g: defStock, exp: '2099-01' }] }; else stock[bId][prod.id] = { units: defStock }; }
+          byName[name.toLowerCase()] = prod; byWoo[wp.id] = prod;
+          created++;
+        }
+      } catch (e) { errors++; }
+    }
+    hideBaseCatalog = true;
+    lastWooSync = Date.now();
+    lastWooSyncInfo = { created: created, updated: updated, errors: errors, total: list.length, at: lastWooSync };
+    persist();
+    console.log('Synchro WooCommerce : ' + created + ' créés, ' + updated + ' mis à jour (' + list.length + ' produits site).');
+    return lastWooSyncInfo;
+  } finally { wooSyncing = false; }
+}
+
 // ---- Relais terminal de paiement (kingtools.fr <-> pont de la boutique <-> TPE) ----
 const pontDevices = {};         // deviceId -> { code, boutiqueId, ip, tcpPort, lastSeen } (appairage initie par le pont)
 const pontCmds = {};            // boutiqueId -> [ {id, amount, ref, status:'pending'|'sent'|'done', approved, ...} ]
@@ -957,60 +1029,12 @@ const server = http.createServer(async (req, res) => {
     // Import du catalogue depuis le site WooCommerce (Store API publique). Remplace la démo.
     if (req.method === 'POST' && path === '/api/products/import-site') {
       if (user.role !== 'admin') return send(res, 403, { error: 'Réservé à l\'administrateur réseau' });
-      if (typeof fetch === 'undefined') return send(res, 500, { error: 'fetch indisponible (Node 18+ requis)' });
       const body = await readJson(req);
-      const baseUrl = (body.siteUrl || process.env.COMPTOIR_WP_URL || 'https://kingston-cbd.fr').replace(/\/$/, '');
-      const apiBase = baseUrl + '/wp-json/wc/store/v1/products';
       const bId = user.role === 'admin' ? (body.boutiqueId || 'aix') : user.boutiqueId;
       const defStock = body.stock === 'zero' ? 0 : (Number(body.defaultStock) || 200);
-      let list;
-      try { const r = await fetch(apiBase + '?per_page=100'); list = await r.json(); } catch (e) { return send(res, 502, { error: 'Site injoignable : ' + e.message }); }
-      if (!Array.isArray(list)) return send(res, 502, { error: 'Réponse du site inattendue (Store API WooCommerce introuvable)' });
-      const seen = {}; customProducts.forEach((p) => { seen[(p.name || '').toLowerCase()] = true; });
-      let created = 0, skipped = 0, errors = 0;
-      for (const wp of list) {
-        const name = (wp.name || '').trim();
-        if (!name || seen[name.toLowerCase()]) { skipped++; continue; }
-        try {
-          const mu = (wp.prices && wp.prices.currency_minor_unit) || 2;
-          const div = Math.pow(10, mu);
-          const prod = {
-            id: 'cp' + Date.now().toString(36) + created,
-            name: name,
-            cat: (wp.categories && wp.categories[0] && wp.categories[0].name) || 'Boutique',
-            custom: true,
-            img: (wp.images && wp.images[0] && wp.images[0].src) || '',
-            desc: (wp.short_description || wp.description || '').replace(/<[^>]*>/g, ' ').replace(/&[a-z]+;/gi, ' ').replace(/\s+/g, ' ').trim().slice(0, 140),
-          };
-          if (wp.type === 'variable' && Array.isArray(wp.variations) && wp.variations.length) {
-            const tiers = [];
-            for (const v of wp.variations) {
-              let vp; try { vp = await (await fetch(apiBase + '/' + v.id)).json(); } catch (e) { continue; }
-              const wTxt = (v.attributes || []).map((a) => a.value).join(' ');
-              const grams = parseFloat(String(wTxt).replace(',', '.'));
-              const price = Math.round((Number(vp.prices && vp.prices.price) / div) * 100) / 100;
-              if (grams > 0 && isFinite(price)) tiers.push([grams, price]);
-            }
-            tiers.sort((a, b2) => a[0] - b2[0]);
-            if (!tiers.length) { skipped++; continue; }
-            prod.unit = 'g'; prod.tiers = tiers;
-          } else {
-            prod.unit = 'u';
-            prod.price = Math.round((Number(wp.prices && wp.prices.price) / div) * 100) / 100;
-          }
-          customProducts.push(prod);
-          ensureStock(prod);
-          if (defStock > 0) {
-            if (prod.unit === 'g') stock[bId][prod.id] = { lots: [{ lot: 'SITE-' + (created + 1), g: defStock, exp: '2099-01' }] };
-            else stock[bId][prod.id] = { units: defStock };
-          }
-          seen[name.toLowerCase()] = true;
-          created++;
-        } catch (e) { errors++; }
-      }
-      hideBaseCatalog = true; // remplacer la démo par le catalogue du site
-      persist();
-      return send(res, 200, { ok: true, created: created, skipped: skipped, errors: errors, total: list.length, hideBase: true });
+      const r = await syncWooCatalog({ siteUrl: body.siteUrl, boutiqueId: bId, defaultStock: defStock });
+      if (r && r.error) return send(res, 502, r);
+      return send(res, 200, Object.assign({ ok: true, hideBase: true, lastSync: lastWooSync }, r));
     }
 
     // Réapprovisionner TOUT le catalogue avec un stock par défaut (boutique courante). Admin/manager.
@@ -1395,7 +1419,7 @@ const server = http.createServer(async (req, res) => {
         const retail = p.unit === 'g' ? ((p.tiers && p.tiers[0]) ? p.tiers[0][1] : 0) : (p.price || 0);
         return { id: p.id, name: p.name, cat: p.cat, img: p.img || '', unit: p.unit, pro: pi ? pi.price : null, proUnit: pi ? pi.unit : 'u', step: pi ? pi.step : 1, retail: retail };
       });
-      return send(res, 200, { rate: proRate, products: list });
+      return send(res, 200, { rate: proRate, products: list, lastSync: lastWooSync, autoSync: true });
     }
     if (req.method === 'POST' && path === '/api/pro/orders') {
       if (user.role !== 'admin' && user.role !== 'manager') return send(res, 403, { error: 'Réservé au personnel' });
@@ -1606,3 +1630,10 @@ server.listen(PORT, () => {
   console.log('Comptoir API en ecoute sur http://localhost:' + PORT + '  | fidelite : ' + LOYALTY_MODE);
   console.log('Conformite caisse (NF525) : ' + fiscalEvents.length + ' evenement(s) scelle(s), Grand Total perpetuel = ' + gtPerpetuel.toFixed(2) + ' EUR.');
 });
+
+// Synchro catalogue WooCommerce (reassort « en direct ») : au demarrage (differee) puis toutes les heures.
+// Desactivable avec COMPTOIR_WOO_SYNC=0.
+if (!PG && process.env.COMPTOIR_WOO_SYNC !== '0') {
+  setTimeout(function () { syncWooCatalog({}).then(function (r) { if (r && !r.error) console.log('Synchro Woo au demarrage : ' + (r.created || 0) + ' crees, ' + (r.updated || 0) + ' maj.'); }).catch(function () {}); }, 15000);
+  setInterval(function () { syncWooCatalog({}).catch(function () {}); }, 60 * 60 * 1000);
+}
