@@ -59,7 +59,7 @@ const STATIC = {
 function serveStatic(res, file) {
   fs.readFile(pathmod.join(__dirname, file), function (err, data) {
     if (err) { res.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' }); return res.end('Introuvable'); }
-    res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+    res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-cache, no-store, must-revalidate', 'pragma': 'no-cache', 'expires': '0' });
     res.end(data);
   });
 }
