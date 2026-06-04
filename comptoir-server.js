@@ -815,9 +815,10 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'POST' && path === '/api/terminal/claim-pont') {
       if (user.role !== 'admin') return send(res, 403, { error: 'Reserve a l administrateur' });
       const b = await readJson(req);
-      const dev = pontDeviceByCode(b && b.code);
-      if (!dev) return send(res, 404, { error: 'Code inconnu — le pont est-il allume et connecte a internet ?' });
       if (!boutiques[b.boutiqueId]) return send(res, 404, { error: 'Boutique inconnue' });
+      const code = String((b && b.code) || '').trim();
+      const dev = code ? pontDeviceByCode(code) : pontDeviceForBoutique(b.boutiqueId);   // sans code : met a jour le pont deja connecte de cette boutique
+      if (!dev) return send(res, 404, { error: code ? 'Code inconnu — le pont est-il allume et connecte a internet ?' : 'Aucun pont connecte pour cette boutique. Entre le code affiche par le pont.' });
       dev.boutiqueId = b.boutiqueId; dev.ip = String((b && b.ip) || '').trim(); dev.tcpPort = parseInt(b && b.tcpPort, 10) || 8888; persist();
       return send(res, 200, { ok: true, boutique: b.boutiqueId, online: pontOnline(b.boutiqueId) });
     }
