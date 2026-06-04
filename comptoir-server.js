@@ -212,7 +212,7 @@ const pontDevices = {};         // deviceId -> { code, boutiqueId, ip, tcpPort, 
 const pontCmds = {};            // boutiqueId -> [ {id, amount, ref, status:'pending'|'sent'|'done', approved, ...} ]
 let pontCmdSeq = 1;
 function pontDeviceByCode(code) { code = String(code || '').trim().toUpperCase(); if (!code) return null; for (const k of Object.keys(pontDevices)) if (pontDevices[k].code === code) return pontDevices[k]; return null; }
-function pontDeviceForBoutique(id) { for (const k of Object.keys(pontDevices)) if (pontDevices[k].boutiqueId === id) return pontDevices[k]; return null; }
+function pontDeviceForBoutique(id) { let best = null; for (const k of Object.keys(pontDevices)) { const d = pontDevices[k]; if (d.boutiqueId === id && (!best || (d.lastSeen || 0) > (best.lastSeen || 0))) best = d; } return best; } // pont le plus recemment vu (= le pont vivant, pas une vieille inscription)
 function pontOnline(id) { const d = pontDeviceForBoutique(id); return !!d && (Date.now() - (d.lastSeen || 0)) < 12000; }
 function pontPaired(id) { return !!pontDeviceForBoutique(id); }
 function genShortCode() { const a = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; let s = ''; const r = crypto.randomBytes(6); for (let i = 0; i < 6; i++) s += a[r[i] % a.length]; return s; }
@@ -819,7 +819,12 @@ const server = http.createServer(async (req, res) => {
       const code = String((b && b.code) || '').trim();
       const dev = code ? pontDeviceByCode(code) : pontDeviceForBoutique(b.boutiqueId);   // sans code : met a jour le pont deja connecte de cette boutique
       if (!dev) return send(res, 404, { error: code ? 'Code inconnu — le pont est-il allume et connecte a internet ?' : 'Aucun pont connecte pour cette boutique. Entre le code affiche par le pont.' });
-      dev.boutiqueId = b.boutiqueId; dev.ip = String((b && b.ip) || '').trim(); dev.tcpPort = parseInt(b && b.tcpPort, 10) || 8888; persist();
+      dev.boutiqueId = b.boutiqueId;
+      if (typeof (b && b.ip) === 'string' && b.ip.trim()) dev.ip = b.ip.trim(); // ne pas effacer l'IP si non fournie
+      dev.tcpPort = parseInt(b && b.tcpPort, 10) || dev.tcpPort || 8888;
+      // un seul pont par boutique : on retire les anciennes inscriptions (ponts reinstalles) qui visaient la meme boutique
+      for (const k of Object.keys(pontDevices)) { if (pontDevices[k] !== dev && pontDevices[k].boutiqueId === b.boutiqueId) delete pontDevices[k]; }
+      persist();
       return send(res, 200, { ok: true, boutique: b.boutiqueId, online: pontOnline(b.boutiqueId) });
     }
     if (req.method === 'GET' && path === '/api/terminal/status') {
