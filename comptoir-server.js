@@ -787,6 +787,7 @@ const server = http.createServer(async (req, res) => {
       if (!name) return send(res, 400, { error: 'Nom du produit requis' });
       const unit = b.unit === 'g' ? 'g' : 'u';
       const p = { id: 'cp' + Date.now().toString(36), name: name, cat: (b.cat || 'Divers').trim(), unit: unit, custom: true, img: b.img || '', desc: (b.desc || '').trim() };
+      if (typeof b.proPrice === 'number') p.proPrice = Math.round(b.proPrice * 100) / 100;   // prix de gros (réassort)
       if (typeof b.vat === 'number') p.vat = b.vat;
       if (b.new) p.new = true;
       if (unit === 'g') {
@@ -1232,6 +1233,49 @@ const server = http.createServer(async (req, res) => {
       return send(res, 200, { role: user.role, voitLesBoutiques: scope, dashboard });
     }
 
+    // Entrée de stock avec un NUMÉRO DE LOT choisi (produit entrant / arrivage). Admin ou manager (sa boutique).
+    if (req.method === 'POST' && path === '/api/stock/lot') {
+      if (user.role !== 'admin' && user.role !== 'manager') return send(res, 403, { error: 'Réservé au personnel' });
+      const b = await readJson(req);
+      const bId = user.role === 'admin' ? (b.boutiqueId || 'aix') : user.boutiqueId;
+      const p = findProduct(b.productId); if (!p) return send(res, 404, { error: 'Produit introuvable' });
+      if (!stock[bId]) stock[bId] = {};
+      const sk = stock[bId];
+      if (p.unit === 'g') {
+        const g = Math.max(0, Number(b.g) || Number(b.qty) || 0); if (g <= 0) return send(res, 400, { error: 'Quantité (g) requise' });
+        const lot = (b.lot && String(b.lot).trim()) || ('LOT-' + new Date().toISOString().slice(0, 10));
+        const exp = (b.exp && String(b.exp).trim()) || (function () { const d = new Date(); d.setMonth(d.getMonth() + 18); return d.toISOString().slice(0, 7); })();
+        if (!sk[p.id] || !Array.isArray(sk[p.id].lots)) sk[p.id] = { lots: [] };
+        sk[p.id].lots.push({ lot: lot, g: g, exp: exp });
+      } else {
+        const units = Math.max(0, Math.floor(Number(b.units) || Number(b.qty) || 0)); if (units <= 0) return send(res, 400, { error: 'Quantité requise' });
+        if (!sk[p.id] || typeof sk[p.id].units !== 'number') sk[p.id] = { units: 0 };
+        sk[p.id].units += units;
+      }
+      persist();
+      return send(res, 200, { ok: true });
+    }
+
+    // ---------------- VUE RÉSEAU (admin) : tous les franchisés d'un coup d'œil ----------------
+    if (req.method === 'GET' && path === '/api/network/overview') {
+      if (user.role !== 'admin') return send(res, 403, { error: 'Réservé à l\'administrateur réseau' });
+      const cat = allCatalog();
+      const rows = boutiqueIds().map((id) => {
+        const bq = boutiques[id]; const sk = stock[id] || {};
+        let inStock = 0, low = 0, out = 0;
+        for (const p of cat) {
+          const s = sk[p.id];
+          const q = p.unit === 'g' ? totalGrams(s) : (s ? (s.units || 0) : 0);
+          if (q > 0) inStock++;
+          if (p.unit === 'g') { if (q > 0 && q <= 10) low++; else if (q <= 0) out++; } else { if (q > 0 && q <= 3) low++; else if (q <= 0) out++; }
+        }
+        const so = supplyOrders.filter((o) => o.boutiqueId === id);
+        const ventes = invoices.filter((i) => i.boutiqueId === id && i.total >= 0);
+        return { id: id, label: bq.label || id, siren: (bq.seller && bq.seller.siren) || '', produitsEnStock: inStock, stockBas: low, ruptures: out, reassortEnCours: so.filter((o) => o.status !== 'recue').length, reassortTotal: so.length, ventes: ventes.length, ca: Math.round(ventes.reduce((a, i) => a + i.total, 0) * 100) / 100 };
+      });
+      return send(res, 200, { boutiques: rows, totalProduits: cat.length });
+    }
+
     // ---------------- RÉASSORT PRO (B2B) : les franchisés commandent leur stock au réseau ----------------
     if (req.method === 'GET' && path === '/api/pro/catalog') {
       const list = allCatalog().map((p) => {
@@ -1284,13 +1328,14 @@ const server = http.createServer(async (req, res) => {
       if (b.status === 'recue') { if (!(user.role === 'admin' || isOwnerManager)) return send(res, 403, { error: 'Réservé au franchisé concerné ou à l\'admin' }); }
       else if (user.role !== 'admin') return send(res, 403, { error: 'Réservé à l\'administrateur réseau' });
       o.status = b.status;
+      if (b.lot != null && String(b.lot).trim()) o.lotRef = String(b.lot).trim();   // l'admin/franchisé peut choisir le n° de lot
       if (b.status === 'recue' && !o.restocked) {
         if (!stock[o.boutiqueId]) stock[o.boutiqueId] = {};
         const sk = stock[o.boutiqueId];
         const exp = (function () { const d = new Date(); d.setMonth(d.getMonth() + 18); return d.toISOString().slice(0, 7); })();
         for (const it of o.items) {
           const ref = String(it.productId || '').toUpperCase();
-          const lot = o.numero + '-' + ref;                          // numéro de lot lisible : commande + référence produit
+          const lot = (o.lotRef || o.numero) + '-' + ref;            // n° de lot choisi par l'admin, sinon n° de commande + référence
           if (it.unit === 'g') { if (!sk[it.productId] || !Array.isArray(sk[it.productId].lots)) sk[it.productId] = { lots: [] }; sk[it.productId].lots.push({ lot: lot, g: it.qty, exp: exp, ref: ref }); }
           else { if (!sk[it.productId] || typeof sk[it.productId].units !== 'number') sk[it.productId] = { units: 0 }; sk[it.productId].units += it.qty; }
         }
