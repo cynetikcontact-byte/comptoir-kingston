@@ -148,15 +148,16 @@ function checkPass(user, pass) {
 
 // Sessions : jeton aléatoire -> { name, role, boutiqueId, exp }. Expiration 7 jours.
 const sessions = {};
-const SESSION_TTL = 7 * 24 * 3600 * 1000;
+const SESSION_TTL = 60 * 24 * 3600 * 1000;        // 60 jours : la caisse reste connectee (renouvele a chaque usage)
 // Jeton de service OPTIONNEL pour l'automatisation/intégrations (réglé par l'exploitant, jamais en dur).
 const API_TOKEN = process.env.COMPTOIR_API_TOKEN || '';
-function newSession(user) { const a = accounts[user]; const token = crypto.randomBytes(24).toString('hex'); sessions[token] = { name: a.name, role: a.role, boutiqueId: a.boutiqueId, exp: Date.now() + SESSION_TTL }; return token; }
+function newSession(user) { const a = accounts[user]; const token = crypto.randomBytes(24).toString('hex'); sessions[token] = { name: a.name, role: a.role, boutiqueId: a.boutiqueId, exp: Date.now() + SESSION_TTL }; persist(); return token; }
 function sessionUser(token) {
   if (!token) return null;
   if (API_TOKEN && token === API_TOKEN) return { name: 'Service', role: 'admin', boutiqueId: null };
   const s = sessions[token]; if (!s) return null;
   if (s.exp <= Date.now()) { delete sessions[token]; return null; }
+  s.exp = Date.now() + SESSION_TTL;   // glissant : tant que la caisse sert, elle reste connectee (persiste via les ecritures normales)
   return s;
 }
 
@@ -282,7 +283,7 @@ function persist() {
       // Écriture ATOMIQUE : fichier temporaire puis renommage -> jamais de fichier tronqué en cas de coupure.
       // NB : fiscalKey n'est PLUS écrite ici (stockée à part, fichier protégé).
       const tmp = DATA_FILE + '.tmp';
-      fs.writeFileSync(tmp, JSON.stringify({ v: 1, savedAt: new Date().toISOString(), pointsPerEuro: POINTS_PER_EURO, hideBaseCatalog, customProducts, stock, boutiques, invoiceSeq, lastHash, invoices, orderSeq, orders, fiscalEvents, fiscalSeq, lastFiscalSig, clotureSeq, gtPerpetuel, gtPerpetuelAvoirs, seqByB, gtByB, gtAvoirsByB, clotureSeqByB, supplyOrders, supplySeq, proRate, pontDevices }), 'utf8');
+      fs.writeFileSync(tmp, JSON.stringify({ v: 1, savedAt: new Date().toISOString(), pointsPerEuro: POINTS_PER_EURO, hideBaseCatalog, customProducts, stock, boutiques, invoiceSeq, lastHash, invoices, orderSeq, orders, fiscalEvents, fiscalSeq, lastFiscalSig, clotureSeq, gtPerpetuel, gtPerpetuelAvoirs, seqByB, gtByB, gtAvoirsByB, clotureSeqByB, supplyOrders, supplySeq, proRate, pontDevices, sessions }), 'utf8');
       fs.renameSync(tmp, DATA_FILE);
     } catch (e) { console.error('Persistance impossible :', e.message); }
   }, 200);
@@ -318,6 +319,7 @@ function loadPersisted() {
     if (d.clotureSeqByB && typeof d.clotureSeqByB === 'object') clotureSeqByB = d.clotureSeqByB;
     if (Array.isArray(d.supplyOrders)) supplyOrders = d.supplyOrders;
     if (d.pontDevices && typeof d.pontDevices === 'object') Object.assign(pontDevices, d.pontDevices);
+    if (d.sessions && typeof d.sessions === 'object') { const _now = Date.now(); for (const t in d.sessions) { const s = d.sessions[t]; if (s && s.exp > _now) sessions[t] = s; } } // garde les connexions actives apres un redemarrage
     if (typeof d.supplySeq === 'number') supplySeq = d.supplySeq;
     if (typeof d.proRate === 'number') proRate = d.proRate;
     if (!d.seqByB || !d.gtByB) {                              // migration : numerotation continue + totaux par boutique

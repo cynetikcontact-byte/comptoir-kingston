@@ -348,13 +348,18 @@ table.tbl tr:hover td{background:#faf9f5;}
 
   // --- Client vers le serveur Comptoir (optionnel : repli sur données locales si absent) ---
   var API={base:'',token:'',on:false,ptsPerEuro:1};
+  // --- Session persistante : la caisse reste connectee apres reouverture/rechargement de la page ---
+  function saveSession(){ try{ if(st.user&&st.user.token) localStorage.setItem('kt_session', JSON.stringify(st.user)); }catch(e){} }
+  function clearSession(){ try{ localStorage.removeItem('kt_session'); }catch(e){} }
+  var _authFailing=false;
+  function handleAuthFail(){ if(_authFailing)return; _authFailing=true; clearSession(); st.user=null; st.client=null; API.on=false; API.token=''; render(); try{toast('Session expiree — reconnecte-toi');}catch(e){} setTimeout(function(){_authFailing=false;},2000); }
   function ptsRate(){return (API&&API.ptsPerEuro)||1;}
   function loadLoyaltyRate(){ if(!API.on)return; apiGet('/api/loyalty/status').then(function(s){ if(s&&s.pointsParEuro!=null){API.ptsPerEuro=s.pointsParEuro; if(st.view==='reglages'||st.view==='pos')render();} }).catch(function(){}); }
   var LOCAL_SNAPSHOT=null;
   function apiHeaders(){return {'content-type':'application/json','x-comptoir-token':API.token};}
-  function apiGet(path){return fetch(API.base+path,{headers:apiHeaders()}).then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.json();});}
-  function apiPost(path,body){return fetch(API.base+path,{method:'POST',headers:apiHeaders(),body:JSON.stringify(body)}).then(function(r){return r.json().catch(function(){return {};}).then(function(d){if(!r.ok)throw new Error(d.error||('HTTP '+r.status));return d;});});}
-  function apiDelete(path){return fetch(API.base+path,{method:'DELETE',headers:apiHeaders()}).then(function(r){return r.json().catch(function(){return {};}).then(function(d){if(!r.ok)throw new Error(d.error||('HTTP '+r.status));return d;});});}
+  function apiGet(path){return fetch(API.base+path,{headers:apiHeaders()}).then(function(r){if(r.status===401){handleAuthFail();throw new Error('HTTP 401');}if(!r.ok)throw new Error('HTTP '+r.status);return r.json();});}
+  function apiPost(path,body){return fetch(API.base+path,{method:'POST',headers:apiHeaders(),body:JSON.stringify(body)}).then(function(r){if(r.status===401){handleAuthFail();throw new Error('HTTP 401');}return r.json().catch(function(){return {};}).then(function(d){if(!r.ok)throw new Error(d.error||('HTTP '+r.status));return d;});});}
+  function apiDelete(path){return fetch(API.base+path,{method:'DELETE',headers:apiHeaders()}).then(function(r){if(r.status===401){handleAuthFail();throw new Error('HTTP 401');}return r.json().catch(function(){return {};}).then(function(d){if(!r.ok)throw new Error(d.error||('HTTP '+r.status));return d;});});}
   // Convertit un produit renvoye par le serveur en produit local (photo, packs, desc, stock, perso).
   function mapServerProduct(p){
     var o={id:p.id,name:p.name,cat:p.cat,unit:p.unit,onBorne:true,onWeb:true,cbd:p.desc||p.cat,img:p.img||'',desc:p.desc||'',custom:!!p.custom};
@@ -1353,11 +1358,11 @@ table.tbl tr:hover td{background:#faf9f5;}
       var er=document.getElementById('lg-err');if(er){er.style.color='#8a8273';er.textContent='Connexion…';}
       fetch((API.base||'')+'/api/login',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({user:ukey,password:pass})})
         .then(function(r){return r.json().then(function(d){if(!r.ok)throw new Error(d.error||'Identifiants invalides');return d;});})
-        .then(function(d){var meta=ACCOUNTS[ukey]||{};st.user={name:d.name,role:d.role,roleLabel:meta.roleLabel||d.role,boutiqueId:d.boutiqueId,initials:meta.initials||'',token:d.token};st.boutique=d.boutiqueId?boutiqueName(d.boutiqueId):'Réseau (toutes boutiques)';API.token=d.token;render();autoConnect();toast('Bienvenue, '+d.name);})
+        .then(function(d){var meta=ACCOUNTS[ukey]||{};st.user={name:d.name,role:d.role,roleLabel:meta.roleLabel||d.role,boutiqueId:d.boutiqueId,initials:meta.initials||'',token:d.token};st.boutique=d.boutiqueId?boutiqueName(d.boutiqueId):'Réseau (toutes boutiques)';API.token=d.token;saveSession();render();autoConnect();toast('Bienvenue, '+d.name);})
         .catch(function(e){var e2=document.getElementById('lg-err');if(e2){e2.style.color='#e0917a';e2.textContent=(e.message||'Erreur de connexion');}});
       return;
     }
-    if(a==='logout'){st.user=null;st.client=null;st.cart=[];API.on=false;render();return;}
+    if(a==='logout'){clearSession();st.user=null;st.client=null;st.cart=[];API.on=false;API.token='';render();return;}
     if(a==='closemodal'){if(ev.target.classList.contains('modal-backdrop')){closeModal();}else if(!el.classList.contains('modal-backdrop')){closeModal();}return;}
     if(a==='poscat'){st.cat=el.getAttribute('data-c');st.posSearch='';render();return;}
     if(a==='pick'){var p=pById(el.getAttribute('data-id'));if(p.unit==='g')gramModal(p);else if(p.packs&&p.packs.length)packModal(p);else{st.cart.push({name:p.name,detail:'Unité',price:p.price,productId:p.id,qty:1});render();}return;}
@@ -1492,7 +1497,10 @@ table.tbl tr:hover td{background:#faf9f5;}
   });
   document.body.addEventListener('change',function(e){ if(e.target&&e.target.id==='tpe-mode'){ tpeToggle(); } if(e.target&&e.target.id==='pay-mode'){ setPayMode(e.target.value); } });
 
+  // Reprise de session : si la caisse etait deja connectee sur cet appareil, on la reconnecte toute seule.
+  (function(){ try{ var s=JSON.parse(localStorage.getItem('kt_session')||'null'); if(s&&s.token){ st.user=s; API.token=s.token; st.boutique=s.boutiqueId?boutiqueName(s.boutiqueId):'Réseau (toutes boutiques)'; } }catch(e){} })();
   render();
+  if(st.user&&st.user.token){ autoConnect(); }
 })();
 </script>
 </body>
