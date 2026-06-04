@@ -1271,9 +1271,9 @@ const server = http.createServer(async (req, res) => {
         }
         const so = supplyOrders.filter((o) => o.boutiqueId === id);
         const ventes = invoices.filter((i) => i.boutiqueId === id && i.total >= 0);
-        return { id: id, label: bq.label || id, siren: (bq.seller && bq.seller.siren) || '', produitsEnStock: inStock, stockBas: low, ruptures: out, reassortEnCours: so.filter((o) => o.status !== 'recue').length, reassortTotal: so.length, ventes: ventes.length, ca: Math.round(ventes.reduce((a, i) => a + i.total, 0) * 100) / 100 };
+        return { id: id, label: bq.label || id, siren: (bq.seller && bq.seller.siren) || '', produitsEnStock: inStock, stockBas: low, ruptures: out, aTraiter: so.filter((o) => o.status === 'envoyee').length, reassortEnCours: so.filter((o) => o.status !== 'recue').length, reassortTotal: so.length, ventes: ventes.length, ca: Math.round(ventes.reduce((a, i) => a + i.total, 0) * 100) / 100 };
       });
-      return send(res, 200, { boutiques: rows, totalProduits: cat.length });
+      return send(res, 200, { boutiques: rows, totalProduits: cat.length, totalATraiter: rows.reduce((a, r) => a + r.aTraiter, 0) });
     }
 
     // ---------------- RÉASSORT PRO (B2B) : les franchisés commandent leur stock au réseau ----------------

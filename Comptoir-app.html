@@ -254,7 +254,7 @@ table.tbl tr:hover td{background:#faf9f5;}
       <div class="nav-item" data-view="factu"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M6 2h9l5 5v15H6z"/><path d="M14 2v6h6M9 13h6M9 17h6"/></svg> Facturation</div>
       <div class="nav-item" data-view="conformite"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3l7 3v5c0 4.5-3 8-7 10-4-2-7-5.5-7-10V6z"/><path d="M9 12l2 2 4-4"/></svg> Conformité</div>
       <div class="nav-item" id="nav-franchises" data-view="franchises"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 21V9l9-6 9 6v12"/><path d="M3 21h18M9 21v-6h6v6"/></svg> Franchisés</div>
-      <div class="nav-item" data-view="pro"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 7h11v8H3zM14 9h4l3 3v3h-7z"/><circle cx="7" cy="18" r="1.7"/><circle cx="17.5" cy="18" r="1.7"/></svg> Réassort pro</div>
+      <div class="nav-item" data-view="pro"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 7h11v8H3zM14 9h4l3 3v3h-7z"/><circle cx="7" cy="18" r="1.7"/><circle cx="17.5" cy="18" r="1.7"/></svg> Réassort pro <span id="pro-badge" style="margin-left:auto"></span></div>
       <div class="nav-grp">Système</div>
       <div class="nav-item" data-view="reglages"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 8 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H2a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 3.6 8a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H8a1.65 1.65 0 0 0 1-1.51V2a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V8a1.65 1.65 0 0 0 1.51 1H22a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg> Réglages</div>
     </nav>
@@ -933,20 +933,24 @@ table.tbl tr:hover td{background:#faf9f5;}
     if(!API.on||proData.loading)return; proData.loading=true;
     var calls=[ apiGet('/api/pro/catalog').catch(function(){return {products:[]};}), apiGet('/api/pro/orders').catch(function(){return {orders:[]};}),
       (st.user.role==='admin'?apiGet('/api/network/overview').catch(function(){return {boutiques:[]};}):Promise.resolve({boutiques:[]})) ];
-    Promise.all(calls).then(function(r){ proData.catalog=(r[0]&&r[0].products)||[]; proData.rate=(r[0]&&r[0].rate)||proData.rate; proData.orders=(r[1]&&r[1].orders)||[]; netData.boutiques=(r[2]&&r[2].boutiques)||[]; proData.loaded=true; proData.loading=false; if(st.view==='pro'){ renderNetwork(); renderProCat(); renderProOrders(); } })
+    Promise.all(calls).then(function(r){ proData.catalog=(r[0]&&r[0].products)||[]; proData.rate=(r[0]&&r[0].rate)||proData.rate; proData.orders=(r[1]&&r[1].orders)||[]; netData.boutiques=(r[2]&&r[2].boutiques)||[]; netData.totalATraiter=(r[2]&&r[2].totalATraiter)||0; setProBadge(netData.totalATraiter); proData.loaded=true; proData.loading=false; if(st.view==='pro'){ renderNetwork(); renderProCat(); renderProOrders(); } })
     .catch(function(){ proData.loading=false; proData.loaded=true; });
   }
   function renderNetwork(){
     var el=document.getElementById('pro-net'); if(!el)return;
-    var rows=(netData.boutiques||[]).map(function(b){
-      return '<tr><td><b>'+esc(b.label)+'</b><br><span class="muted" style="font-size:11px">'+esc(b.id)+(b.siren&&b.siren!=='000000000'?' · SIREN '+esc(b.siren):'')+'</span></td>'+
-        '<td style="text-align:center">'+b.produitsEnStock+'</td>'+
-        '<td style="text-align:center">'+(b.stockBas?'<span class="tag tag-low">'+b.stockBas+'</span>':'<span class="muted">0</span>')+'</td>'+
-        '<td style="text-align:center">'+(b.reassortEnCours?'<span class="tag tag-low">'+b.reassortEnCours+'</span>':'<span class="muted">0</span>')+'</td>'+
-        '<td style="text-align:center">'+b.ventes+'</td><td style="text-align:right">'+eur2(b.ca)+'</td></tr>';
-    }).join('')||'<tr><td colspan="6" class="muted" style="padding:12px">Aucune boutique.</td></tr>';
-    el.innerHTML='<table class="tbl"><thead><tr><th>Boutique</th><th>En stock</th><th>Stock bas</th><th>Réassort en cours</th><th>Ventes</th><th>CA</th></tr></thead><tbody>'+rows+'</tbody></table>';
+    el.innerHTML=(netData.boutiques||[]).map(function(b){
+      var badge = b.aTraiter>0
+        ? '<span style="display:inline-flex;align-items:center;justify-content:center;min-width:30px;height:30px;border-radius:999px;background:#d23b2f;color:#fff;font-weight:800;font-size:16px;padding:0 8px">'+b.aTraiter+'</span>'
+        : '<span class="tag tag-ok">à jour ✓</span>';
+      var al = (b.ruptures||b.stockBas) ? '<span class="tag tag-low" style="margin-left:6px">'+(b.ruptures?b.ruptures+' rupture'+(b.ruptures>1?'s':''):'')+((b.ruptures&&b.stockBas)?' · ':'')+(b.stockBas?b.stockBas+' bas':'')+'</span>' : '';
+      return '<div class="card" style="padding:15px 16px;display:flex;align-items:center;justify-content:space-between;gap:12px'+(b.aTraiter>0?';border-color:#e7b3ad':'')+'">'+
+        '<div><div style="font-family:var(--serif);font-size:17px">'+esc(b.label)+'</div>'+
+        '<div class="muted" style="font-size:12px;margin-top:3px">'+b.produitsEnStock+' produits en stock '+al+'</div></div>'+
+        '<div style="text-align:right">'+badge+(b.aTraiter>0?'<div style="font-size:11px;color:#d23b2f;font-weight:700;margin-top:4px">à traiter</div>':'')+'</div></div>';
+    }).join('')||'<div class="muted" style="padding:14px">Aucune boutique.</div>';
   }
+  function setProBadge(n){ var el=document.getElementById('pro-badge'); if(!el)return; el.innerHTML=n>0?'<span style="background:#d23b2f;color:#fff;border-radius:999px;font-size:11px;font-weight:800;padding:1px 7px;margin-left:auto">'+n+'</span>':''; }
+  function refreshProBadge(){ if(!API.on||!st.user||st.user.role!=='admin')return; apiGet('/api/network/overview').then(function(d){ netData.boutiques=(d&&d.boutiques)||netData.boutiques; setProBadge((d&&d.totalATraiter)||0); }).catch(function(){}); }
   function proQty(id){ return (st.proCart&&st.proCart[id])||0; }
   function proCartCount(){ var n=0; for(var k in (st.proCart||{})) n+=st.proCart[k]; return n; }
   function proPresets(p){ return p.proUnit==='g'?[100,250,500,1000]:[10,25,50,100]; }
@@ -986,7 +990,7 @@ table.tbl tr:hover td{background:#faf9f5;}
     setTimeout(loadPro,0);
     var who = st.user.role==='admin' ? 'Commande pour tes boutiques et suis les commandes de tes franchisés.' : 'Commande ton stock au réseau. À la réception, clique « Commande reçue » : le stock entre automatiquement dans ta boutique (avec n° de lot).';
     return '<div class="vhead"><div><h1>Réassort pro <span class="tag tag-ok" style="vertical-align:middle">stock au réseau</span></h1><p>'+who+'</p></div></div>'+
-      (st.user.role==='admin'?'<h3 style="font-family:var(--serif);margin:4px 0 10px">Vue réseau — toutes les boutiques</h3><div class="card" id="pro-net"><div class="muted" style="padding:16px">Chargement…</div></div>':'')+
+      (st.user.role==='admin'?'<h3 style="font-family:var(--serif);margin:4px 0 10px">Vue réseau — toutes les boutiques</h3><div id="pro-net" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:12px"><div class="muted" style="padding:16px">Chargement…</div></div>':'')+
       '<div style="display:flex;align-items:center;justify-content:space-between;margin:22px 0 12px"><h3 style="font-family:var(--serif);margin:0">Catalogue de gros</h3>'+(st.user.role==='admin'?'<button class="btn" data-act="pro-newprod">+ Nouveau produit entrant</button>':'')+'</div>'+
       '<div id="pro-cat" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:14px"></div>'+
       '<div id="pro-bar" style="position:sticky;bottom:0;background:#fbfaf6;border-top:1px solid var(--line);padding:14px 4px;margin-top:14px;display:flex;align-items:center;justify-content:flex-end"></div>'+
@@ -1039,6 +1043,7 @@ table.tbl tr:hover td{background:#faf9f5;}
     var rb=document.querySelector('.role-badge');if(rb){rb.innerHTML='<span class="av">'+st.user.initials+'</span><div>'+st.user.roleLabel+'<br><b>'+st.user.name+'</b></div>';}
     var sel=document.getElementById('boutiqueSel');if(sel){sel.style.display=st.user.role==='admin'?'':'none';}
     var nfr=document.getElementById('nav-franchises');if(nfr){nfr.style.display=(st.user.role==='admin')?'':'none';}
+    if(st.user && !window.__proBadgeInit){ window.__proBadgeInit=true; refreshProBadge(); setInterval(function(){try{refreshProBadge();}catch(e){}},45000); }
     var sf=document.getElementById('sideFoot');if(sf){sf.innerHTML='<b>'+st.user.name+'</b>'+st.user.roleLabel+' · KINGSTON<button class="btn" style="width:100%;margin-top:10px;background:transparent;color:#cfc9ba;border-color:rgba(255,255,255,.16)" data-act="logout">Se déconnecter</button>';}
   }
 
