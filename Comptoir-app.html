@@ -661,10 +661,10 @@ table.tbl tr:hover td{background:#faf9f5;}
   }
   function payModeRender(){
     var badge=document.getElementById('tpe-state'); var help=document.getElementById('pay-mode-help');
-    if(badge){ if(PAY_MODE==='auto'){ badge.className='tag tag-low'; badge.textContent='Automatique (a brancher)'; } else { badge.className='tag tag-ok'; badge.textContent='Mode manuel'; } }
+    if(badge){ badge.className='tag tag-ok'; badge.textContent=(PAY_MODE==='auto')?'Terminal (pont)':'Mode manuel'; }
     if(help){ help.innerHTML=(PAY_MODE==='auto')
-      ? 'Le serveur enverra le montant au terminal via un petit boitier a la boutique. Necessite un boitier toujours allume relie au terminal, et l’activation du « mode caisse connectee » (CAISSE-AP) par ta banque. <b>Pas encore actif.</b>'
-      : 'A l’encaissement, la caisse affiche le montant en grand : tu le saisis sur le terminal, fais passer la carte, puis valides. Fonctionne sur iPad / tablette, sans rien en local.'; }
+      ? 'La caisse envoie le montant à ton terminal via le « pont » lancé sur CET ordinateur. À utiliser sur l’ordinateur qui fait tourner le pont (avec Chrome), terminal branché. Sinon le paiement bascule en validation manuelle.'
+      : 'À l’encaissement, la caisse affiche le montant en grand : tu le saisis sur le terminal, fais passer la carte, puis valides. Fonctionne sur iPad / tablette, sans rien en local.'; }
   }
   function payInit(){ var sel=document.getElementById('pay-mode'); if(sel)sel.value=PAY_MODE; payModeRender(); }
   function setPayMode(m){ PAY_MODE=(m==='auto')?'auto':'manuel'; try{ localStorage.setItem('kt_pay_mode',PAY_MODE); }catch(e){} payModeRender(); }
@@ -691,7 +691,7 @@ table.tbl tr:hover td{background:#faf9f5;}
         '<div id="rg-res" style="margin-top:14px"></div>'+
       '</div>'+
       '<div class="card" id="tpe-card" style="padding:18px;max-width:660px;margin-top:16px"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px"><b style="font-family:var(--serif);font-size:16px">Paiement par carte</b><span id="tpe-state" class="tag tag-ok">Mode manuel</span></div>'+
-        '<div class="fld" style="margin-bottom:10px"><label>Mode</label><select id="pay-mode"><option value="manuel">Manuel - montant saisi sur le terminal (tablette, recommande)</option><option value="auto">Automatique - piloter le terminal (boitier + banque requis)</option></select></div>'+
+        '<div class="fld" style="margin-bottom:10px"><label>Mode</label><select id="pay-mode"><option value="manuel">Manuel - montant saisi sur le terminal (tablette, recommande)</option><option value="auto">Automatique - piloter le terminal via le pont (sur cet ordinateur)</option></select></div>'+
         '<div id="pay-mode-help" class="muted" style="font-size:12.5px;line-height:1.5"></div>'+
       '</div>'+
       '<div class="net-note" style="margin-top:16px">'+crown('#b8902f')+' Connecté au serveur, la caisse lit les vrais produits/stocks et chaque vente passe par le moteur (facture chaînée + points myCred). Hors ligne, l\'app fonctionne sur ses données de démonstration.</div>';
@@ -1208,8 +1208,17 @@ table.tbl tr:hover td{background:#faf9f5;}
       '<div style="display:flex;gap:10px;margin-top:16px"><button class="btn" style="flex:1" data-act="closemodal">Annuler</button><button class="btn btn-gold" style="flex:1.6" data-act="payok" data-m="Carte bancaire">✓ Paiement accepte</button></div></div>');
   }
   function payByTerminalAuto(amount){
-    openModal('<div class="modal-h">Paiement carte</div><div class="modal-b"><div class="term" style="text-align:center"><div class="tdot"></div><div style="font-size:15px;margin-top:8px">Envoi au terminal...</div><div style="font-family:var(--serif);font-size:26px;margin-top:10px;color:#d8b252">'+eur(amount)+'</div><div class="muted" style="font-size:12px;margin-top:8px">Le branchement automatique n\'est pas encore actif.</div></div>'+
-      '<div style="display:flex;gap:10px;margin-top:16px"><button class="btn" style="flex:1" data-act="closemodal">Annuler</button><button class="btn btn-gold" style="flex:1" data-act="payok" data-m="Carte bancaire">Valider a la main</button></div></div>');
+    openModal('<div class="modal-h">Paiement carte</div><div class="modal-b"><div class="term" style="text-align:center"><div class="tdot"></div><div style="font-size:15px;margin-top:8px">Présentez la carte sur le terminal</div><div style="font-family:var(--serif);font-size:26px;margin-top:10px;color:#d8b252">'+eur(amount)+'</div><div class="muted" style="font-size:12px;margin-top:10px">En attente du terminal…</div></div></div>');
+    fetch(PONT_URL+'/pay',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({amount:amount,ref:'CAISSE-'+Date.now()})})
+      .then(function(r){return r.json();})
+      .then(function(d){
+        if(d&&d.approved){ closeModal(); finalizeSale('Carte bancaire'); return; }
+        var motif=(d&&d.echec==='11')?'Paiement annulé':((d&&d.echec==='04')?'Paiement refusé':((d&&d.echec==='08')?'Délai dépassé':'Paiement non abouti'));
+        openModal('<div class="modal-h">Paiement non abouti</div><div class="modal-b"><div style="text-align:center;color:#c0594a;font-size:16px;margin-bottom:10px">'+motif+'</div><div style="display:flex;gap:10px"><button class="btn" style="flex:1" data-act="closemodal">Fermer</button><button class="btn btn-gold" style="flex:1" data-act="pay" data-m="Carte bancaire">Réessayer</button></div></div>');
+      })
+      .catch(function(){
+        openModal('<div class="modal-h">Terminal injoignable</div><div class="modal-b"><div class="muted" style="font-size:13px;margin-bottom:4px">Le terminal ne répond pas (le pont est-il lancé sur cet ordinateur ?). Si le client a payé, valide à la main.</div><div style="display:flex;gap:10px;margin-top:14px"><button class="btn" style="flex:1" data-act="closemodal">Annuler</button><button class="btn btn-gold" style="flex:1" data-act="payok" data-m="Carte bancaire">Valider à la main</button></div></div>');
+      });
   }
   function payModal(method){
     if(method==='Carte bancaire'){
