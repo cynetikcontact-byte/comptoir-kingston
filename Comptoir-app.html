@@ -543,7 +543,7 @@ table.tbl tr:hover td{background:#faf9f5;}
       '<div class="tk-foot"><div class="tk-tot"><span class="t1">Total TTC</span><span class="t2">'+eur(cartTotal())+'</span></div>'+
       '<div class="tk-tva">dont TVA 20% : '+eur(Math.round((cartTotal()-cartTotal()/1.2)*100)/100)+' · HT : '+eur(Math.round(cartTotal()/1.2*100)/100)+'</div>'+
       '<div class="tk-pts">'+(st.client?'Le membre gagnera '+Math.round(cartTotal()*ptsRate())+' points':'+ '+Math.round(cartTotal()*ptsRate())+' points avec un compte membre')+'</div>'+
-      '<div class="tk-pay"><button class="btn btn-gold" data-act="pay" data-m="Carte Monetico">Carte Monetico</button><button class="btn" data-act="pay" data-m="Espèces">Espèces</button></div></div></div></div>';
+      '<div class="tk-pay"><button class="btn btn-gold" data-act="pay" data-m="Carte bancaire">Carte bancaire</button><button class="btn" data-act="pay" data-m="Espèces">Espèces</button></div></div></div></div>';
   }
 
   function viewProduits(){
@@ -645,7 +645,8 @@ table.tbl tr:hover td{background:#faf9f5;}
   }
 
   // ---------- Terminal de paiement (TPE) via le pont local ----------
-  var PONT_URL='http://localhost:3002';
+  var PONT_URL='http://localhost:3002';   // (ancien pont local — non utilisé sur tablette)
+  var PAY_MODE=(function(){ try{ return localStorage.getItem('kt_pay_mode')||'manuel'; }catch(e){ return 'manuel'; } })();   // 'manuel' (tablette) | 'auto' (relais serveur->boitier->terminal, a venir)
   function tpeFetch(path,opts){return fetch(PONT_URL+path,opts).then(function(r){return r.json();});}
   function tpeReadForm(){var m=(document.getElementById('tpe-mode')||{}).value||'simulation';var body={mode:m};if(m==='ip'){body.ip=((document.getElementById('tpe-ip')||{}).value||'').trim();body.tcpPort=parseInt((document.getElementById('tpe-port')||{}).value,10)||8888;}if(m==='serial'){body.serialPort=(document.getElementById('tpe-serial')||{}).value||'';}return body;}
   function tpeApply(){return tpeFetch('/config',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(tpeReadForm())});}
@@ -658,6 +659,15 @@ table.tbl tr:hover td{background:#faf9f5;}
       .catch(function(){ badge.className='tag tag-low'; badge.textContent='Pont non démarré'; var r=document.getElementById('tpe-res'); if(r&&!r.innerHTML)r.innerHTML='<span class="muted" style="font-size:12px">Lance « lancer-pont-paiement.command » pour activer le terminal.</span>'; });
     tpeFetch('/config').then(function(c){ if(!c)return; var ms=document.getElementById('tpe-mode'); if(ms&&c.mode)ms.value=c.mode; var ip=document.getElementById('tpe-ip'); if(ip&&c.ip)ip.value=c.ip; var po=document.getElementById('tpe-port'); if(po&&c.tcpPort)po.value=c.tcpPort; tpeToggle(); }).catch(function(){});
   }
+  function payModeRender(){
+    var badge=document.getElementById('tpe-state'); var help=document.getElementById('pay-mode-help');
+    if(badge){ if(PAY_MODE==='auto'){ badge.className='tag tag-low'; badge.textContent='Automatique (a brancher)'; } else { badge.className='tag tag-ok'; badge.textContent='Mode manuel'; } }
+    if(help){ help.innerHTML=(PAY_MODE==='auto')
+      ? 'Le serveur enverra le montant au terminal via un petit boitier a la boutique. Necessite un boitier toujours allume relie au terminal, et l’activation du « mode caisse connectee » (CAISSE-AP) par ta banque. <b>Pas encore actif.</b>'
+      : 'A l’encaissement, la caisse affiche le montant en grand : tu le saisis sur le terminal, fais passer la carte, puis valides. Fonctionne sur iPad / tablette, sans rien en local.'; }
+  }
+  function payInit(){ var sel=document.getElementById('pay-mode'); if(sel)sel.value=PAY_MODE; payModeRender(); }
+  function setPayMode(m){ PAY_MODE=(m==='auto')?'auto':'manuel'; try{ localStorage.setItem('kt_pay_mode',PAY_MODE); }catch(e){} payModeRender(); }
   function loyInit(){
     if(!API.on){var b0=document.getElementById('loy-mode');if(b0){b0.className='tag tag-low';b0.textContent='Hors ligne';}return;}
     apiGet('/api/loyalty/status').then(function(s){
@@ -666,7 +676,7 @@ table.tbl tr:hover td{background:#faf9f5;}
     }).catch(function(){var b=document.getElementById('loy-mode');if(b){b.className='tag tag-low';b.textContent='Serveur injoignable';}});
   }
   function viewReglages(){
-    setTimeout(tpeInit,0);setTimeout(loyInit,0);
+    setTimeout(payInit,0);setTimeout(loyInit,0);
     var apiStatus=API.on?'<span class="tag tag-ok">Connecté · '+API.base+'</span>':'<span class="tag tag-low">Hors ligne (données locales)</span>';
     return '<div class="vhead"><div><h1>Réglages</h1><p>Branche l\'application sur le vrai serveur Comptoir, et relie la fidélité à ton myCred.</p></div></div>'+
       '<div class="card" style="padding:18px;max-width:660px;margin-bottom:16px"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px"><b style="font-family:var(--serif);font-size:16px">Serveur Comptoir (moteur)</b>'+apiStatus+'</div>'+
@@ -680,12 +690,9 @@ table.tbl tr:hover td{background:#faf9f5;}
         '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><button class="btn btn-gold" data-act="saverate">Enregistrer le taux</button><button class="btn" data-act="testconn">Tester la connexion</button><span class="muted" style="font-size:12px">La clé secrète reste sur le serveur — jamais saisie ici.</span></div>'+
         '<div id="rg-res" style="margin-top:14px"></div>'+
       '</div>'+
-      '<div class="card" id="tpe-card" style="padding:18px;max-width:660px;margin-top:16px"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px"><b style="font-family:var(--serif);font-size:16px">Terminal de paiement (TPE)</b><span id="tpe-state" class="tag tag-low">Pont non démarré</span></div>'+
-        '<div class="fld" style="margin-bottom:12px"><label>Type de connexion</label><select id="tpe-mode"><option value="simulation">Simulation (sans terminal)</option><option value="ip">Réseau / IP — recommandé</option><option value="serial">USB / série</option></select></div>'+
-        '<div id="tpe-ip-box" style="display:none;gap:12px;margin-bottom:12px"><div class="fld" style="flex:1"><label>Adresse IP du terminal</label><input id="tpe-ip" placeholder="ex : 192.168.1.50"/></div><div class="fld" style="width:120px"><label>Port</label><input id="tpe-port" value="8888"/></div></div>'+
-        '<div id="tpe-serial-box" style="display:none;margin-bottom:12px"><div class="fld"><label>Port du terminal (USB / série)</label><div style="display:flex;gap:8px"><select id="tpe-serial" style="flex:1"><option value="">— détecter —</option></select><button class="btn" data-act="tpedetect">Détecter</button></div></div></div>'+
-        '<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><button class="btn" data-act="tpetest">Tester</button><button class="btn btn-gold" data-act="tpesave">Activer</button><span class="muted" style="font-size:12px">Aucun fichier à éditer — tout se règle ici.</span></div>'+
-        '<div id="tpe-res" style="margin-top:12px"></div>'+
+      '<div class="card" id="tpe-card" style="padding:18px;max-width:660px;margin-top:16px"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px"><b style="font-family:var(--serif);font-size:16px">Paiement par carte</b><span id="tpe-state" class="tag tag-ok">Mode manuel</span></div>'+
+        '<div class="fld" style="margin-bottom:10px"><label>Mode</label><select id="pay-mode"><option value="manuel">Manuel - montant saisi sur le terminal (tablette, recommande)</option><option value="auto">Automatique - piloter le terminal (boitier + banque requis)</option></select></div>'+
+        '<div id="pay-mode-help" class="muted" style="font-size:12.5px;line-height:1.5"></div>'+
       '</div>'+
       '<div class="net-note" style="margin-top:16px">'+crown('#b8902f')+' Connecté au serveur, la caisse lit les vrais produits/stocks et chaque vente passe par le moteur (facture chaînée + points myCred). Hors ligne, l\'app fonctionne sur ses données de démonstration.</div>';
   }
@@ -1187,23 +1194,25 @@ table.tbl tr:hover td{background:#faf9f5;}
     if(!document.getElementById('cm-list'))return;
     fetchCustomers(q,function(list){var b=document.getElementById('cm-list');if(b)b.innerHTML=custRowsHtml(list,'setclientremote');},function(e){var b=document.getElementById('cm-list');if(b)b.innerHTML='<div class="tag tag-low" style="margin:8px;display:inline-block">Recherche indisponible ('+esc(e.message||e)+'). Mets à jour le plugin de ton site puis relance le serveur.</div>';});
   }
-  // Paiement carte en caisse : pilote le vrai TPE via le pont (CAISSE-AP). Repli manuel si pont injoignable.
+  // Paiement carte. Mode 'manuel' (tablette) : le caissier saisit le montant sur le terminal puis valide.
+  // Mode 'auto' (a venir) : relais kingtools.fr -> boitier boutique -> terminal (CAISSE-AP).
   function payByCardTerminal(){
     var amount=cartTotal();
-    openModal('<div class="modal-h">Paiement carte</div><div class="modal-b"><div class="term"><div class="tdot"></div><div style="font-size:15px">Présentez la carte sur le terminal</div><div style="font-family:var(--serif);font-size:26px;margin-top:10px;color:#d8b252">'+eur(amount)+'</div><div class="muted" style="font-size:12px;margin-top:10px">En attente du terminal…</div></div></div>');
-    fetch(PONT_URL+'/pay',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({amount:amount,ref:'CAISSE-'+Date.now()})})
-      .then(function(r){return r.json();})
-      .then(function(d){
-        if(d&&d.approved){ closeModal(); finalizeSale('Carte Monetico'); return; }
-        var motif=(d&&d.echec==='11')?'Paiement annulé':((d&&d.echec==='04')?'Paiement refusé':((d&&d.echec==='08')?'Délai dépassé':'Paiement non abouti'));
-        openModal('<div class="modal-h">Paiement non abouti</div><div class="modal-b"><div style="text-align:center;color:#c0594a;font-size:16px;margin-bottom:6px">'+motif+'</div><div class="muted" style="font-size:12px;text-align:center">Code '+((d&&d.codeReponse)||'?')+((d&&d.echec)?' / '+d.echec:'')+'</div><div style="display:flex;gap:10px;margin-top:16px"><button class="btn" style="flex:1" data-act="closemodal">Fermer</button><button class="btn btn-gold" style="flex:1" data-act="pay" data-m="Carte Monetico">Réessayer</button></div></div>');
-      })
-      .catch(function(){
-        openModal('<div class="modal-h">Terminal injoignable</div><div class="modal-b"><div class="muted" style="font-size:13px;margin-bottom:4px">Le terminal ne répond pas (le pont est-il lancé ?). Si le client a payé sur le terminal, valide à la main.</div><div style="display:flex;gap:10px;margin-top:14px"><button class="btn" style="flex:1" data-act="closemodal">Annuler</button><button class="btn btn-gold" style="flex:1" data-act="payok" data-m="Carte Monetico">Valider à la main</button></div></div>');
-      });
+    if(PAY_MODE==='auto'){ payByTerminalAuto(amount); return; }
+    openModal('<div class="modal-h">Paiement carte</div><div class="modal-b">'+
+      '<div style="text-align:center;background:#faf7ef;border:1px solid var(--line);border-radius:14px;padding:20px 14px">'+
+        '<div style="font-size:12px;color:#6b6657;text-transform:uppercase;letter-spacing:.1em">Montant a encaisser</div>'+
+        '<div style="font-family:var(--serif);font-size:46px;line-height:1.05;margin:6px 0;color:#1c1a16">'+eur(amount)+'</div>'+
+        '<div class="muted" style="font-size:12.5px">Saisis ce montant sur le terminal, fais passer la carte, puis valide.</div>'+
+      '</div>'+
+      '<div style="display:flex;gap:10px;margin-top:16px"><button class="btn" style="flex:1" data-act="closemodal">Annuler</button><button class="btn btn-gold" style="flex:1.6" data-act="payok" data-m="Carte bancaire">✓ Paiement accepte</button></div></div>');
+  }
+  function payByTerminalAuto(amount){
+    openModal('<div class="modal-h">Paiement carte</div><div class="modal-b"><div class="term" style="text-align:center"><div class="tdot"></div><div style="font-size:15px;margin-top:8px">Envoi au terminal...</div><div style="font-family:var(--serif);font-size:26px;margin-top:10px;color:#d8b252">'+eur(amount)+'</div><div class="muted" style="font-size:12px;margin-top:8px">Le branchement automatique n\'est pas encore actif.</div></div>'+
+      '<div style="display:flex;gap:10px;margin-top:16px"><button class="btn" style="flex:1" data-act="closemodal">Annuler</button><button class="btn btn-gold" style="flex:1" data-act="payok" data-m="Carte bancaire">Valider a la main</button></div></div>');
   }
   function payModal(method){
-    if(method==='Carte Monetico'){
+    if(method==='Carte bancaire'){
       payByCardTerminal();
     } else {
       openModal('<div class="modal-h">Paiement espèces</div><div class="modal-b"><p>Montant à encaisser : <b>'+eur(cartTotal())+'</b></p><button class="btn btn-gold" style="width:100%" data-act="payok" data-m="Espèces">Confirmer l\'encaissement</button></div>');
@@ -1455,7 +1464,7 @@ table.tbl tr:hover td{background:#faf9f5;}
     if(e.target&&e.target.id==='fid-search'){ st.fidQ=e.target.value; clearTimeout(custSearchTimer); custSearchTimer=setTimeout(loadFidelite,250); return; }
     if(e.target&&e.target.id==='tpe-mode'){ tpeToggle(); return; }
   });
-  document.body.addEventListener('change',function(e){ if(e.target&&e.target.id==='tpe-mode'){ tpeToggle(); } });
+  document.body.addEventListener('change',function(e){ if(e.target&&e.target.id==='tpe-mode'){ tpeToggle(); } if(e.target&&e.target.id==='pay-mode'){ setPayMode(e.target.value); } });
 
   render();
 })();
