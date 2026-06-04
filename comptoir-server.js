@@ -1329,15 +1329,26 @@ const server = http.createServer(async (req, res) => {
       else if (user.role !== 'admin') return send(res, 403, { error: 'Réservé à l\'administrateur réseau' });
       o.status = b.status;
       if (b.lot != null && String(b.lot).trim()) o.lotRef = String(b.lot).trim();   // l'admin/franchisé peut choisir le n° de lot
+      if (typeof b.note === 'string') o.note = b.note;
+      if (Array.isArray(b.items)) {                                                  // réserves / ajustements + notes par produit (admin)
+        for (const adj of b.items) {
+          const it = o.items.find((x) => x.productId === adj.productId); if (!it) continue;
+          if (adj.qty != null && Number(adj.qty) >= 0) it.qtyConfirmed = Math.floor(Number(adj.qty));
+          if (typeof adj.note === 'string') it.note = adj.note;
+        }
+        o.totalConfirme = Math.round(o.items.reduce((a, x) => a + ((x.unitPrice != null ? x.unitPrice : 0) * (x.qtyConfirmed != null ? x.qtyConfirmed : x.qty)), 0) * 100) / 100;
+      }
       if (b.status === 'recue' && !o.restocked) {
         if (!stock[o.boutiqueId]) stock[o.boutiqueId] = {};
         const sk = stock[o.boutiqueId];
         const exp = (function () { const d = new Date(); d.setMonth(d.getMonth() + 18); return d.toISOString().slice(0, 7); })();
         for (const it of o.items) {
+          const qty = (it.qtyConfirmed != null ? it.qtyConfirmed : it.qty);   // quantité réellement envoyée (après réserve)
+          if (qty <= 0) continue;
           const ref = String(it.productId || '').toUpperCase();
           const lot = (o.lotRef || o.numero) + '-' + ref;            // n° de lot choisi par l'admin, sinon n° de commande + référence
-          if (it.unit === 'g') { if (!sk[it.productId] || !Array.isArray(sk[it.productId].lots)) sk[it.productId] = { lots: [] }; sk[it.productId].lots.push({ lot: lot, g: it.qty, exp: exp, ref: ref }); }
-          else { if (!sk[it.productId] || typeof sk[it.productId].units !== 'number') sk[it.productId] = { units: 0 }; sk[it.productId].units += it.qty; }
+          if (it.unit === 'g') { if (!sk[it.productId] || !Array.isArray(sk[it.productId].lots)) sk[it.productId] = { lots: [] }; sk[it.productId].lots.push({ lot: lot, g: qty, exp: exp, ref: ref }); }
+          else { if (!sk[it.productId] || typeof sk[it.productId].units !== 'number') sk[it.productId] = { units: 0 }; sk[it.productId].units += qty; }
         }
         o.restocked = true;
         o.receivedAt = Date.now();
