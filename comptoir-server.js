@@ -787,6 +787,32 @@ const server = http.createServer(async (req, res) => {
     return send(res, 200, { ok: true });
   }
 
+  // ---- Borne (kiosque client, public) : paiement carte via le MEME relais que la caisse ----
+  // La borne n'a pas de session : endpoints publics, mais on n'agit que si un pont est appaire
+  // a la boutique (sinon rien). Cela ne fait qu'afficher un montant sur le TPE : aucun fonds ne
+  // bouge sans une vraie carte presentee au terminal.
+  if (req.method === 'POST' && path === '/api/borne/pay') {
+    let b = {}; try { b = await readJson(req); } catch (e) {}
+    const bId = String((b && b.boutiqueId) || 'aix');
+    if (!boutiques[bId]) return send(res, 404, { error: 'Boutique inconnue' });
+    const amount = Math.round(Number(b && b.amount) * 100) / 100;
+    if (!(amount > 0)) return send(res, 400, { error: 'Montant invalide' });
+    if (!pontPaired(bId)) return send(res, 200, { commandId: null, pontPaired: false, pontOnline: false });
+    const q = pontCmds[bId] || (pontCmds[bId] = []);
+    const cmd = { id: pontCmdSeq++, amount: amount, ref: String((b && b.ref) || 'BORNE-' + Date.now()), status: 'pending', ts: Date.now() };
+    q.push(cmd);
+    pontCmds[bId] = q.filter((c) => Date.now() - c.ts < 180000);
+    return send(res, 200, { commandId: cmd.id, pontPaired: true, pontOnline: pontOnline(bId) });
+  }
+  const mBorneCmd = path.match(/^\/api\/borne\/cmd\/(\d+)$/);
+  if (req.method === 'GET' && mBorneCmd) {
+    const cid = parseInt(mBorneCmd[1], 10);
+    let found = null;
+    for (const id of Object.keys(pontCmds)) { const c = (pontCmds[id] || []).find((x) => x.id === cid); if (c) { found = c; break; } }
+    if (!found) return send(res, 404, { error: 'Commande inconnue (expiree ?)' });
+    return send(res, 200, { id: found.id, status: found.status, approved: !!found.approved, codeReponse: found.codeReponse || null, echec: found.echec || null });
+  }
+
   // Authentification (prototype : un jeton -> un utilisateur avec role + boutique)
   const user = PG ? await PG.contextFromToken(req.headers['x-comptoir-token']) : sessionUser(req.headers['x-comptoir-token']);
   if (!user) return send(res, 401, { error: 'Session expirée ou invalide — reconnecte-toi.' });

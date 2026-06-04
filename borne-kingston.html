@@ -564,18 +564,27 @@ body{font-family:var(--sans);background:var(--bg);color:var(--ink);overflow:hidd
       '</div>'+
       '</div><div class="sheet-f"><button class="btn-primary" data-a="closeovl">Fermer</button></div></div></div>';
   }
-  // Paiement carte sur la borne via le PONT DE PAIEMENT (protocole CAISSE-AP).
-  // Le pont (pont-paiement.js) tourne en local sur le port 3002 et parle au vrai TPE
-  // (serie/USB ou IP). S'il est injoignable, on retombe sur une simulation pour ne pas
-  // bloquer la borne. Appeler cb(true) si paiement accepte, cb(false) sinon.
-  var PONT_URL='http://localhost:3002';
+  // Paiement carte sur la borne : via le MEME relais que la caisse (kingtools.fr -> pont de la
+  // boutique -> vrai TPE). Fonctionne depuis n'importe quel appareil : le kiosque n'a PAS besoin
+  // d'etre sur la meme machine que le pont (avant, il appelait localhost:3002 -> ne marchait que
+  // sur le Mac du pont). SECURITE : on n'encaisse JAMAIS par defaut ; seul un vrai « accepte » du
+  // terminal valide la vente ; pont hors ligne / injoignable / sans reponse -> on REFUSE.
   function payOnTerminal(amountEuros, cb){
-    // SÉCURITÉ : on n'encaisse JAMAIS « par défaut ». Le paiement n'est validé que si le
-    // vrai terminal répond « accepté ». Si le pont/TPE est injoignable -> on REFUSE la vente.
-    fetch(PONT_URL+'/pay',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({amount:amountEuros,ref:'BORNE-'+Date.now()})})
+    var ref='BORNE-'+Date.now();
+    fetch('/api/borne/pay',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({boutiqueId:BORNE.boutique,amount:amountEuros,ref:ref})})
       .then(function(r){return r.json().catch(function(){return {};});})
-      .then(function(d){ cb(!!(d&&d.approved), d||{}); })
-      .catch(function(){ cb(false, {error:'Terminal de paiement injoignable'}); }); // injoignable -> refus, pas d'auto-acceptation
+      .then(function(d){
+        if(!d || d.commandId==null || d.pontOnline===false){ cb(false,{error:(d&&d.pontPaired===false)?'Aucun terminal configuré pour cette boutique':'Terminal hors ligne'}); return; }
+        var cid=d.commandId, tries=0;
+        var iv=setInterval(function(){
+          tries++;
+          fetch('/api/borne/cmd/'+cid).then(function(r){return r.json().catch(function(){return {};});}).then(function(c){
+            if(c && c.status==='done'){ clearInterval(iv); cb(!!c.approved, c); }
+            else if(tries>80){ clearInterval(iv); cb(false,{error:'Pas de réponse du terminal'}); }
+          }).catch(function(){ if(tries>80){ clearInterval(iv); cb(false,{error:'réseau'}); } });
+        },1500);
+      })
+      .catch(function(){ cb(false,{error:'Terminal de paiement injoignable'}); });
   }
   function submitOrder(cb){
     var fn=(s.member&&s.member.name)?(''+s.member.name).trim().split(/\s+/)[0]:null;
