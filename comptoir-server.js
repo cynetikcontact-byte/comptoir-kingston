@@ -202,6 +202,16 @@ function ensureStock(p) {
 }
 const IMG_DIR = process.env.COMPTOIR_IMG_DIR || pathmod.join(__dirname, 'img');
 
+// ---- Réassort pro (B2B) : les franchisés commandent leur stock au réseau. Prix de gros = prix public x proRate ----
+let proRate = Number(process.env.COMPTOIR_PRO_RATE || 0.5);   // 0.5 = -50% du prix public (réglable par l'admin)
+let supplyOrders = [];      // commandes de réassort (B2B)
+let supplySeq = 1;
+function proUnitInfo(p) {
+  // Prix de gros fixé MANUELLEMENT par l'admin (p.proPrice). Tant qu'il n'est pas defini -> price=null
+  // (le franchise commande quand meme ses quantites ; le prix sera ajoute plus tard).
+  return { unit: p.unit === 'g' ? 'g' : 'u', step: p.unit === 'g' ? 25 : 10, price: (typeof p.proPrice === 'number' ? p.proPrice : null) };
+}
+
 const invoices = [];
 let invoiceSeq = 0;
 let lastHash = 'GENESIS';
@@ -262,7 +272,7 @@ function persist() {
       // Écriture ATOMIQUE : fichier temporaire puis renommage -> jamais de fichier tronqué en cas de coupure.
       // NB : fiscalKey n'est PLUS écrite ici (stockée à part, fichier protégé).
       const tmp = DATA_FILE + '.tmp';
-      fs.writeFileSync(tmp, JSON.stringify({ v: 1, savedAt: new Date().toISOString(), pointsPerEuro: POINTS_PER_EURO, hideBaseCatalog, customProducts, stock, boutiques, invoiceSeq, lastHash, invoices, orderSeq, orders, fiscalEvents, fiscalSeq, lastFiscalSig, clotureSeq, gtPerpetuel, gtPerpetuelAvoirs, seqByB, gtByB, gtAvoirsByB, clotureSeqByB }), 'utf8');
+      fs.writeFileSync(tmp, JSON.stringify({ v: 1, savedAt: new Date().toISOString(), pointsPerEuro: POINTS_PER_EURO, hideBaseCatalog, customProducts, stock, boutiques, invoiceSeq, lastHash, invoices, orderSeq, orders, fiscalEvents, fiscalSeq, lastFiscalSig, clotureSeq, gtPerpetuel, gtPerpetuelAvoirs, seqByB, gtByB, gtAvoirsByB, clotureSeqByB, supplyOrders, supplySeq, proRate }), 'utf8');
       fs.renameSync(tmp, DATA_FILE);
     } catch (e) { console.error('Persistance impossible :', e.message); }
   }, 200);
@@ -296,6 +306,9 @@ function loadPersisted() {
     if (d.gtByB && typeof d.gtByB === 'object') gtByB = d.gtByB;
     if (d.gtAvoirsByB && typeof d.gtAvoirsByB === 'object') gtAvoirsByB = d.gtAvoirsByB;
     if (d.clotureSeqByB && typeof d.clotureSeqByB === 'object') clotureSeqByB = d.clotureSeqByB;
+    if (Array.isArray(d.supplyOrders)) supplyOrders = d.supplyOrders;
+    if (typeof d.supplySeq === 'number') supplySeq = d.supplySeq;
+    if (typeof d.proRate === 'number') proRate = d.proRate;
     if (!d.seqByB || !d.gtByB) {                              // migration : numerotation continue + totaux par boutique
       for (const inv of invoices) {
         const id = inv.boutiqueId || 'aix'; fb(id);
@@ -815,6 +828,7 @@ const server = http.createServer(async (req, res) => {
       if (b.desc != null) p.desc = b.desc.trim();
       if (typeof b.vat === 'number') p.vat = b.vat;
       if ('new' in b) p.new = !!b.new;
+      if (typeof b.proPrice === 'number') p.proPrice = Math.round(b.proPrice * 100) / 100; else if (b.proPrice === null) delete p.proPrice; // prix de gros (réassort), réglé par l'admin
       if (p.unit === 'g' && Array.isArray(b.tiers)) {
         const t = b.tiers.map((x) => [Number(x[0]), Number(x[1])]).filter((x) => x[0] > 0 && x[1] >= 0);
         if (t.length) p.tiers = t;
@@ -1216,6 +1230,75 @@ const server = http.createServer(async (req, res) => {
         return { boutique: id, tickets: inv.length, ca: Math.round(inv.reduce((a, i) => a + i.total, 0) * 100) / 100 };
       });
       return send(res, 200, { role: user.role, voitLesBoutiques: scope, dashboard });
+    }
+
+    // ---------------- RÉASSORT PRO (B2B) : les franchisés commandent leur stock au réseau ----------------
+    if (req.method === 'GET' && path === '/api/pro/catalog') {
+      const list = allCatalog().map((p) => {
+        const pi = proUnitInfo(p);
+        const retail = p.unit === 'g' ? ((p.tiers && p.tiers[0]) ? p.tiers[0][1] : 0) : (p.price || 0);
+        return { id: p.id, name: p.name, cat: p.cat, img: p.img || '', unit: p.unit, pro: pi ? pi.price : null, proUnit: pi ? pi.unit : 'u', step: pi ? pi.step : 1, retail: retail };
+      });
+      return send(res, 200, { rate: proRate, products: list });
+    }
+    if (req.method === 'POST' && path === '/api/pro/orders') {
+      if (user.role !== 'admin' && user.role !== 'manager') return send(res, 403, { error: 'Réservé au personnel' });
+      const b = await readJson(req);
+      const bId = user.role === 'admin' ? (b.boutiqueId || 'aix') : user.boutiqueId;
+      const items = []; let total = 0;
+      for (const it of (Array.isArray(b.items) ? b.items : [])) {
+        const p = findProduct(it.productId); if (!p) continue;
+        const pi = proUnitInfo(p); if (!pi) continue;
+        const qty = Math.max(0, Math.floor(Number(it.qty) || 0)); if (qty <= 0) continue;
+        const up = (pi.price != null ? pi.price : 0);
+        const lineTotal = Math.round(up * qty * 100) / 100; total += lineTotal;
+        items.push({ productId: p.id, name: p.name, unit: pi.unit, qty: qty, unitPrice: pi.price, lineTotal: lineTotal });
+      }
+      if (!items.length) return send(res, 400, { error: 'Commande de réassort vide' });
+      total = Math.round(total * 100) / 100;
+      const o = { id: supplySeq, numero: 'PRO-' + String(supplySeq).padStart(4, '0'), boutiqueId: bId, items: items, total: total, status: 'envoyee', ts: Date.now(), by: user.name || null };
+      supplySeq++; supplyOrders.push(o); persist();
+      return send(res, 201, { ok: true, order: o });
+    }
+    if (req.method === 'GET' && path === '/api/pro/orders') {
+      const list = supplyOrders.filter((o) => user.role === 'admin' ? true : o.boutiqueId === user.boutiqueId).slice().sort((a, b) => b.id - a.id);
+      return send(res, 200, { orders: list });
+    }
+    if (req.method === 'POST' && path === '/api/pro/config') {
+      if (user.role !== 'admin') return send(res, 403, { error: 'Réservé à l\'administrateur réseau' });
+      const b = await readJson(req);
+      const r = Number(b.rate);
+      if (!(r > 0 && r <= 1)) return send(res, 400, { error: 'Taux invalide (entre 0 et 1, ex. 0.5 = -50%)' });
+      proRate = Math.round(r * 100) / 100; persist();
+      return send(res, 200, { ok: true, rate: proRate });
+    }
+    const mProStatus = path.match(/^\/api\/pro\/orders\/(\d+)\/status$/);
+    if (req.method === 'POST' && mProStatus) {
+      const o = supplyOrders.find((x) => x.id === parseInt(mProStatus[1], 10)); if (!o) return send(res, 404, { error: 'Commande introuvable' });
+      const b = await readJson(req);
+      const allowed = ['envoyee', 'preparee', 'expediee', 'recue'];
+      if (allowed.indexOf(b.status) < 0) return send(res, 400, { error: 'Statut invalide' });
+      const isOwnerManager = user.role === 'manager' && o.boutiqueId === user.boutiqueId;
+      // « Reçue » = le FRANCHISÉ (ou l'admin) confirme la réception -> le stock entre dans SA boutique.
+      // Les statuts intermédiaires (préparée/expédiée) restent gérés par l'admin réseau.
+      if (b.status === 'recue') { if (!(user.role === 'admin' || isOwnerManager)) return send(res, 403, { error: 'Réservé au franchisé concerné ou à l\'admin' }); }
+      else if (user.role !== 'admin') return send(res, 403, { error: 'Réservé à l\'administrateur réseau' });
+      o.status = b.status;
+      if (b.status === 'recue' && !o.restocked) {
+        if (!stock[o.boutiqueId]) stock[o.boutiqueId] = {};
+        const sk = stock[o.boutiqueId];
+        const exp = (function () { const d = new Date(); d.setMonth(d.getMonth() + 18); return d.toISOString().slice(0, 7); })();
+        for (const it of o.items) {
+          const ref = String(it.productId || '').toUpperCase();
+          const lot = o.numero + '-' + ref;                          // numéro de lot lisible : commande + référence produit
+          if (it.unit === 'g') { if (!sk[it.productId] || !Array.isArray(sk[it.productId].lots)) sk[it.productId] = { lots: [] }; sk[it.productId].lots.push({ lot: lot, g: it.qty, exp: exp, ref: ref }); }
+          else { if (!sk[it.productId] || typeof sk[it.productId].units !== 'number') sk[it.productId] = { units: 0 }; sk[it.productId].units += it.qty; }
+        }
+        o.restocked = true;
+        o.receivedAt = Date.now();
+      }
+      persist();
+      return send(res, 200, { ok: true, order: o });
     }
 
     // ---------------- JOURNAL DES VENTES (borne + caisse) + exports comptables ----------------
