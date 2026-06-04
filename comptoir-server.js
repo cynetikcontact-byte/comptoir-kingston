@@ -208,13 +208,14 @@ let supplyOrders = [];      // commandes de réassort (B2B)
 let supplySeq = 1;
 
 // ---- Relais terminal de paiement (kingtools.fr <-> pont de la boutique <-> TPE) ----
-const pontTokens = {};          // boutiqueId -> code d'appairage (token du pont)
-const pontLastSeen = {};        // boutiqueId -> timestamp du dernier contact du pont
+const pontDevices = {};         // deviceId -> { code, boutiqueId, ip, tcpPort, lastSeen } (appairage initie par le pont)
 const pontCmds = {};            // boutiqueId -> [ {id, amount, ref, status:'pending'|'sent'|'done', approved, ...} ]
 let pontCmdSeq = 1;
-function pontBoutiqueOf(tok) { if (!tok) return null; for (const id of Object.keys(pontTokens)) if (pontTokens[id] === tok) return id; return null; }
-function pontOnline(id) { return (Date.now() - (pontLastSeen[id] || 0)) < 12000; }
-function genPontCode() { return crypto.randomBytes(24).toString('base64').replace(/[^A-Za-z0-9]/g, '').slice(0, 20); }
+function pontDeviceByCode(code) { code = String(code || '').trim().toUpperCase(); if (!code) return null; for (const k of Object.keys(pontDevices)) if (pontDevices[k].code === code) return pontDevices[k]; return null; }
+function pontDeviceForBoutique(id) { for (const k of Object.keys(pontDevices)) if (pontDevices[k].boutiqueId === id) return pontDevices[k]; return null; }
+function pontOnline(id) { const d = pontDeviceForBoutique(id); return !!d && (Date.now() - (d.lastSeen || 0)) < 12000; }
+function pontPaired(id) { return !!pontDeviceForBoutique(id); }
+function genShortCode() { const a = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; let s = ''; const r = crypto.randomBytes(6); for (let i = 0; i < 6; i++) s += a[r[i] % a.length]; return s; }
 function proUnitInfo(p) {
   // Prix de gros fixé MANUELLEMENT par l'admin (p.proPrice). Tant qu'il n'est pas defini -> price=null
   // (le franchise commande quand meme ses quantites ; le prix sera ajoute plus tard).
@@ -281,7 +282,7 @@ function persist() {
       // Écriture ATOMIQUE : fichier temporaire puis renommage -> jamais de fichier tronqué en cas de coupure.
       // NB : fiscalKey n'est PLUS écrite ici (stockée à part, fichier protégé).
       const tmp = DATA_FILE + '.tmp';
-      fs.writeFileSync(tmp, JSON.stringify({ v: 1, savedAt: new Date().toISOString(), pointsPerEuro: POINTS_PER_EURO, hideBaseCatalog, customProducts, stock, boutiques, invoiceSeq, lastHash, invoices, orderSeq, orders, fiscalEvents, fiscalSeq, lastFiscalSig, clotureSeq, gtPerpetuel, gtPerpetuelAvoirs, seqByB, gtByB, gtAvoirsByB, clotureSeqByB, supplyOrders, supplySeq, proRate, pontTokens }), 'utf8');
+      fs.writeFileSync(tmp, JSON.stringify({ v: 1, savedAt: new Date().toISOString(), pointsPerEuro: POINTS_PER_EURO, hideBaseCatalog, customProducts, stock, boutiques, invoiceSeq, lastHash, invoices, orderSeq, orders, fiscalEvents, fiscalSeq, lastFiscalSig, clotureSeq, gtPerpetuel, gtPerpetuelAvoirs, seqByB, gtByB, gtAvoirsByB, clotureSeqByB, supplyOrders, supplySeq, proRate, pontDevices }), 'utf8');
       fs.renameSync(tmp, DATA_FILE);
     } catch (e) { console.error('Persistance impossible :', e.message); }
   }, 200);
@@ -316,7 +317,7 @@ function loadPersisted() {
     if (d.gtAvoirsByB && typeof d.gtAvoirsByB === 'object') gtAvoirsByB = d.gtAvoirsByB;
     if (d.clotureSeqByB && typeof d.clotureSeqByB === 'object') clotureSeqByB = d.clotureSeqByB;
     if (Array.isArray(d.supplyOrders)) supplyOrders = d.supplyOrders;
-    if (d.pontTokens && typeof d.pontTokens === 'object') Object.assign(pontTokens, d.pontTokens);
+    if (d.pontDevices && typeof d.pontDevices === 'object') Object.assign(pontDevices, d.pontDevices);
     if (typeof d.supplySeq === 'number') supplySeq = d.supplySeq;
     if (typeof d.proRate === 'number') proRate = d.proRate;
     if (!d.seqByB || !d.gtByB) {                              // migration : numerotation continue + totaux par boutique
@@ -754,20 +755,30 @@ const server = http.createServer(async (req, res) => {
     return send(res, 200, { token: token, name: a.name, role: a.role, boutiqueId: a.boutiqueId });
   }
 
-  // ---- Pont de paiement : endpoints appairés par token (route publique) ----
+  // ---- Pont de paiement : appairage initie par le pont (routes publiques) ----
+  // Le pont s'annonce avec son deviceId ; le serveur lui donne un code court a saisir dans Kingtools.
+  if (req.method === 'POST' && path === '/api/pont/hello') {
+    let b = {}; try { b = await readJson(req); } catch (e) {}
+    const id = String((b && b.deviceId) || '').trim();
+    if (!id) return send(res, 400, { error: 'deviceId requis' });
+    let dev = pontDevices[id];
+    if (!dev) { dev = pontDevices[id] = { code: genShortCode(), boutiqueId: null, ip: '', tcpPort: 8888, lastSeen: Date.now() }; persist(); }
+    dev.lastSeen = Date.now();
+    return send(res, 200, { claimed: !!dev.boutiqueId, code: dev.code, boutique: dev.boutiqueId || null, terminalIp: dev.ip || '', terminalPort: dev.tcpPort || 8888 });
+  }
   if (req.method === 'GET' && path === '/api/pont/poll') {
-    const bId = pontBoutiqueOf(req.headers['x-pont-token']);
-    if (!bId) return send(res, 401, { error: 'Pont non appaire' });
-    pontLastSeen[bId] = Date.now();
+    const dev = pontDevices[req.headers['x-pont-device'] || ''];
+    if (!dev || !dev.boutiqueId) return send(res, 401, { error: 'Pont non appaire' });
+    dev.lastSeen = Date.now(); const bId = dev.boutiqueId;
     const q = pontCmds[bId] || (pontCmds[bId] = []);
     const cmd = q.find((c) => c.status === 'pending');
     if (cmd) { cmd.status = 'sent'; cmd.sentAt = Date.now(); return send(res, 200, { command: { id: cmd.id, amount: cmd.amount, ref: cmd.ref } }); }
     return send(res, 200, { command: null });
   }
   if (req.method === 'POST' && path === '/api/pont/result') {
-    const bId = pontBoutiqueOf(req.headers['x-pont-token']);
-    if (!bId) return send(res, 401, { error: 'Pont non appaire' });
-    pontLastSeen[bId] = Date.now();
+    const dev = pontDevices[req.headers['x-pont-device'] || ''];
+    if (!dev || !dev.boutiqueId) return send(res, 401, { error: 'Pont non appaire' });
+    dev.lastSeen = Date.now(); const bId = dev.boutiqueId;
     let b = {}; try { b = await readJson(req); } catch (e) {}
     const cmd = (pontCmds[bId] || []).find((c) => c.id === (b && b.id));
     if (cmd) { cmd.status = 'done'; cmd.approved = !!(b && b.approved); cmd.codeReponse = (b && b.codeReponse) || null; cmd.echec = (b && b.echec) || null; cmd.doneAt = Date.now(); }
@@ -801,17 +812,19 @@ const server = http.createServer(async (req, res) => {
       if (user.role !== 'admin' && foundB !== user.boutiqueId) return send(res, 403, { error: 'Non autorise' });
       return send(res, 200, { id: found.id, status: found.status, approved: !!found.approved, codeReponse: found.codeReponse || null, echec: found.echec || null });
     }
-    if (req.method === 'POST' && path === '/api/terminal/pair-code') {
+    if (req.method === 'POST' && path === '/api/terminal/claim-pont') {
       if (user.role !== 'admin') return send(res, 403, { error: 'Reserve a l administrateur' });
       const b = await readJson(req);
-      const bId = b.boutiqueId; if (!boutiques[bId]) return send(res, 404, { error: 'Boutique inconnue' });
-      pontTokens[bId] = genPontCode(); persist();
-      return send(res, 200, { boutiqueId: bId, code: pontTokens[bId], server: (process.env.COMPTOIR_PUBLIC_URL || 'https://kingtools.fr') });
+      const dev = pontDeviceByCode(b && b.code);
+      if (!dev) return send(res, 404, { error: 'Code inconnu — le pont est-il allume et connecte a internet ?' });
+      if (!boutiques[b.boutiqueId]) return send(res, 404, { error: 'Boutique inconnue' });
+      dev.boutiqueId = b.boutiqueId; dev.ip = String((b && b.ip) || '').trim(); dev.tcpPort = parseInt(b && b.tcpPort, 10) || 8888; persist();
+      return send(res, 200, { ok: true, boutique: b.boutiqueId, online: pontOnline(b.boutiqueId) });
     }
     if (req.method === 'GET' && path === '/api/terminal/status') {
       const ids = user.role === 'admin' ? boutiqueIds() : [user.boutiqueId];
       const stt = {};
-      ids.forEach((id) => { stt[id] = { online: pontOnline(id), paired: !!pontTokens[id] }; });
+      ids.forEach((id) => { stt[id] = { online: pontOnline(id), paired: pontPaired(id) }; });
       return send(res, 200, { terminals: stt });
     }
     if (req.method === 'GET' && path === '/api/products') {
@@ -1336,7 +1349,7 @@ const server = http.createServer(async (req, res) => {
         }
         const so = supplyOrders.filter((o) => o.boutiqueId === id);
         const ventes = invoices.filter((i) => i.boutiqueId === id && i.total >= 0);
-        return { id: id, label: bq.label || id, siren: (bq.seller && bq.seller.siren) || '', pontOnline: pontOnline(id), pontPaired: !!pontTokens[id], produitsEnStock: inStock, stockBas: low, ruptures: out, aTraiter: so.filter((o) => o.status === 'envoyee').length, reassortEnCours: so.filter((o) => o.status !== 'recue').length, reassortTotal: so.length, ventes: ventes.length, ca: Math.round(ventes.reduce((a, i) => a + i.total, 0) * 100) / 100 };
+        return { id: id, label: bq.label || id, siren: (bq.seller && bq.seller.siren) || '', pontOnline: pontOnline(id), pontPaired: pontPaired(id), produitsEnStock: inStock, stockBas: low, ruptures: out, aTraiter: so.filter((o) => o.status === 'envoyee').length, reassortEnCours: so.filter((o) => o.status !== 'recue').length, reassortTotal: so.length, ventes: ventes.length, ca: Math.round(ventes.reduce((a, i) => a + i.total, 0) * 100) / 100 };
       });
       return send(res, 200, { boutiques: rows, totalProduits: cat.length, totalATraiter: rows.reduce((a, r) => a + r.aTraiter, 0) });
     }
