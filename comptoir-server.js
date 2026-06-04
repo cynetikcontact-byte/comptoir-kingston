@@ -206,6 +206,15 @@ const IMG_DIR = process.env.COMPTOIR_IMG_DIR || pathmod.join(__dirname, 'img');
 let proRate = Number(process.env.COMPTOIR_PRO_RATE || 0.5);   // 0.5 = -50% du prix public (réglable par l'admin)
 let supplyOrders = [];      // commandes de réassort (B2B)
 let supplySeq = 1;
+
+// ---- Relais terminal de paiement (kingtools.fr <-> pont de la boutique <-> TPE) ----
+const pontTokens = {};          // boutiqueId -> code d'appairage (token du pont)
+const pontLastSeen = {};        // boutiqueId -> timestamp du dernier contact du pont
+const pontCmds = {};            // boutiqueId -> [ {id, amount, ref, status:'pending'|'sent'|'done', approved, ...} ]
+let pontCmdSeq = 1;
+function pontBoutiqueOf(tok) { if (!tok) return null; for (const id of Object.keys(pontTokens)) if (pontTokens[id] === tok) return id; return null; }
+function pontOnline(id) { return (Date.now() - (pontLastSeen[id] || 0)) < 12000; }
+function genPontCode() { return crypto.randomBytes(24).toString('base64').replace(/[^A-Za-z0-9]/g, '').slice(0, 20); }
 function proUnitInfo(p) {
   // Prix de gros fixé MANUELLEMENT par l'admin (p.proPrice). Tant qu'il n'est pas defini -> price=null
   // (le franchise commande quand meme ses quantites ; le prix sera ajoute plus tard).
@@ -272,7 +281,7 @@ function persist() {
       // Écriture ATOMIQUE : fichier temporaire puis renommage -> jamais de fichier tronqué en cas de coupure.
       // NB : fiscalKey n'est PLUS écrite ici (stockée à part, fichier protégé).
       const tmp = DATA_FILE + '.tmp';
-      fs.writeFileSync(tmp, JSON.stringify({ v: 1, savedAt: new Date().toISOString(), pointsPerEuro: POINTS_PER_EURO, hideBaseCatalog, customProducts, stock, boutiques, invoiceSeq, lastHash, invoices, orderSeq, orders, fiscalEvents, fiscalSeq, lastFiscalSig, clotureSeq, gtPerpetuel, gtPerpetuelAvoirs, seqByB, gtByB, gtAvoirsByB, clotureSeqByB, supplyOrders, supplySeq, proRate }), 'utf8');
+      fs.writeFileSync(tmp, JSON.stringify({ v: 1, savedAt: new Date().toISOString(), pointsPerEuro: POINTS_PER_EURO, hideBaseCatalog, customProducts, stock, boutiques, invoiceSeq, lastHash, invoices, orderSeq, orders, fiscalEvents, fiscalSeq, lastFiscalSig, clotureSeq, gtPerpetuel, gtPerpetuelAvoirs, seqByB, gtByB, gtAvoirsByB, clotureSeqByB, supplyOrders, supplySeq, proRate, pontTokens }), 'utf8');
       fs.renameSync(tmp, DATA_FILE);
     } catch (e) { console.error('Persistance impossible :', e.message); }
   }, 200);
@@ -307,6 +316,7 @@ function loadPersisted() {
     if (d.gtAvoirsByB && typeof d.gtAvoirsByB === 'object') gtAvoirsByB = d.gtAvoirsByB;
     if (d.clotureSeqByB && typeof d.clotureSeqByB === 'object') clotureSeqByB = d.clotureSeqByB;
     if (Array.isArray(d.supplyOrders)) supplyOrders = d.supplyOrders;
+    if (d.pontTokens && typeof d.pontTokens === 'object') Object.assign(pontTokens, d.pontTokens);
     if (typeof d.supplySeq === 'number') supplySeq = d.supplySeq;
     if (typeof d.proRate === 'number') proRate = d.proRate;
     if (!d.seqByB || !d.gtByB) {                              // migration : numerotation continue + totaux par boutique
@@ -744,11 +754,66 @@ const server = http.createServer(async (req, res) => {
     return send(res, 200, { token: token, name: a.name, role: a.role, boutiqueId: a.boutiqueId });
   }
 
+  // ---- Pont de paiement : endpoints appairés par token (route publique) ----
+  if (req.method === 'GET' && path === '/api/pont/poll') {
+    const bId = pontBoutiqueOf(req.headers['x-pont-token']);
+    if (!bId) return send(res, 401, { error: 'Pont non appaire' });
+    pontLastSeen[bId] = Date.now();
+    const q = pontCmds[bId] || (pontCmds[bId] = []);
+    const cmd = q.find((c) => c.status === 'pending');
+    if (cmd) { cmd.status = 'sent'; cmd.sentAt = Date.now(); return send(res, 200, { command: { id: cmd.id, amount: cmd.amount, ref: cmd.ref } }); }
+    return send(res, 200, { command: null });
+  }
+  if (req.method === 'POST' && path === '/api/pont/result') {
+    const bId = pontBoutiqueOf(req.headers['x-pont-token']);
+    if (!bId) return send(res, 401, { error: 'Pont non appaire' });
+    pontLastSeen[bId] = Date.now();
+    let b = {}; try { b = await readJson(req); } catch (e) {}
+    const cmd = (pontCmds[bId] || []).find((c) => c.id === (b && b.id));
+    if (cmd) { cmd.status = 'done'; cmd.approved = !!(b && b.approved); cmd.codeReponse = (b && b.codeReponse) || null; cmd.echec = (b && b.echec) || null; cmd.doneAt = Date.now(); }
+    return send(res, 200, { ok: true });
+  }
+
   // Authentification (prototype : un jeton -> un utilisateur avec role + boutique)
   const user = PG ? await PG.contextFromToken(req.headers['x-comptoir-token']) : sessionUser(req.headers['x-comptoir-token']);
   if (!user) return send(res, 401, { error: 'Session expirée ou invalide — reconnecte-toi.' });
 
   try {
+    // ---- Terminal de paiement via le relais (caisse -> serveur -> pont -> TPE) ----
+    if (req.method === 'POST' && path === '/api/terminal/pay') {
+      if (user.role !== 'admin' && user.role !== 'manager') return send(res, 403, { error: 'Non autorise' });
+      const b = await readJson(req);
+      const bId = user.role === 'admin' ? (b.boutiqueId || 'aix') : user.boutiqueId;
+      const amount = Math.round(Number(b.amount) * 100) / 100;
+      if (!(amount > 0)) return send(res, 400, { error: 'Montant invalide' });
+      const q = pontCmds[bId] || (pontCmds[bId] = []);
+      const cmd = { id: pontCmdSeq++, amount: amount, ref: (b.ref || 'CAISSE-' + Date.now()), status: 'pending', ts: Date.now() };
+      q.push(cmd);
+      pontCmds[bId] = q.filter((c) => Date.now() - c.ts < 180000);
+      return send(res, 200, { commandId: cmd.id, pontOnline: pontOnline(bId) });
+    }
+    const mTermCmd = path.match(/^\/api\/terminal\/cmd\/(\d+)$/);
+    if (req.method === 'GET' && mTermCmd) {
+      const cid = parseInt(mTermCmd[1], 10);
+      let found = null, foundB = null;
+      for (const id of Object.keys(pontCmds)) { const c = (pontCmds[id] || []).find((x) => x.id === cid); if (c) { found = c; foundB = id; break; } }
+      if (!found) return send(res, 404, { error: 'Commande inconnue (expiree ?)' });
+      if (user.role !== 'admin' && foundB !== user.boutiqueId) return send(res, 403, { error: 'Non autorise' });
+      return send(res, 200, { id: found.id, status: found.status, approved: !!found.approved, codeReponse: found.codeReponse || null, echec: found.echec || null });
+    }
+    if (req.method === 'POST' && path === '/api/terminal/pair-code') {
+      if (user.role !== 'admin') return send(res, 403, { error: 'Reserve a l administrateur' });
+      const b = await readJson(req);
+      const bId = b.boutiqueId; if (!boutiques[bId]) return send(res, 404, { error: 'Boutique inconnue' });
+      pontTokens[bId] = genPontCode(); persist();
+      return send(res, 200, { boutiqueId: bId, code: pontTokens[bId], server: (process.env.COMPTOIR_PUBLIC_URL || 'https://kingtools.fr') });
+    }
+    if (req.method === 'GET' && path === '/api/terminal/status') {
+      const ids = user.role === 'admin' ? boutiqueIds() : [user.boutiqueId];
+      const stt = {};
+      ids.forEach((id) => { stt[id] = { online: pontOnline(id), paired: !!pontTokens[id] }; });
+      return send(res, 200, { terminals: stt });
+    }
     if (req.method === 'GET' && path === '/api/products') {
       if (PG) return send(res, 200, await PG.getProducts(user, u.searchParams.get('boutique')));
       const bId = user.role === 'admin' ? (u.searchParams.get('boutique') || 'aix') : user.boutiqueId;
@@ -1271,7 +1336,7 @@ const server = http.createServer(async (req, res) => {
         }
         const so = supplyOrders.filter((o) => o.boutiqueId === id);
         const ventes = invoices.filter((i) => i.boutiqueId === id && i.total >= 0);
-        return { id: id, label: bq.label || id, siren: (bq.seller && bq.seller.siren) || '', produitsEnStock: inStock, stockBas: low, ruptures: out, aTraiter: so.filter((o) => o.status === 'envoyee').length, reassortEnCours: so.filter((o) => o.status !== 'recue').length, reassortTotal: so.length, ventes: ventes.length, ca: Math.round(ventes.reduce((a, i) => a + i.total, 0) * 100) / 100 };
+        return { id: id, label: bq.label || id, siren: (bq.seller && bq.seller.siren) || '', pontOnline: pontOnline(id), pontPaired: !!pontTokens[id], produitsEnStock: inStock, stockBas: low, ruptures: out, aTraiter: so.filter((o) => o.status === 'envoyee').length, reassortEnCours: so.filter((o) => o.status !== 'recue').length, reassortTotal: so.length, ventes: ventes.length, ca: Math.round(ventes.reduce((a, i) => a + i.total, 0) * 100) / 100 };
       });
       return send(res, 200, { boutiques: rows, totalProduits: cat.length, totalATraiter: rows.reduce((a, r) => a + r.aTraiter, 0) });
     }
