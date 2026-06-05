@@ -1463,7 +1463,7 @@ const server = http.createServer(async (req, res) => {
         }
         const so = supplyOrders.filter((o) => o.boutiqueId === id);
         const ventes = invoices.filter((i) => i.boutiqueId === id && i.total >= 0);
-        return { id: id, label: bq.label || id, siren: (bq.seller && bq.seller.siren) || '', pontOnline: pontOnline(id), pontPaired: pontPaired(id), produitsEnStock: inStock, stockBas: low, ruptures: out, aTraiter: so.filter((o) => o.status === 'envoyee').length, reassortEnCours: so.filter((o) => o.status !== 'recue').length, reassortTotal: so.length, ventes: ventes.length, ca: Math.round(ventes.reduce((a, i) => a + i.total, 0) * 100) / 100 };
+        return { id: id, label: bq.label || id, siren: (bq.seller && bq.seller.siren) || '', pontOnline: pontOnline(id), pontPaired: pontPaired(id), produitsEnStock: inStock, stockBas: low, ruptures: out, aTraiter: so.filter((o) => o.status === 'envoyee').length, reassortEnCours: so.filter((o) => o.status !== 'recue' && o.status !== 'attente' && o.status !== 'annulee').length, reassortTotal: so.filter((o) => o.status !== 'annulee').length, ventes: ventes.length, ca: Math.round(ventes.reduce((a, i) => a + i.total, 0) * 100) / 100 };
       });
       return send(res, 200, { boutiques: rows, totalProduits: cat.length, totalATraiter: rows.reduce((a, r) => a + r.aTraiter, 0) });
     }
@@ -1501,7 +1501,9 @@ const server = http.createServer(async (req, res) => {
       }
       if (!items.length) return send(res, 400, { error: 'Commande de réassort vide' });
       total = Math.round(total * 100) / 100;
-      const o = { id: supplySeq, numero: 'PRO-' + String(supplySeq).padStart(4, '0'), boutiqueId: bId, items: items, total: total, status: 'envoyee', ts: Date.now(), by: user.name || null };
+      // Statut 'attente' : la commande N'EST PAS validee/transmise au reseau tant que le franchise n'a pas paye.
+      // Elle bascule en 'envoyee' (validee) automatiquement quand le paiement Woo est detecte (voir GET ci-dessous).
+      const o = { id: supplySeq, numero: 'PRO-' + String(supplySeq).padStart(4, '0'), boutiqueId: bId, items: items, total: total, status: 'attente', ts: Date.now(), by: user.name || null };
       supplySeq++; supplyOrders.push(o); persist();
       // Reflet WooCommerce sur kingbase.fr (site grossiste) : creer une vraie commande (statut pending,
       // PAYABLE par le franchise) que l'admin gere dans Woo. NON bloquant : si kingbase est injoignable /
@@ -1521,7 +1523,7 @@ const server = http.createServer(async (req, res) => {
       if (proConnector && typeof proConnector.getOrderStatus === 'function') {
         const now = Date.now();
         const toRefresh = supplyOrders
-          .filter((o) => o.wooOrderId && !o.wooPaid && (now - (o.wooStatusAt || 0) > 60000))
+          .filter((o) => o.wooOrderId && !o.wooPaid && (now - (o.wooStatusAt || 0) > (o.status === 'attente' ? 12000 : 60000)))
           .filter((o) => user.role === 'admin' || o.boutiqueId === user.boutiqueId)
           .slice(-10);
         if (toRefresh.length) {
@@ -1529,7 +1531,7 @@ const server = http.createServer(async (req, res) => {
             try {
               const s = await proConnector.getOrderStatus(o.wooOrderId, { timeoutMs: 7000 });
               o.wooStatusAt = Date.now();
-              if (s) { if (s.status) o.wooStatus = s.status; if (s.paid) o.wooPaid = true; if (s.pay_url) o.payUrl = s.pay_url; }
+              if (s) { if (s.status) o.wooStatus = s.status; if (s.paid) { o.wooPaid = true; if (o.status === 'attente') { o.status = 'envoyee'; o.paidAt = Date.now(); } } if (s.pay_url) o.payUrl = s.pay_url; }
             } catch (e) { o.wooStatusAt = Date.now(); }
           }));
           persist();
@@ -1537,6 +1539,16 @@ const server = http.createServer(async (req, res) => {
       }
       const list = supplyOrders.filter((o) => user.role === 'admin' ? true : o.boutiqueId === user.boutiqueId).slice().sort((a, b) => b.id - a.id);
       return send(res, 200, { orders: list });
+    }
+    // Annuler une commande NON PAYEE (statut 'attente'). Le franchise (sa boutique) ou l'admin uniquement.
+    const mProCancel = path.match(/^\/api\/pro\/orders\/(\d+)\/cancel$/);
+    if (req.method === 'POST' && mProCancel) {
+      const o = supplyOrders.find((x) => x.id === parseInt(mProCancel[1], 10));
+      if (!o) return send(res, 404, { error: 'Commande introuvable' });
+      if (user.role !== 'admin' && o.boutiqueId !== user.boutiqueId) return send(res, 403, { error: 'Accès refusé' });
+      if (o.status !== 'attente') return send(res, 400, { error: 'Seule une commande non payée peut être annulée' });
+      o.status = 'annulee'; o.canceledAt = Date.now(); persist();
+      return send(res, 200, { ok: true, order: o });
     }
     if (req.method === 'POST' && path === '/api/pro/config') {
       if (user.role !== 'admin') return send(res, 403, { error: 'Réservé à l\'administrateur réseau' });

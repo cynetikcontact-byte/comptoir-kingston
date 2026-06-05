@@ -8,6 +8,21 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
 <link href="https://fonts.googleapis.com/css2?family=Anton&family=Open+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
 <style>
+/* ----- Réassort : sélecteur de quantité simple (franchisé) ----- */
+.pro-card{padding:12px;display:flex;flex-direction:column}
+.pro-card.inpanier{border-color:var(--gold);box-shadow:0 0 0 2px var(--gold-soft)}
+.pro-stepper{display:flex;align-items:stretch;gap:6px;margin-top:10px}
+.pro-stepper .step{width:46px;flex:0 0 46px;border:1px solid var(--line);border-radius:10px;background:#fff;font-size:24px;font-weight:800;line-height:1;cursor:pointer;color:#1a1410}
+.pro-stepper .step:active{background:var(--gold-soft)}
+.pro-qtywrap{flex:1;display:flex;align-items:center;justify-content:center;gap:4px;border:1px solid var(--line);border-radius:10px;height:46px;padding:0 6px;background:#fbfaf6}
+.pro-qty{width:100%;border:0;background:transparent;text-align:center;font-size:21px;font-weight:800;color:#1a1410;outline:none;-moz-appearance:textfield}
+.pro-qty::-webkit-outer-spin-button,.pro-qty::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
+.pro-qtywrap .u{font-size:13px;font-weight:700;color:#8a8170}
+.pro-presets{display:flex;gap:6px;margin-top:8px}
+.pro-presets .chip{flex:1;padding:9px 0;border:1px solid var(--line);border-radius:9px;background:#fff;font-weight:700;font-size:13px;cursor:pointer;color:#1a1410}
+.pro-presets .chip.on{border-color:var(--gold);background:var(--gold-soft);color:#7a5e16}
+.pro-linetot{margin-top:9px;text-align:right;font-weight:800;color:#3f7d4f}
+.pro-remove{margin-top:7px;align-self:flex-end;background:none;border:0;color:#b4452f;font-size:12px;cursor:pointer;padding:2px 4px}
 :root{
   --gold:#b8902f; --gold2:#d8b252; --gold-soft:rgba(184,144,47,.12);
   --ink:#151009; --ink2:#1d160d; --ink3:#272016;
@@ -972,22 +987,30 @@ table.tbl tr:hover td{background:#faf9f5;}
   function proQty(id){ return (st.proCart&&st.proCart[id])||0; }
   function proCartCount(){ var n=0; for(var k in (st.proCart||{})) n+=st.proCart[k]; return n; }
   function proPresets(p){ return p.proUnit==='g'?[100,250,500,1000]:[10,25,50,100]; }
+  function proCartLineCount(){ var n=0; for(var k in (st.proCart||{})) if(st.proCart[k]>0) n++; return n; }
+  function proSetQty(id,val){ val=Math.max(0,Math.floor(Number(val)||0)); st.proCart=st.proCart||{}; if(val>0)st.proCart[id]=val; else delete st.proCart[id]; }
   function proCard(p){
-    var q=proQty(p.id), u=(p.proUnit==='g'?'g':'u');
+    var q=proQty(p.id), isG=(p.proUnit==='g'), u=(isG?'g':'u'), step=(isG?50:5);
     var price = p.pro!=null ? eur2(p.pro)+' / '+u : '<span class="muted">prix à définir</span>';
     var ph = p.img?'<div style="height:96px;border-radius:10px;background:#eceae2 center/cover no-repeat;background-image:url('+esc(p.img)+')"></div>':'<div style="height:96px;border-radius:10px;background:#15110a;display:flex;align-items:center;justify-content:center;color:#cfc7b5;font-family:var(--serif);letter-spacing:.1em;font-size:14px">KINGSTON</div>';
-    var boxes=proPresets(p).map(function(v){ var on=(q===v)?' style="padding:9px 0;font-weight:800;border-color:var(--gold);background:var(--gold-soft,rgba(184,144,47,.10))"':' style="padding:9px 0;font-weight:700"'; return '<button class="btn" data-act="pro-pick" data-id="'+esc(p.id)+'" data-q="'+v+'"'+on+'>'+v+' '+u+'</button>'; }).join('');
-    var cartLine = q>0 ? '<div style="display:flex;align-items:center;justify-content:space-between;margin-top:9px;background:rgba(63,125,79,.10);border:1px solid rgba(63,125,79,.28);border-radius:10px;padding:7px 11px"><b>'+q+' '+u+' à commander</b><button class="btn" data-act="pro-clear" data-id="'+esc(p.id)+'" style="padding:4px 11px;color:#b4452f">retirer</button></div>' : '';
-    return '<div class="card" style="padding:12px">'+ph+
+    var chips=proPresets(p).map(function(v){ var lbl=(isG&&v>=1000)?((v/1000)+' kg'):(v+' '+u); return '<button type="button" class="chip'+(q===v?' on':'')+'" data-act="pro-set" data-id="'+esc(p.id)+'" data-q="'+v+'">'+lbl+'</button>'; }).join('');
+    var stepper='<div class="pro-stepper">'+
+        '<button type="button" class="step" data-act="pro-step" data-id="'+esc(p.id)+'" data-d="-'+step+'" aria-label="Diminuer">−</button>'+
+        '<div class="pro-qtywrap"><input class="pro-qty" type="number" inputmode="numeric" min="0" step="'+step+'" data-pid="'+esc(p.id)+'" value="'+(q||'')+'" placeholder="0" aria-label="Quantité"/><span class="u">'+u+'</span></div>'+
+        '<button type="button" class="step" data-act="pro-step" data-id="'+esc(p.id)+'" data-d="'+step+'" aria-label="Augmenter">+</button>'+
+      '</div>';
+    var lineTot=(q>0&&p.pro!=null)?'<div class="pro-linetot">= '+eur2(p.pro*q)+'</div>':'';
+    var remove=q>0?'<button type="button" class="pro-remove" data-act="pro-clear" data-id="'+esc(p.id)+'">retirer</button>':'';
+    return '<div class="card pro-card'+(q>0?' inpanier':'')+'">'+ph+
       '<div style="font-weight:800;margin-top:8px;line-height:1.2">'+esc(p.name)+'</div>'+
       '<div class="muted" style="font-size:12px">'+esc(p.cat)+' · '+price+'</div>'+
-      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-top:10px">'+boxes+'</div>'+
-      cartLine+'</div>';
+      stepper+'<div class="pro-presets">'+chips+'</div>'+lineTot+remove+'</div>';
   }
+  function proRefreshBar(){ var bar=document.getElementById('pro-bar'); if(!bar)return; var n=proCartLineCount(); bar.innerHTML=n?('<div style="margin-right:auto;font-size:13.5px"><b>'+n+' produit'+(n>1?'s':'')+'</b> au panier · <b>'+eur2(proCartTotal())+'</b></div><button class="btn btn-gold" data-act="pro-order">Voir le panier ›</button>'):'<span class="muted">Choisis des quantités ci-dessus pour commander.</span>'; }
   function renderProCat(){
     var el=document.getElementById('pro-cat'); if(!el)return;
     el.innerHTML=proData.catalog.length?proData.catalog.map(proCard).join(''):'<div class="muted" style="padding:16px">Catalogue vide — importe d\'abord ton catalogue.</div>';
-    var bar=document.getElementById('pro-bar'); if(bar){ var n=proCartCount(); bar.innerHTML=n?'<b>'+n+' à commander</b> <button class="btn btn-gold" data-act="pro-order" style="margin-left:12px">Passer la commande</button>':'<span class="muted">Choisis des quantités ci-dessus pour commander.</span>'; }
+    proRefreshBar();
   }
   // ----- Panier de réassort : révision avant commande + paiement -----
   function proCartItems(){ var out=[]; (proData.catalog||[]).forEach(function(p){ var q=proQty(p.id); if(q>0) out.push({p:p,qty:q,line:(p.pro||0)*q}); }); return out; }
@@ -1010,7 +1033,7 @@ table.tbl tr:hover td{background:#faf9f5;}
     }).join('');
     var tot=proCartTotal();
     openModal('<h3 style="margin:0 0 4px;font-family:var(--serif)">Ton panier de réassort</h3>'+
-      '<div class="muted" style="font-size:12.5px;margin-bottom:12px">Vérifie ta commande avant de valider. Prix de gros depuis kingbase.fr · livraison '+esc((st.user&&st.user.boutiqueId)||'ta boutique')+'.</div>'+
+      '<div class="muted" style="font-size:12.5px;margin-bottom:12px">Vérifie ta commande. Le <b>paiement valide la commande</b> et la transmet au réseau. Prix de gros kingbase.fr · livraison '+esc((st.user&&st.user.boutiqueId)||'ta boutique')+'.</div>'+
       '<table class="tbl"><thead><tr><th>Produit</th><th style="text-align:center">Quantité</th><th style="text-align:right">Total</th><th></th></tr></thead>'+
       '<tbody>'+rows+'</tbody>'+
       '<tfoot><tr><td colspan="2" style="text-align:right;font-weight:800;padding-top:10px">Total commande</td><td style="text-align:right;font-weight:800;font-size:17px;padding-top:10px">'+eur2(tot)+'</td><td></td></tr></tfoot></table>'+
@@ -1022,17 +1045,18 @@ table.tbl tr:hover td{background:#faf9f5;}
   function openProPayModal(o){
     var hasPay=!!(o&&o.payUrl), n=(o.items||[]).length;
     openModal('<div style="text-align:center;padding:6px 6px 2px">'+
-      '<div style="font-size:42px;line-height:1">✅</div>'+
-      '<h3 style="margin:8px 0 2px;font-family:var(--serif)">Commande '+esc(o.numero||'')+' enregistrée</h3>'+
-      '<div class="muted" style="font-size:13px;margin-bottom:10px">'+n+' article'+(n>1?'s':'')+' · Total '+eur2(o.totalConfirme!=null?o.totalConfirme:o.total)+'</div>'+
+      '<div style="font-size:40px;line-height:1">🧾</div>'+
+      '<h3 style="margin:8px 0 2px;font-family:var(--serif)">Commande '+esc(o.numero||'')+' — à payer</h3>'+
+      '<div class="muted" style="font-size:13px;margin-bottom:4px">'+n+' article'+(n>1?'s':'')+' · Total '+eur2(o.totalConfirme!=null?o.totalConfirme:o.total)+'</div>'+
+      '<div style="font-size:12.5px;color:#b4452f;font-weight:700;margin-bottom:10px">La commande sera validée et transmise au réseau uniquement après le paiement.</div>'+
       (hasPay
-        ? '<a class="btn btn-gold" href="'+esc(o.payUrl)+'" target="_blank" rel="noopener" onclick="event.stopPropagation()" style="display:inline-block;text-decoration:none;font-size:16px;padding:13px 26px">💳 Payer maintenant</a>'+
-          '<div class="muted" style="font-size:12px;margin-top:12px;max-width:340px;margin-left:auto;margin-right:auto">Le paiement s\'ouvre sur kingbase.fr (sécurisé). Reviens ici après le règlement — la commande passera en « payé ».</div>'
-        : '<div class="muted" style="font-size:13px;margin-top:8px;max-width:340px;margin-left:auto;margin-right:auto">Commande transmise au réseau. Le lien de paiement n\'est pas disponible pour le moment — tu pourras payer depuis la liste de tes commandes.</div>')+
+        ? '<a class="btn btn-gold" href="'+esc(o.payUrl)+'" target="_blank" rel="noopener" onclick="event.stopPropagation()" style="display:inline-block;text-decoration:none;font-size:16px;padding:13px 26px">💳 Payer pour valider</a>'+
+          '<div class="muted" style="font-size:12px;margin-top:12px;max-width:360px;margin-left:auto;margin-right:auto">Paiement sécurisé sur kingbase.fr. Reviens ici après le règlement : la commande passera automatiquement en « validée ». Tu peux aussi la payer plus tard depuis « Mes commandes ».</div>'
+        : '<div class="muted" style="font-size:13px;margin-top:8px;max-width:360px;margin-left:auto;margin-right:auto">Le lien de paiement n\'est pas disponible pour le moment — tu pourras payer depuis la liste de tes commandes.</div>')+
       '<div style="margin-top:18px"><button class="btn" data-act="closemodal">Fermer</button></div>'+
     '</div>');
   }
-  function proStatusLabel(s){ return ({envoyee:'Envoyée',preparee:'Préparée',expediee:'Expédiée',recue:'Reçue ✓'})[s]||s; }
+  function proStatusLabel(s){ return ({attente:'En attente de paiement',envoyee:'Validée (payée)',preparee:'Préparée',expediee:'Expédiée',recue:'Reçue ✓',annulee:'Annulée'})[s]||s; }
   function proUnitSym(u){ return u==='g'?'g':'u'; }
   function orderHasReserves(o){ return (o.items||[]).some(function(it){ return (it.note&&(''+it.note).trim()) || (it.qtyConfirmed!=null&&it.qtyConfirmed!==it.qty); }) || (o.note&&(''+o.note).trim()); }
   function proItemsSummary(o){
@@ -1045,20 +1069,30 @@ table.tbl tr:hover td{background:#faf9f5;}
   function renderProOrders(){
     var el=document.getElementById('pro-orders'); if(!el)return;
     var isAdmin=st.user.role==='admin';
-    var rows=(proData.orders||[]).map(function(o){
-      var ownerCanRecv = o.status!=='recue' && !isAdmin && o.boutiqueId===st.user.boutiqueId;
+    var rows=(proData.orders||[]).filter(function(o){
+        if(o.status==='annulee')return false;             // commandes annulées : masquées partout
+        if(isAdmin && o.status==='attente')return false;  // l'admin ne voit que les commandes payées
+        return true;
+      }).map(function(o){
+      var isAttente=(o.status==='attente');
+      var ownerOwn = !isAdmin && o.boutiqueId===st.user.boutiqueId;
+      var ownerCanRecv = ownerOwn && o.status!=='recue' && o.status!=='attente';
       var items=proItemsSummary(o);
       var totv=(o.totalConfirme!=null?o.totalConfirme:o.total);
       var tot = totv>0?eur2(totv):'<span class="muted">à définir</span>';
       var resv=orderHasReserves(o)?' <span class="tag tag-low" style="font-size:10px;vertical-align:middle">réserves</span>':'';
       var tagcl = o.status==='recue'?'tag-ok':(o.status==='envoyee'?'tag-low':'');
+      var statusCell = isAttente
+        ? '<span class="tag tag-low">⏳ En attente de paiement</span>'
+        : '<span class="tag '+tagcl+'">'+proStatusLabel(o.status)+'</span>'+(o.wooPaid?' <span class="tag tag-ok" style="font-size:10px">payé ✓</span>':'');
       var act;
       if(isAdmin){ var wooLink=o.wooUrl?'<a class="btn" href="'+esc(o.wooUrl)+'" target="_blank" rel="noopener" onclick="event.stopPropagation()" title="Ouvrir cette commande dans WooCommerce" style="text-decoration:none;margin-right:6px">🛒</a>':''; act=wooLink+'<button class="btn'+(o.status==='envoyee'?' btn-gold':'')+'" data-act="pro-open" data-id="'+o.id+'">'+(o.status==='recue'?'Voir ›':'Traiter ›')+'</button>'; }
-      else if(ownerCanRecv){ var payBtn=(o.payUrl&&!o.wooPaid)?'<a class="btn btn-gold" href="'+esc(o.payUrl)+'" target="_blank" rel="noopener" onclick="event.stopPropagation()" title="Payer cette commande sur kingbase.fr" style="text-decoration:none;margin-right:6px">💳 Payer</a>':''; act=payBtn+'<input id="prolot-'+o.id+'" placeholder="n° de lot (opt.)" style="width:118px;margin-right:6px;padding:6px 8px;border:1px solid var(--line);border-radius:8px;font-size:12px"/><button class="btn'+(o.wooPaid?' btn-gold':'')+'" data-act="pro-recue" data-id="'+o.id+'">Commande reçue</button>'; }
+      else if(isAttente && ownerOwn){ var payB=o.payUrl?'<a class="btn btn-gold" href="'+esc(o.payUrl)+'" target="_blank" rel="noopener" onclick="event.stopPropagation()" title="Payer pour valider la commande" style="text-decoration:none;margin-right:6px">💳 Payer pour valider</a>':'<span class="muted" style="font-size:12px;margin-right:6px">lien indisponible</span>'; act=payB+'<button class="btn" data-act="pro-cancel" data-id="'+o.id+'" style="color:#b4452f">Annuler</button>'; }
+      else if(ownerCanRecv){ act='<input id="prolot-'+o.id+'" placeholder="n° de lot (opt.)" style="width:118px;margin-right:6px;padding:6px 8px;border:1px solid var(--line);border-radius:8px;font-size:12px"/><button class="btn btn-gold" data-act="pro-recue" data-id="'+o.id+'">Commande reçue</button>'; }
       else { act='<span class="muted" style="font-size:12px">'+(o.status==='recue'?'stock ajouté ✓':proStatusLabel(o.status))+'</span>'; }
       return '<tr'+(isAdmin?' style="cursor:pointer" data-act="pro-open" data-id="'+o.id+'"':'')+'><td><b>'+esc(o.numero)+'</b>'+resv+(isAdmin?'<br><span class="muted" style="font-size:11.5px">'+esc(o.boutiqueId)+'</span>':'')+'</td>'+
         '<td style="font-size:12.5px">'+items+'</td><td>'+tot+'</td>'+
-        '<td><span class="tag '+tagcl+'">'+proStatusLabel(o.status)+'</span>'+(o.wooPaid?' <span class="tag tag-ok" style="font-size:10px">payé ✓</span>':(o.payUrl?' <span class="tag tag-low" style="font-size:10px">à payer</span>':''))+'</td>'+
+        '<td>'+statusCell+'</td>'+
         '<td style="text-align:right;white-space:nowrap">'+act+'</td></tr>';
     }).join('')||'<tr><td colspan="5" class="muted" style="padding:12px">Aucune commande de réassort pour le moment.</td></tr>';
     el.innerHTML='<table class="tbl"><thead><tr><th>N°</th><th>Articles</th><th>Total</th><th>Statut</th><th></th></tr></thead><tbody>'+rows+'</tbody></table>'+
@@ -1442,7 +1476,8 @@ table.tbl tr:hover td{background:#faf9f5;}
     if(a==='cloture'){doCloture(el.getAttribute('data-t'));return;}
     if(a==='fiscverify'){fiscalData.loading=false;loadFiscal();toast('Vérification de l’intégrité…');return;}
     if(a==='fiscarchive'){exportArchive();return;}
-    if(a==='pro-pick'){ var pid=el.getAttribute('data-id'); var pq=+el.getAttribute('data-q')||0; st.proCart=st.proCart||{}; st.proCart[pid]=(st.proCart[pid]||0)+pq; renderProCat(); return; }
+    if(a==='pro-set'){ proSetQty(el.getAttribute('data-id'), +el.getAttribute('data-q')||0); renderProCat(); return; }
+    if(a==='pro-step'){ var psid=el.getAttribute('data-id'); proSetQty(psid, proQty(psid)+(+el.getAttribute('data-d')||0)); renderProCat(); return; }
     if(a==='pro-clear'){ var pid2=el.getAttribute('data-id'); if(st.proCart)delete st.proCart[pid2]; renderProCat(); return; }
     if(a==='woo-sync'){ if(!API.on){toast('Connecte-toi au serveur');return;} el.disabled=true; var wss=document.getElementById('woo-sync'); if(wss)wss.textContent='Synchronisation…'; var isKb=(proData.source==='kingbase'); var p=isKb?apiPost('/api/pro/sync',{}):apiPost('/api/products/import-site',{boutiqueId:(st.user&&st.user.boutiqueId)||'aix'}); p.then(function(d){ toast(isKb?('Catalogue kingbase synchronisé : '+(d.count||0)+' produits'):('Catalogue WooCommerce synchronisé : '+(d.created||0)+' ajouté(s), '+(d.updated||0)+' mis à jour')); proData.loaded=false;proData.loading=false; if(!isKb)reloadProducts(); loadPro(); el.disabled=false; }).catch(function(e){ if(wss)wss.textContent='Échec de synchro'; toast('Échec : '+(e.message||e)); el.disabled=false; }); return; }
     if(a==='pro-order'){ if(!API.on)return; if(!proCartCount()){toast('Choisis des quantités à commander');return;} openProCartModal(); return; }
@@ -1451,6 +1486,7 @@ table.tbl tr:hover td{background:#faf9f5;}
     if(a==='pro-cart-del'){ var ddid=el.getAttribute('data-id'); if(st.proCart)delete st.proCart[ddid]; if(proCartCount())openProCartModal();else closeModal(); renderProCat(); return; }
     if(a==='pro-order-confirm'){ if(!API.on)return; var pit=[]; for(var pk in (st.proCart||{})) if(st.proCart[pk]>0) pit.push({productId:pk,qty:st.proCart[pk]}); if(!pit.length){toast('Ton panier est vide');return;} var cbtn=el; cbtn.textContent='Envoi…'; cbtn.setAttribute('disabled','disabled'); apiPost('/api/pro/orders',{items:pit}).then(function(d){st.proCart={};proData.loaded=false;proData.loading=false;loadPro();if(d&&d.order)openProPayModal(d.order);else{closeModal();toast('Commande envoyée');}}).catch(function(e){toast('Échec : '+(e.message||e));if(cbtn){cbtn.textContent='Valider et payer ›';cbtn.removeAttribute('disabled');}}); return; }
     if(a==='pro-recue'){ var roid=el.getAttribute('data-id'); var lotEl=document.getElementById('prolot-'+roid); var rbody={status:'recue'}; if(lotEl&&lotEl.value.trim())rbody.lot=lotEl.value.trim(); apiPost('/api/pro/orders/'+roid+'/status',rbody).then(function(){toast('Stock reçu et ajouté à la boutique ✓');proData.loaded=false;proData.loading=false;loadPro();}).catch(function(e){toast('Échec : '+(e.message||e));}); return; }
+    if(a==='pro-cancel'){ var canid=el.getAttribute('data-id'); if(!confirm('Annuler cette commande non payée ?'))return; apiPost('/api/pro/orders/'+canid+'/cancel',{}).then(function(){toast('Commande annulée');proData.loaded=false;proData.loading=false;loadPro();}).catch(function(e){toast('Échec : '+(e.message||e));}); return; }
     if(a==='pro-open'){ openProOrder(el.getAttribute('data-id')); return; }
     if(a==='pro-rupture'){ var rpid=el.getAttribute('data-pid'); var rq=document.getElementById('poq-'+rpid), rn=document.getElementById('pon-'+rpid); if(rq)rq.value=0; if(rn&&!rn.value.trim())rn.value='Rupture de stock'; return; }
     if(a==='pro-confirm'){ var pc=proCollect(); if(!pc||!proData.cur)return; pc.status='preparee'; apiPost('/api/pro/orders/'+proData.cur.id+'/status',pc).then(function(){closeModal();toast('Commande confirmée ✓');proData.loaded=false;proData.loading=false;loadPro();}).catch(function(e){toast('Échec : '+(e.message||e));}); return; }
@@ -1543,8 +1579,9 @@ table.tbl tr:hover td{background:#faf9f5;}
     if(e.target&&e.target.id==='cm-search'){ var q=e.target.value; clearTimeout(custSearchTimer); custSearchTimer=setTimeout(function(){loadClientSearch(q);},250); return; }
     if(e.target&&e.target.id==='fid-search'){ st.fidQ=e.target.value; clearTimeout(custSearchTimer); custSearchTimer=setTimeout(loadFidelite,250); return; }
     if(e.target&&e.target.id==='tpe-mode'){ tpeToggle(); return; }
+    if(e.target&&e.target.classList&&e.target.classList.contains('pro-qty')){ proSetQty(e.target.getAttribute('data-pid'), e.target.value); proRefreshBar(); var pc=e.target.closest&&e.target.closest('.pro-card'); if(pc)pc.classList.toggle('inpanier', proQty(e.target.getAttribute('data-pid'))>0); return; }
   });
-  document.body.addEventListener('change',function(e){ if(e.target&&e.target.id==='tpe-mode'){ tpeToggle(); } if(e.target&&e.target.id==='pay-mode'){ setPayMode(e.target.value); } });
+  document.body.addEventListener('change',function(e){ if(e.target&&e.target.id==='tpe-mode'){ tpeToggle(); } if(e.target&&e.target.id==='pay-mode'){ setPayMode(e.target.value); } if(e.target&&e.target.classList&&e.target.classList.contains('pro-qty')){ proSetQty(e.target.getAttribute('data-pid'), e.target.value); renderProCat(); } });
 
   // Reprise de session : si la caisse etait deja connectee sur cet appareil, on la reconnecte toute seule.
   (function(){ try{ var s=JSON.parse(localStorage.getItem('kt_session')||'null'); if(s&&s.token){ st.user=s; API.token=s.token; st.boutique=s.boutiqueId?boutiqueName(s.boutiqueId):'Réseau (toutes boutiques)'; } }catch(e){} })();
