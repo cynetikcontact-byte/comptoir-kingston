@@ -1015,6 +1015,8 @@ table.tbl tr:hover td{background:#faf9f5;}
   // ----- Panier de réassort : révision avant commande + paiement -----
   function proCartItems(){ var out=[]; (proData.catalog||[]).forEach(function(p){ var q=proQty(p.id); if(q>0) out.push({p:p,qty:q,line:(p.pro||0)*q}); }); return out; }
   function proCartTotal(){ return proCartItems().reduce(function(s,x){return s+x.line;},0); }
+  function proShipGet(){ if(!st.proShip){ try{ st.proShip=JSON.parse(localStorage.getItem('kt_ship')||'{}')||{}; }catch(e){ st.proShip={}; } } return st.proShip; }
+  function proShipOk(){ var s=proShipGet(); return !!((s.name||'').trim()&&(s.address||'').trim()&&(s.zip||'').trim()&&(s.city||'').trim()); }
   function openProCartModal(){
     var items=proCartItems();
     if(!items.length){ toast('Ton panier est vide'); return; }
@@ -1031,13 +1033,25 @@ table.tbl tr:hover td{background:#faf9f5;}
         '<td style="text-align:right"><button class="btn" data-act="pro-cart-del" data-id="'+esc(x.p.id)+'" title="Retirer" style="padding:5px 10px;color:#b4452f">✕</button></td>'+
       '</tr>';
     }).join('');
-    var tot=proCartTotal();
+    var tot=proCartTotal(); var sh=proShipGet();
+    var si='width:100%;padding:9px 10px;border:1px solid var(--line);border-radius:9px;margin-bottom:7px;font-size:14px;box-sizing:border-box';
+    var sib='padding:9px 10px;border:1px solid var(--line);border-radius:9px;font-size:14px;box-sizing:border-box';
     openModal('<h3 style="margin:0 0 4px;font-family:var(--serif)">Ton panier de réassort</h3>'+
-      '<div class="muted" style="font-size:12.5px;margin-bottom:12px">Vérifie ta commande. Le <b>paiement valide la commande</b> et la transmet au réseau. Prix de gros kingbase.fr · livraison '+esc((st.user&&st.user.boutiqueId)||'ta boutique')+'.</div>'+
+      '<div class="muted" style="font-size:12.5px;margin-bottom:12px">Vérifie ta commande, indique ton adresse de livraison, puis paie pour valider. Prix de gros kingbase.fr.</div>'+
       '<table class="tbl"><thead><tr><th>Produit</th><th style="text-align:center">Quantité</th><th style="text-align:right">Total</th><th></th></tr></thead>'+
       '<tbody>'+rows+'</tbody>'+
       '<tfoot><tr><td colspan="2" style="text-align:right;font-weight:800;padding-top:10px">Total commande</td><td style="text-align:right;font-weight:800;font-size:17px;padding-top:10px">'+eur2(tot)+'</td><td></td></tr></tfoot></table>'+
-      '<div style="display:flex;gap:10px;justify-content:space-between;align-items:center;margin-top:18px">'+
+      '<div style="margin-top:14px;border-top:1px solid var(--line);padding-top:12px">'+
+        '<div style="font-weight:800;margin-bottom:8px">📦 Adresse de livraison <span style="color:#b4452f">*</span></div>'+
+        '<input class="ship-f" data-k="name" value="'+esc(sh.name||'')+'" placeholder="Nom / boutique" style="'+si+'"/>'+
+        '<input class="ship-f" data-k="address" value="'+esc(sh.address||'')+'" placeholder="Adresse (n° et rue)" style="'+si+'"/>'+
+        '<div style="display:flex;gap:8px">'+
+          '<input class="ship-f" data-k="zip" value="'+esc(sh.zip||'')+'" placeholder="Code postal" style="width:130px;'+sib+'"/>'+
+          '<input class="ship-f" data-k="city" value="'+esc(sh.city||'')+'" placeholder="Ville" style="flex:1;'+sib+'"/>'+
+        '</div>'+
+        '<input class="ship-f" data-k="phone" value="'+esc(sh.phone||'')+'" placeholder="Téléphone (optionnel)" style="'+si+';margin-top:7px"/>'+
+      '</div>'+
+      '<div style="display:flex;gap:10px;justify-content:space-between;align-items:center;margin-top:14px">'+
         '<button class="btn" data-act="closemodal">‹ Continuer mes achats</button>'+
         '<button class="btn btn-gold" data-act="pro-order-confirm" style="font-size:15px;padding:11px 20px">Valider et payer ›</button>'+
       '</div>');
@@ -1484,7 +1498,7 @@ table.tbl tr:hover td{background:#faf9f5;}
     if(a==='pro-cart-inc'){ var iid=el.getAttribute('data-id'); var ist=+el.getAttribute('data-step')||1; st.proCart=st.proCart||{}; st.proCart[iid]=(st.proCart[iid]||0)+ist; openProCartModal(); renderProCat(); return; }
     if(a==='pro-cart-dec'){ var did=el.getAttribute('data-id'); var dst=+el.getAttribute('data-step')||1; st.proCart=st.proCart||{}; var nv=(st.proCart[did]||0)-dst; if(nv>0)st.proCart[did]=nv; else delete st.proCart[did]; if(proCartCount())openProCartModal();else closeModal(); renderProCat(); return; }
     if(a==='pro-cart-del'){ var ddid=el.getAttribute('data-id'); if(st.proCart)delete st.proCart[ddid]; if(proCartCount())openProCartModal();else closeModal(); renderProCat(); return; }
-    if(a==='pro-order-confirm'){ if(!API.on)return; var pit=[]; for(var pk in (st.proCart||{})) if(st.proCart[pk]>0) pit.push({productId:pk,qty:st.proCart[pk]}); if(!pit.length){toast('Ton panier est vide');return;} var cbtn=el; cbtn.textContent='Envoi…'; cbtn.setAttribute('disabled','disabled'); apiPost('/api/pro/orders',{items:pit}).then(function(d){st.proCart={};proData.loaded=false;proData.loading=false;loadPro();if(d&&d.order)openProPayModal(d.order);else{closeModal();toast('Commande envoyée');}}).catch(function(e){toast('Échec : '+(e.message||e));if(cbtn){cbtn.textContent='Valider et payer ›';cbtn.removeAttribute('disabled');}}); return; }
+    if(a==='pro-order-confirm'){ if(!API.on)return; var pit=[]; for(var pk in (st.proCart||{})) if(st.proCart[pk]>0) pit.push({productId:pk,qty:st.proCart[pk]}); if(!pit.length){toast('Ton panier est vide');return;} if(!proShipOk()){toast('Renseigne ton adresse de livraison (nom, adresse, code postal, ville)');var ff=document.querySelector('.ship-f');if(ff)ff.focus();return;} var sh2=proShipGet(); try{localStorage.setItem('kt_ship',JSON.stringify(sh2));}catch(e){} var cbtn=el; cbtn.textContent='Envoi…'; cbtn.setAttribute('disabled','disabled'); apiPost('/api/pro/orders',{items:pit,ship:sh2}).then(function(d){st.proCart={};proData.loaded=false;proData.loading=false;loadPro();if(d&&d.order)openProPayModal(d.order);else{closeModal();toast('Commande créée');}}).catch(function(e){toast('Échec : '+(e.message||e));if(cbtn){cbtn.textContent='Valider et payer ›';cbtn.removeAttribute('disabled');}}); return; }
     if(a==='pro-recue'){ var roid=el.getAttribute('data-id'); var lotEl=document.getElementById('prolot-'+roid); var rbody={status:'recue'}; if(lotEl&&lotEl.value.trim())rbody.lot=lotEl.value.trim(); apiPost('/api/pro/orders/'+roid+'/status',rbody).then(function(){toast('Stock reçu et ajouté à la boutique ✓');proData.loaded=false;proData.loading=false;loadPro();}).catch(function(e){toast('Échec : '+(e.message||e));}); return; }
     if(a==='pro-cancel'){ var canid=el.getAttribute('data-id'); if(!confirm('Annuler cette commande non payée ?'))return; apiPost('/api/pro/orders/'+canid+'/cancel',{}).then(function(){toast('Commande annulée');proData.loaded=false;proData.loading=false;loadPro();}).catch(function(e){toast('Échec : '+(e.message||e));}); return; }
     if(a==='pro-open'){ openProOrder(el.getAttribute('data-id')); return; }
@@ -1580,6 +1594,7 @@ table.tbl tr:hover td{background:#faf9f5;}
     if(e.target&&e.target.id==='fid-search'){ st.fidQ=e.target.value; clearTimeout(custSearchTimer); custSearchTimer=setTimeout(loadFidelite,250); return; }
     if(e.target&&e.target.id==='tpe-mode'){ tpeToggle(); return; }
     if(e.target&&e.target.classList&&e.target.classList.contains('pro-qty')){ proSetQty(e.target.getAttribute('data-pid'), e.target.value); proRefreshBar(); var pc=e.target.closest&&e.target.closest('.pro-card'); if(pc)pc.classList.toggle('inpanier', proQty(e.target.getAttribute('data-pid'))>0); return; }
+    if(e.target&&e.target.classList&&e.target.classList.contains('ship-f')){ proShipGet(); st.proShip[e.target.getAttribute('data-k')]=e.target.value; return; }
   });
   document.body.addEventListener('change',function(e){ if(e.target&&e.target.id==='tpe-mode'){ tpeToggle(); } if(e.target&&e.target.id==='pay-mode'){ setPayMode(e.target.value); } if(e.target&&e.target.classList&&e.target.classList.contains('pro-qty')){ proSetQty(e.target.getAttribute('data-pid'), e.target.value); renderProCat(); } });
 
