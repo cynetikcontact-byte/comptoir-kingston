@@ -79,8 +79,8 @@ class ComptoirLoyalty {
   }
 
   /** Reassort B2B : cree une vraie commande WooCommerce (statut pending, payable) a partir d'une commande de franchise. */
-  async createSupplyOrder({ items, boutique, numero, by, billing } = {}) {
-    return this._call('/supply-order', { method: 'POST', body: { items: items, boutique: boutique, numero: numero, by: by, billing: billing } });
+  async createSupplyOrder({ items, boutique, numero, by, billing, shipping } = {}) {
+    return this._call('/supply-order', { method: 'POST', body: { items: items, boutique: boutique, numero: numero, by: by, billing: billing, shipping: shipping } });
   }
 
   /** Etat de paiement d'une commande de reassort cote WooCommerce (paid / needs_payment / pay_url). */

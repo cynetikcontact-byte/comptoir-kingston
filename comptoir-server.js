@@ -1501,9 +1501,18 @@ const server = http.createServer(async (req, res) => {
       }
       if (!items.length) return send(res, 400, { error: 'Commande de réassort vide' });
       total = Math.round(total * 100) / 100;
+      // Adresse de LIVRAISON saisie par le franchise (obligatoire cote app). Le grossiste (kingbase) en a besoin
+      // pour expedier ; elle alimente l'adresse d'expedition de la commande WooCommerce.
+      const ship = (b.ship && typeof b.ship === 'object') ? {
+        name: String(b.ship.name || '').slice(0, 120),
+        address: String(b.ship.address || '').slice(0, 200),
+        zip: String(b.ship.zip || '').slice(0, 20),
+        city: String(b.ship.city || '').slice(0, 100),
+        phone: String(b.ship.phone || '').slice(0, 40),
+      } : null;
       // Statut 'attente' : la commande N'EST PAS validee/transmise au reseau tant que le franchise n'a pas paye.
       // Elle bascule en 'envoyee' (validee) automatiquement quand le paiement Woo est detecte (voir GET ci-dessous).
-      const o = { id: supplySeq, numero: 'PRO-' + String(supplySeq).padStart(4, '0'), boutiqueId: bId, items: items, total: total, status: 'attente', ts: Date.now(), by: user.name || null };
+      const o = { id: supplySeq, numero: 'PRO-' + String(supplySeq).padStart(4, '0'), boutiqueId: bId, items: items, total: total, status: 'attente', ts: Date.now(), by: user.name || null, ship: ship };
       supplySeq++; supplyOrders.push(o); persist();
       // Reflet WooCommerce sur kingbase.fr (site grossiste) : creer une vraie commande (statut pending,
       // PAYABLE par le franchise) que l'admin gere dans Woo. NON bloquant : si kingbase est injoignable /
@@ -1511,7 +1520,8 @@ const server = http.createServer(async (req, res) => {
       try {
         if (proConnector && typeof proConnector.createSupplyOrder === 'function') {
           const sl = sellerFor(bId);
-          const wr = await proConnector.createSupplyOrder({ items: o.items, boutique: (boutiques[bId] && (boutiques[bId].label || bId)) || bId, numero: o.numero, by: o.by, billing: { name: sl.name, address: sl.address, zip: sl.zip, city: sl.city, country: sl.country || 'FR' } });
+          const shipAddr = o.ship ? { name: o.ship.name || sl.name, address: o.ship.address, zip: o.ship.zip, city: o.ship.city, country: 'FR', phone: o.ship.phone || '' } : null;
+          const wr = await proConnector.createSupplyOrder({ items: o.items, boutique: (boutiques[bId] && (boutiques[bId].label || bId)) || bId, numero: o.numero, by: o.by, billing: { name: sl.name, address: sl.address, zip: sl.zip, city: sl.city, country: sl.country || 'FR' }, shipping: shipAddr });
           if (wr && wr.order_id) { o.wooOrderId = wr.order_id; o.wooUrl = wr.admin_url || null; o.payUrl = wr.pay_url || null; o.wooStatus = wr.status || null; persist(); }
         }
       } catch (e) { o.wooError = String((e && e.message) || e); }
