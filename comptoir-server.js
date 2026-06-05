@@ -1510,7 +1510,8 @@ const server = http.createServer(async (req, res) => {
       // cle absente, la commande de reassort reste valide dans Comptoir.
       try {
         if (proConnector && typeof proConnector.createSupplyOrder === 'function') {
-          const wr = await proConnector.createSupplyOrder({ items: o.items, boutique: (boutiques[bId] && (boutiques[bId].label || bId)) || bId, numero: o.numero, by: o.by });
+          const sl = sellerFor(bId);
+          const wr = await proConnector.createSupplyOrder({ items: o.items, boutique: (boutiques[bId] && (boutiques[bId].label || bId)) || bId, numero: o.numero, by: o.by, billing: { name: sl.name, address: sl.address, zip: sl.zip, city: sl.city, country: sl.country || 'FR' } });
           if (wr && wr.order_id) { o.wooOrderId = wr.order_id; o.wooUrl = wr.admin_url || null; o.payUrl = wr.pay_url || null; o.wooStatus = wr.status || null; persist(); }
         }
       } catch (e) { o.wooError = String((e && e.message) || e); }
