@@ -359,7 +359,7 @@ table.tbl tr:hover td{background:#faf9f5;}
     {name:'Nîmes',ca:0,tickets:0,alertes:0,statut:'Fermée'}
   ];
 
-  var st={view:'dash',cat:'Tout',cart:[],client:null,boutique:'Aix-en-Provence',user:null,redeemPts:0,coupon:null,posSearch:'',boutiqueId:'aix',compare:['aix','marseille'],jperiod:'today'};
+  var st={view:'dash',cat:'Tout',cart:[],client:null,boutique:'Aix-en-Provence',user:null,redeemPts:0,coupon:null,posSearch:'',boutiqueId:'aix',compare:['aix','marseille'],jperiod:'today',netScope:false};
   // Coupons fidelite : remise fixe (EUR) pour un cout en points.
   var COUPONS=[{e:10,p:750},{e:20,p:1350},{e:50,p:3000},{e:100,p:5250}];
 
@@ -790,7 +790,8 @@ table.tbl tr:hover td{background:#faf9f5;}
     if(r.from&&!r.to)return 'Période affichée : depuis le '+frDate(r.from);
     return 'Période affichée : du '+frDate(r.from)+' au '+frDate(r.to);
   }
-  function jQS(){ var r=jRange(); var q=[]; if(r.from)q.push('from='+r.from); if(r.to)q.push('to='+r.to); return q.length?'?'+q.join('&'):''; }
+  function jBoutique(){ return st.netScope?'':(st.boutiqueId||''); } // boutique active pour le Journal ('' = réseau)
+  function jQS(){ var r=jRange(); var q=[]; if(r.from)q.push('from='+r.from); if(r.to)q.push('to='+r.to); var b=jBoutique(); if(b)q.push('boutique='+encodeURIComponent(b)); return q.length?'?'+q.join('&'):''; }
   function dlAuth(path,filename){
     if(!API.on){toast('Connecte le serveur d\'abord');return;}
     fetch(API.base+path,{headers:apiHeaders()}).then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.blob();})
@@ -1589,7 +1590,7 @@ table.tbl tr:hover td{background:#faf9f5;}
   }
 
   // boutique selector
-  $("#boutiqueSel").addEventListener('change',function(e){var nid=bIdOf(e.target.value);if(nid&&!API.on){saveStock(st.boutiqueId);st.boutiqueId=nid;loadStock(nid);}else if(nid){st.boutiqueId=nid;}st.boutique=e.target.value;render();toast('Boutique : '+e.target.value);});
+  $("#boutiqueSel").addEventListener('change',function(e){var nid=bIdOf(e.target.value);st.netScope=!nid;if(nid&&!API.on){saveStock(st.boutiqueId);st.boutiqueId=nid;loadStock(nid);}else if(nid){st.boutiqueId=nid;}st.boutique=e.target.value;render();toast('Boutique : '+e.target.value);});
   var custSearchTimer=null;
   document.body.addEventListener('input',function(e){
     if(e.target&&e.target.id==='pos-search'){ st.posSearch=e.target.value; var g=document.querySelector('.pgrid'); if(g){g.innerHTML=posGrid();} return; }

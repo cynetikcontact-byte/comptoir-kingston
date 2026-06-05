@@ -588,7 +588,13 @@ function faireCloture(type, bId) {
 
 function verifyChain() {
   let prev = 'GENESIS', chainOk = true, brokenAt = null;
-  for (const inv of invoices.slice().sort((a, b) => a.seq - b.seq)) {
+  // La chaine d'empreintes est UNIQUE pour l'installation : chaque facture est scellee
+  // avec l'empreinte de la precedente, dans l'ordre de CREATION (lastHash global).
+  // 'seq' est la numerotation PROPRE a chaque boutique (entite) -> il y a donc plusieurs
+  // factures avec le meme seq (une par boutique). On NE doit PAS trier par seq : cela
+  // melangerait l'ordre reel de la chaine. Le tableau 'invoices' est append-only et
+  // conserve l'ordre de creation (persistance incluse) -> c'est l'ordre canonique.
+  for (const inv of invoices) {
     const body = invoiceBody(inv);
     const recomputed = sha256(body);
     // Sceau HMAC : si présent, il doit correspondre (détecte une altération même si les empreintes ont été recalculées).
