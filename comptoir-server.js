@@ -370,6 +370,10 @@ function fb(id) { if (seqByB[id] == null) seqByB[id] = 0; if (gtByB[id] == null)
 const SELLER = SELLER_DEFAULT;
 function sellerFor(boutiqueId) { const b = boutiques[boutiqueId]; return (b && b.seller) || SELLER_DEFAULT; }
 
+// ---- Identite de l'entreprise (emetteur legal des factures) : editable depuis l'ecran Reglages. ----
+let entreprise = { denomination: '', siret: '', tva: '', contactPrenom: '', contactNom: '', telephone: '', factureAuto: false };
+function entrepriseSafe() { return { denomination: entreprise.denomination || '', siret: entreprise.siret || '', tva: entreprise.tva || '', contactPrenom: entreprise.contactPrenom || '', contactNom: entreprise.contactNom || '', telephone: entreprise.telephone || '', factureAuto: !!entreprise.factureAuto }; }
+
 /* ----------------------------- Persistance disque (mode memoire) ---------------------------- */
 // En mode PostgreSQL la base fait foi. Sinon, factures + commandes sont conservees dans un
 // fichier JSON afin de SURVIVRE au redemarrage / a l'extinction du Mac.
@@ -402,7 +406,7 @@ function persist() {
       // Écriture ATOMIQUE : fichier temporaire puis renommage -> jamais de fichier tronqué en cas de coupure.
       // NB : fiscalKey n'est PLUS écrite ici (stockée à part, fichier protégé).
       const tmp = DATA_FILE + '.tmp';
-      fs.writeFileSync(tmp, JSON.stringify({ v: 1, savedAt: new Date().toISOString(), pointsPerEuro: POINTS_PER_EURO, hideBaseCatalog, customProducts, stock, boutiques, invoiceSeq, lastHash, invoices, orderSeq, orders, fiscalEvents, fiscalSeq, lastFiscalSig, clotureSeq, gtPerpetuel, gtPerpetuelAvoirs, seqByB, gtByB, gtAvoirsByB, clotureSeqByB, supplyOrders, supplySeq, proRate, pontDevices, sessions, proProducts, lastProSync, proLots }), 'utf8');
+      fs.writeFileSync(tmp, JSON.stringify({ v: 1, savedAt: new Date().toISOString(), pointsPerEuro: POINTS_PER_EURO, hideBaseCatalog, customProducts, stock, boutiques, invoiceSeq, lastHash, invoices, orderSeq, orders, fiscalEvents, fiscalSeq, lastFiscalSig, clotureSeq, gtPerpetuel, gtPerpetuelAvoirs, seqByB, gtByB, gtAvoirsByB, clotureSeqByB, supplyOrders, supplySeq, proRate, pontDevices, sessions, proProducts, lastProSync, proLots, entreprise }), 'utf8');
       fs.renameSync(tmp, DATA_FILE);
     } catch (e) { console.error('Persistance impossible :', e.message); }
   }, 200);
@@ -441,6 +445,7 @@ function loadPersisted() {
     if (d.sessions && typeof d.sessions === 'object') { const _now = Date.now(); for (const t in d.sessions) { const s = d.sessions[t]; if (s && s.exp > _now) sessions[t] = s; } } // garde les connexions actives apres un redemarrage
     if (Array.isArray(d.proProducts)) { proProducts = d.proProducts; proProducts.forEach(ensureStock); }
     if (d.proLots && typeof d.proLots === 'object') proLots = d.proLots;
+    if (d.entreprise && typeof d.entreprise === 'object') Object.assign(entreprise, d.entreprise);
     if (typeof d.lastProSync === 'number') lastProSync = d.lastProSync;
     if (typeof d.supplySeq === 'number') supplySeq = d.supplySeq;
     if (typeof d.proRate === 'number') proRate = d.proRate;
@@ -527,7 +532,8 @@ function createInvoice(boutiqueId, total, lines, client, payment, source) {
   // Identite legale FIGEE sur la facture (entite emettrice). 'source'/'seal' = metadonnees hors empreinte.
   const sl = sellerFor(boutiqueId);
   const inv = Object.assign({}, fields, { hash, seal: sealInvoice(body, hash), source: source || 'caisse',
-    seller: { name: sl.name, siren: sl.siren, vat: sl.vat, address: sl.address, zip: sl.zip, city: sl.city, country: sl.country } });
+    seller: { name: sl.name, siren: sl.siren, vat: sl.vat, address: sl.address, zip: sl.zip, city: sl.city, country: sl.country },
+    emetteur: entrepriseSafe() });   // identite legale de l'entreprise FIGEE a l'emission (pour les factures)
   invoices.push(inv);
   lastHash = hash;                                          // chaine d'empreintes UNIQUE (inalterabilite globale)
   // Grand Total perpetuel : PAR boutique (entite) ET reseau (tableau de bord). Jamais remis a zero.
@@ -1462,6 +1468,51 @@ const server = http.createServer(async (req, res) => {
         you: user.role === 'admin' ? null : user.boutiqueId,
         classementJour: jour,
         classementMois: mois,
+      });
+    }
+
+    // ---------------- IDENTITÉ DE L'ENTREPRISE (émetteur légal des factures) ----------------
+    if (req.method === 'GET' && path === '/api/company') {
+      return send(res, 200, { entreprise: entrepriseSafe() });
+    }
+    if (req.method === 'POST' && path === '/api/company') {
+      if (user.role !== 'admin') return send(res, 403, { error: 'Réservé à l\'administrateur réseau' });
+      const b = await readJson(req);
+      const str = (v) => (v == null ? '' : String(v)).slice(0, 120);
+      if ('denomination' in b) entreprise.denomination = str(b.denomination).trim();
+      if ('siret' in b) entreprise.siret = str(b.siret).replace(/\s/g, '');
+      if ('tva' in b) entreprise.tva = str(b.tva).replace(/\s/g, '').toUpperCase();
+      if ('contactPrenom' in b) entreprise.contactPrenom = str(b.contactPrenom).trim();
+      if ('contactNom' in b) entreprise.contactNom = str(b.contactNom).trim();
+      if ('telephone' in b) entreprise.telephone = str(b.telephone).trim();
+      if ('factureAuto' in b) entreprise.factureAuto = !!b.factureAuto;
+      persist();
+      return send(res, 200, { ok: true, entreprise: entrepriseSafe() });
+    }
+
+    // ---------------- FACTURE : données complètes d'une vente, prêtes pour impression ----------------
+    if (req.method === 'GET' && path === '/api/facture') {
+      const num = u.searchParams.get('num') || '';
+      const inv = invoices.find((i) => i.num === num);
+      if (!inv) return send(res, 404, { error: 'Facture introuvable' });
+      if (user.role !== 'admin' && inv.boutiqueId !== user.boutiqueId) return send(res, 403, { error: 'Hors de votre boutique' });
+      const bq = boutiques[inv.boutiqueId] || {};
+      const sl = inv.seller || sellerFor(inv.boutiqueId);
+      const em = (inv.emetteur && (inv.emetteur.denomination || inv.emetteur.siret || inv.emetteur.tva)) ? inv.emetteur : entrepriseSafe();
+      const lignes = (inv.lines || []).map((l) => {
+        const ttc = l.prix;
+        const rate = (typeof l.vat === 'number') ? l.vat : 0.2;
+        const ht = Math.round((ttc / (1 + rate)) * 100) / 100;
+        return { produit: l.produit, detail: l.detail || '', qty: l.qty || null, grams: l.grams || null, prixTTC: ttc, ht: ht, tva: rate };
+      });
+      const montants = inv.tva
+        ? { ht: inv.tva.totalHT, tva: inv.tva.totalTVA, ttc: inv.total, ventilation: inv.tva.ventilation || [] }
+        : { ht: Math.round((inv.total / 1.2) * 100) / 100, tva: Math.round((inv.total - inv.total / 1.2) * 100) / 100, ttc: inv.total, ventilation: [] };
+      return send(res, 200, {
+        numero: inv.num, date: inv.date, avoir: inv.total < 0, refDe: inv.avoirDe || null,
+        boutique: inv.boutiqueId, boutiqueLabel: bq.label || inv.boutiqueId,
+        vendeur: { name: sl.name, address: sl.address, zip: sl.zip, city: sl.city, country: sl.country || 'FR' },
+        emetteur: em, client: inv.client || '', paiement: inv.payment, lignes: lignes, montants: montants,
       });
     }
 

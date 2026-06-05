@@ -276,6 +276,26 @@ table.tbl tr:hover td{background:#faf9f5;}
 .ch-sub{display:flex;justify-content:space-between;align-items:center;font-size:12px;color:var(--muted);}
 .ch-lead{color:#b8902f;font-weight:800;letter-spacing:.02em;}
 .ch-gap{color:#9a463a;font-weight:700;}
+/* ----- Facture imprimable (A4) ----- */
+.fac{width:700px;max-width:100%;margin:0 auto;color:#111;font-family:Arial,Helvetica,sans-serif;font-size:13px;padding:26px;box-sizing:border-box;background:#fff;}
+.fac-top{display:flex;justify-content:space-between;align-items:flex-start;gap:20px;margin-bottom:22px;}
+.fac-em{line-height:1.55;font-size:12.5px;}
+.fac-no{text-align:right;line-height:1.5;}
+.fac-big{font-family:var(--serif);font-size:25px;letter-spacing:.08em;}
+.fac-t{font-weight:800;font-size:16px;margin-top:4px;letter-spacing:.04em;}
+.fac-bx{display:flex;gap:16px;justify-content:space-between;border:1px solid #ddd;border-radius:8px;padding:12px 14px;margin-bottom:16px;}
+.fac-lab{font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:#888;margin-bottom:3px;}
+.fac-tbl{width:100%;border-collapse:collapse;margin-bottom:14px;}
+.fac-tbl th{background:#15110b;color:#fff;padding:7px 9px;font-size:11px;text-align:left;}
+.fac-tbl td{padding:7px 9px;border-bottom:1px solid #eee;font-size:12.5px;}
+.fac-tot{display:flex;justify-content:space-between;gap:16px;align-items:flex-start;}
+.fac-vt{font-size:11px;color:#555;border-collapse:collapse;}
+.fac-vt td{padding:2px 10px 2px 0;}
+.fac-sum{margin-left:auto;border-collapse:collapse;min-width:230px;}
+.fac-sum td{padding:5px 10px;}
+.fac-ttc td{font-family:var(--serif);font-size:18px;font-weight:800;border-top:2px solid #15110b;}
+.fac-pay{margin-top:14px;font-size:12.5px;font-weight:700;}
+.fac-legal{margin-top:18px;font-size:10.5px;color:#777;border-top:1px solid #eee;padding-top:10px;line-height:1.5;}
 </style>
 </head>
 <body>
@@ -423,7 +443,7 @@ table.tbl tr:hover td{background:#faf9f5;}
     if(!LOCAL_SNAPSHOT)LOCAL_SNAPSHOT=JSON.parse(JSON.stringify(products));
     fetch(API.base+'/api/health').then(function(r){return r.json();}).then(function(h){if(!h||!h.ok)throw new Error('réponse inattendue');return apiGet('/api/products');}).then(function(data){
       products=(data.products||[]).map(mapServerProduct);
-      API.on=true;st.cart=[];st.client=null;render();loadLoyaltyRate();toast('Connecté au serveur — produits chargés depuis le moteur');
+      API.on=true;st.cart=[];st.client=null;render();loadLoyaltyRate();loadCompany();toast('Connecté au serveur — produits chargés depuis le moteur');
     }).catch(function(e){API.on=false;var el=document.getElementById('rg-api-res');if(el)el.innerHTML='<span class="tag tag-low">Échec : '+(e.message||e)+'</span> <span class="muted" style="font-size:12px">— le serveur tourne-t-il ? (node comptoir-server.js)</span>';});
   }
   // Connexion automatique quand l'app est servie par le serveur Comptoir (meme origine).
@@ -438,7 +458,7 @@ table.tbl tr:hover td{background:#faf9f5;}
       return apiGet('/api/products');
     }).then(function(data){
       products=(data.products||[]).map(mapServerProduct);
-      API.on=true;render();loadLoyaltyRate();toast('Connecté au serveur — fidélité et produits en direct');
+      API.on=true;render();loadLoyaltyRate();loadCompany();toast('Connecté au serveur — fidélité et produits en direct');
     }).catch(function(){API.on=false;});
   }
   function finalizeSaleApi(method){
@@ -460,8 +480,9 @@ table.tbl tr:hover td{background:#faf9f5;}
         else if(fid.erreur){ fidHtml='<div style="background:#fbeae6;border:1px solid #e7c4bb;border-radius:10px;padding:10px;margin-top:12px;color:#b4452f;font-size:12.5px;text-align:center">&#9888; Points NON appliqués : '+esc(fid.erreur)+'</div>'; }
         else { fidHtml='<div class="muted" style="text-align:center;margin-top:12px;font-size:12.5px">Membre : '+esc(fid.membre)+'</div>'; }
       } else { fidHtml='<div class="muted" style="text-align:center;margin-top:12px;font-size:12.5px">Client au comptoir</div>'; }
-      openModal('<div class="modal-h">Paiement accepté (serveur)</div><div class="modal-b"><div style="text-align:center;margin-bottom:14px"><div style="width:54px;height:54px;border-radius:50%;background:var(--green);color:#fff;display:flex;align-items:center;justify-content:center;font-size:28px;margin:0 auto 10px">✓</div><div class="muted" style="font-size:12px">Facture '+f.numero+' · '+method+' · empreinte '+(f.empreinte||'')+'</div></div>'+lines+((m.remise>0)?'<div style="display:flex;justify-content:space-between;font-size:13px;color:#7a5f1e;padding:4px 0"><span>Remise points</span><b>−'+eur(m.remise)+'</b></div>':'')+'<div style="display:flex;justify-content:space-between;border-top:1px solid var(--line);margin-top:8px;padding-top:10px;font-family:var(--serif);font-size:19px;font-weight:700"><span>Total</span><span>'+eur(f.total)+'</span></div>'+fidHtml+'<div style="display:flex;gap:10px;margin-top:16px"><button class="btn" style="flex:1" data-act="printticket">Imprimer le ticket</button><button class="btn btn-gold" style="flex:1" data-act="closemodal">Nouveau ticket</button></div></div>');
+      openModal('<div class="modal-h">Paiement accepté (serveur)</div><div class="modal-b"><div style="text-align:center;margin-bottom:14px"><div style="width:54px;height:54px;border-radius:50%;background:var(--green);color:#fff;display:flex;align-items:center;justify-content:center;font-size:28px;margin:0 auto 10px">✓</div><div class="muted" style="font-size:12px">Facture '+f.numero+' · '+method+' · empreinte '+(f.empreinte||'')+'</div></div>'+lines+((m.remise>0)?'<div style="display:flex;justify-content:space-between;font-size:13px;color:#7a5f1e;padding:4px 0"><span>Remise points</span><b>−'+eur(m.remise)+'</b></div>':'')+'<div style="display:flex;justify-content:space-between;border-top:1px solid var(--line);margin-top:8px;padding-top:10px;font-family:var(--serif);font-size:19px;font-weight:700"><span>Total</span><span>'+eur(f.total)+'</span></div>'+fidHtml+'<div style="display:flex;gap:8px;margin-top:16px;flex-wrap:wrap"><button class="btn" style="flex:1;min-width:110px" data-act="printticket">🧾 Ticket</button><button class="btn" style="flex:1;min-width:110px" data-act="facture" data-num="'+f.numero+'">📄 Facture</button><button class="btn btn-gold" style="flex:1;min-width:110px" data-act="closemodal">Nouveau</button></div></div>');
       render();
+      if(companyInfo.factureAuto){setTimeout(function(){openFacture(f.numero);},350);}
     }).catch(function(e){toast('Erreur serveur : '+(e.message||e));});
   }
   var addCat='Fleurs';
@@ -731,7 +752,7 @@ table.tbl tr:hover td{background:#faf9f5;}
     }).catch(function(){var b=document.getElementById('loy-mode');if(b){b.className='tag tag-low';b.textContent='Serveur injoignable';}});
   }
   function viewReglages(){
-    setTimeout(payInit,0);setTimeout(loyInit,0);
+    setTimeout(payInit,0);setTimeout(loyInit,0);setTimeout(loadCompany,0);
     var apiStatus=API.on?'<span class="tag tag-ok">Connecté · '+API.base+'</span>':'<span class="tag tag-low">Hors ligne (données locales)</span>';
     return '<div class="vhead"><div><h1>Réglages</h1><p>Branche l\'application sur le vrai serveur Comptoir, et relie la fidélité à ton myCred.</p></div></div>'+
       '<div class="card" style="padding:18px;max-width:660px;margin-bottom:16px"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px"><b style="font-family:var(--serif);font-size:16px">Serveur Comptoir (moteur)</b>'+apiStatus+'</div>'+
@@ -750,6 +771,7 @@ table.tbl tr:hover td{background:#faf9f5;}
         '<div id="pay-mode-help" class="muted" style="font-size:12.5px;line-height:1.5"></div>'+
         (st.user&&st.user.role==='admin' ? '<div style="border-top:1px solid var(--line);margin-top:14px;padding-top:12px"><div style="font-weight:700;font-size:13px;margin-bottom:6px">Connecter un pont (terminal d\'une boutique)</div><div class="muted" style="font-size:11.5px;margin-bottom:10px">Lance l\'installateur sur l\'ordinateur de la boutique : une page affiche un code à 6 lettres. Entre-le ici avec l\'IP du terminal.</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px"><div class="fld"><label>Boutique</label><select id="pont-bq" style="width:100%;padding:9px;border:1px solid var(--line);border-radius:8px">'+boutiqueOptions()+'</select></div><div class="fld"><label>Code du pont</label><input id="pont-code" placeholder="ex : K7M2Q4" style="width:100%;text-transform:uppercase"/></div><div class="fld"><label>IP du terminal</label><input id="pont-ip" placeholder="192.168.1.50" style="width:100%"/></div><div class="fld"><label>Port</label><input id="pont-port" value="8888" style="width:100%"/></div></div><div style="margin-top:8px"><button class="btn btn-gold" data-act="claim-pont">Connecter ce pont</button></div><div id="pont-code-res" style="margin-top:10px"></div></div>' : '')+
       '</div>'+
+      (st.user&&st.user.role==='admin'?('<div class="card" style="padding:18px;max-width:660px;margin-top:16px"><div style="margin-bottom:12px"><b style="font-family:var(--serif);font-size:16px">Identité de l\'entreprise (sur les factures)</b><div class="muted" style="font-size:12px;margin-top:3px">Apparaît sur chaque facture client. À renseigner une fois.</div></div><div class="fld" style="margin-bottom:10px"><label>Dénomination sociale</label><input id="co-denom" value="'+esc(companyInfo.denomination||'')+'" placeholder="KINGSTON SARL"/></div><div style="display:flex;gap:12px;margin-bottom:10px;flex-wrap:wrap"><div class="fld" style="flex:1;min-width:200px"><label>SIRET</label><input id="co-siret" value="'+esc(companyInfo.siret||'')+'" placeholder="123 456 789 00012"/></div><div class="fld" style="flex:1;min-width:200px"><label>N° TVA intracommunautaire</label><input id="co-tva" value="'+esc(companyInfo.tva||'')+'" placeholder="FR12345678901"/></div></div><div style="display:flex;gap:12px;margin-bottom:10px;flex-wrap:wrap"><div class="fld" style="flex:1;min-width:140px"><label>Prénom</label><input id="co-prenom" value="'+esc(companyInfo.contactPrenom||'')+'"/></div><div class="fld" style="flex:1;min-width:140px"><label>Nom</label><input id="co-nom" value="'+esc(companyInfo.contactNom||'')+'"/></div><div class="fld" style="flex:1;min-width:150px"><label>Téléphone</label><input id="co-tel" value="'+esc(companyInfo.telephone||'')+'" placeholder="06 12 34 56 78"/></div></div><label style="display:flex;align-items:center;gap:8px;font-size:13px;margin:4px 0 12px;cursor:pointer"><input type="checkbox" id="co-auto" '+(companyInfo.factureAuto?'checked':'')+'/> Imprimer une facture automatiquement après chaque vente</label><div style="display:flex;align-items:center;gap:10px"><button class="btn btn-gold" data-act="savecompany">Enregistrer l\'identité</button><span id="co-res"></span></div></div>'):'')+
       '<div class="net-note" style="margin-top:16px">'+crown('#b8902f')+' Connecté au serveur, la caisse lit les vrais produits/stocks et chaque vente passe par le moteur (facture chaînée + points myCred). Hors ligne, l\'app fonctionne sur ses données de démonstration.</div>';
   }
 
@@ -854,7 +876,7 @@ table.tbl tr:hover td{background:#faf9f5;}
     var rows=(journalData.ventes||[]).map(function(v){
       var arts=(v.lignes||[]).map(function(l){return (l.qty?l.qty+'× ':(l.grams?l.grams+'g ':''))+esc(l.produit);}).join(', ');
       var dt=new Date(v.date); var hh=isNaN(dt)?esc((v.date||'').slice(0,10)):dt.toLocaleString('fr-FR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
-      return '<tr><td class="muted" style="white-space:nowrap">'+hh+'</td><td>'+jSrcBadge(v.source)+'</td><td><b>'+esc(v.numero)+'</b></td><td>'+esc(v.client||'—')+'</td><td style="font-size:12.5px">'+(arts||'—')+'</td><td class="muted" style="font-size:12px">'+esc(v.paiement||'')+'</td><td style="text-align:right;white-space:nowrap"><b>'+eur(v.totalTTC)+'</b></td></tr>';
+      return '<tr><td class="muted" style="white-space:nowrap">'+hh+'</td><td>'+jSrcBadge(v.source)+'</td><td><b>'+esc(v.numero)+'</b></td><td>'+esc(v.client||'—')+'</td><td style="font-size:12.5px">'+(arts||'—')+'</td><td class="muted" style="font-size:12px">'+esc(v.paiement||'')+'</td><td style="text-align:right;white-space:nowrap"><b>'+eur(v.totalTTC)+'</b> <button class="btn" style="padding:3px 9px;font-size:11px;margin-left:8px" data-act="facture" data-num="'+esc(v.numero)+'" title="Imprimer la facture">📄</button></td></tr>';
     }).join('')||'<tr><td colspan="7" class="muted" style="padding:18px;text-align:center">Aucune vente sur cette période.</td></tr>';
     el.innerHTML=kpis+
       '<div style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:14px">'+
@@ -1433,6 +1455,48 @@ table.tbl tr:hover td{background:#faf9f5;}
     document.getElementById('receipt').innerHTML='<div class="rc"><div class="rc-h">KINGSTON</div><div class="rc-sub">CBD · '+esc(r.boutique||'')+'</div><div class="rc-meta">Facture '+esc(r.num)+'<br>'+esc(r.date)+'</div><table class="rc-t">'+rows+'</table><div class="rc-line"></div><table class="rc-t">'+((r.disc>0)?'<tr><td>Remise '+(r.usedPts||0)+' pts</td><td style="text-align:right">−'+eur(r.disc)+'</td></tr>':'')+'<tr><td>Total HT</td><td style="text-align:right">'+eur(r.ht)+'</td></tr><tr><td>TVA 20%</td><td style="text-align:right">'+eur(r.tva)+'</td></tr><tr class="rc-tot"><td>TOTAL TTC</td><td style="text-align:right">'+eur(r.total)+'</td></tr></table><div class="rc-pay">Paiement : '+esc(r.method)+'</div>'+(r.client?'<div class="rc-pay">Membre : '+esc(r.client)+' · +'+r.earned+' pts'+(r.newBal!=null?' (solde '+r.newBal+')':'')+'</div>':'')+'<div class="rc-legal">Produits CBD · THC &lt; 0,3 % · non destiné à un usage médical · vente interdite aux mineurs.<br>Merci et à bientôt chez KINGSTON.</div></div>';
     window.print();
   }
+
+  // ---------- Identité entreprise (Réglages) + facture imprimable par achat ----------
+  var companyInfo={denomination:'',siret:'',tva:'',contactPrenom:'',contactNom:'',telephone:'',factureAuto:false};
+  function loadCompany(){ if(!API.on)return; apiGet('/api/company').then(function(d){ if(d&&d.entreprise){companyInfo=d.entreprise; if(st.view==='reglages')render();} }).catch(function(){}); }
+  function saveCompany(){
+    if(!API.on){toast('Connecte le serveur d\'abord');return;}
+    var g=function(id){var e=document.getElementById(id);return e?e.value:'';};
+    var payload={denomination:g('co-denom'),siret:g('co-siret'),tva:g('co-tva'),contactPrenom:g('co-prenom'),contactNom:g('co-nom'),telephone:g('co-tel'),factureAuto:(document.getElementById('co-auto')||{}).checked||false};
+    apiPost('/api/company',payload).then(function(d){ if(d&&d.entreprise)companyInfo=d.entreprise; var el=document.getElementById('co-res'); if(el)el.innerHTML='<span class="tag tag-ok">Identité enregistrée ✓</span>'; toast('Identité de l\'entreprise enregistrée'); }).catch(function(e){toast('Échec : '+(e.message||e));});
+  }
+  function facLine(l){
+    var q=l.grams?(l.grams+' g'):(l.qty?('× '+l.qty):'1');
+    return '<tr><td>'+esc(l.produit)+(l.detail?' <span style="color:#666">('+esc(l.detail)+')</span>':'')+'</td><td style="text-align:center">'+q+'</td><td style="text-align:right">'+eur(l.ht)+'</td><td style="text-align:center">'+Math.round((l.tva||0)*100)+'%</td><td style="text-align:right">'+eur(l.prixTTC)+'</td></tr>';
+  }
+  function openFacture(num){
+    if(!num){toast('Aucune facture pour cette vente');return;}
+    if(!API.on){toast('Connecte le serveur d\'abord');return;}
+    apiGet('/api/facture?num='+encodeURIComponent(num)).then(function(d){ printFacture(d); }).catch(function(e){toast('Facture indisponible : '+(e.message||e));});
+  }
+  function printFacture(d){
+    var em=d.emetteur||{}, v=d.vendeur||{}, m=d.montants||{};
+    var contact=[em.contactPrenom,em.contactNom].filter(Boolean).join(' ');
+    var L=[]; if(em.denomination)L.push('<b>'+esc(em.denomination)+'</b>'); if(contact)L.push(esc(contact));
+    if(v.address)L.push(esc(v.address)); if(v.zip||v.city)L.push(esc((v.zip||'')+' '+(v.city||'')));
+    if(em.siret)L.push('SIRET : '+esc(em.siret)); if(em.tva)L.push('TVA : '+esc(em.tva)); if(em.telephone)L.push('Tél : '+esc(em.telephone));
+    var vent=(m.ventilation||[]).map(function(x){return '<tr><td>TVA '+esc(x.taux)+'</td><td style="text-align:right">'+eur(x.baseHT)+'</td><td style="text-align:right">'+eur(x.tva)+'</td></tr>';}).join('');
+    var rows=(d.lignes||[]).map(facLine).join('');
+    var dateFr=(d.date&&/^\d{4}-\d{2}-\d{2}/.test(d.date))?d.date.slice(0,10).split('-').reverse().join('/'):(d.date||'');
+    var titre=d.avoir?'AVOIR':'FACTURE';
+    var html='<div class="fac">'+
+      '<div class="fac-top"><div class="fac-em">'+(L.join('<br>')||'<b>KINGSTON</b>')+'</div>'+
+        '<div class="fac-no"><div class="fac-big">KINGSTON</div><div class="fac-t">'+titre+'</div><div>N° '+esc(d.numero||'')+'</div><div>'+esc(dateFr)+'</div>'+(d.refDe?'<div style="font-size:11px;color:#888">réf. '+esc(d.refDe)+'</div>':'')+'</div></div>'+
+      '<div class="fac-bx"><div><div class="fac-lab">Point de vente</div>'+esc(v.name||d.boutiqueLabel||'')+(v.address?'<br>'+esc(v.address):'')+((v.zip||v.city)?'<br>'+esc((v.zip||'')+' '+(v.city||'')):'')+'</div>'+
+        '<div><div class="fac-lab">Client</div>'+esc(d.client||'Client comptoir')+'</div></div>'+
+      '<table class="fac-tbl"><thead><tr><th>Désignation</th><th style="text-align:center">Qté</th><th style="text-align:right">PU HT</th><th style="text-align:center">TVA</th><th style="text-align:right">Total TTC</th></tr></thead><tbody>'+(rows||'<tr><td colspan="5">—</td></tr>')+'</tbody></table>'+
+      '<div class="fac-tot"><table class="fac-vt">'+(vent?('<tr><td></td><td style="text-align:right">Base HT</td><td style="text-align:right">TVA</td></tr>'+vent):'')+'</table>'+
+        '<table class="fac-sum"><tr><td>Total HT</td><td style="text-align:right">'+eur(m.ht)+'</td></tr><tr><td>TVA</td><td style="text-align:right">'+eur(m.tva)+'</td></tr><tr class="fac-ttc"><td>TOTAL TTC</td><td style="text-align:right">'+eur(m.ttc)+'</td></tr></table></div>'+
+      '<div class="fac-pay">Réglé par '+esc(d.paiement||'')+'</div>'+
+      '<div class="fac-legal">Produits CBD · THC &lt; 0,3 % · non destiné à un usage médical · vente interdite aux mineurs.<br>Facture émise par '+esc(em.denomination||'KINGSTON')+(em.siret?' · SIRET '+esc(em.siret):'')+'. Merci de votre confiance.</div>'+
+    '</div>';
+    var rc=document.getElementById('receipt'); if(rc){rc.innerHTML=html; window.print(); setTimeout(function(){rc.innerHTML='';},800);}
+  }
   function finalizeSale(method){
     if(API.on){finalizeSaleApi(method);return;}
     if(!st.cart.length)return;
@@ -1555,6 +1619,8 @@ table.tbl tr:hover td{background:#faf9f5;}
     if(a==='pay'){if(!st.cart.length){toast('Le ticket est vide');return;}payModal(el.getAttribute('data-m'));return;}
     if(a==='payok'){finalizeSale(el.getAttribute('data-m'));return;}
     if(a==='printticket'){printReceipt();return;}
+    if(a==='facture'){openFacture(el.getAttribute('data-num'));return;}
+    if(a==='savecompany'){saveCompany();return;}
     if(a==='tgl'){var pt=pById(el.getAttribute('data-id'));var k=el.getAttribute('data-k');pt[k]=!pt[k];render();toast('Mise à jour synchronisée (caisse · borne)');return;}
     if(a==='delprod'){var dpp=pById(el.getAttribute('data-id'));if(!dpp)return;if(API.on&&dpp.custom){apiDelete('/api/products/'+encodeURIComponent(dpp.id)).then(function(){reloadProducts();toast('Produit supprimé');}).catch(function(e){toast('Échec : '+(e.message||e));});return;}products=products.filter(function(p){return p.id!==dpp.id;});render();toast('Produit retiré');return;}
     if(a==='openprod'){st.pform=blankPForm();openModal(productModal());return;}
