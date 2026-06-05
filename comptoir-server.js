@@ -1419,7 +1419,8 @@ const server = http.createServer(async (req, res) => {
         const retail = p.unit === 'g' ? ((p.tiers && p.tiers[0]) ? p.tiers[0][1] : 0) : (p.price || 0);
         return { id: p.id, name: p.name, cat: p.cat, img: p.img || '', unit: p.unit, pro: pi ? pi.price : null, proUnit: pi ? pi.unit : 'u', step: pi ? pi.step : 1, retail: retail };
       });
-      return send(res, 200, { rate: proRate, products: list, lastSync: lastWooSync, autoSync: true });
+      const wooOrdersUrl = (process.env.COMPTOIR_WP_URL || 'https://kingston-cbd.fr').replace(/\/$/, '') + '/wp-admin/edit.php?post_type=shop_order';
+      return send(res, 200, { rate: proRate, products: list, lastSync: lastWooSync, autoSync: true, wooOrdersUrl: wooOrdersUrl, wooLive: !!(process.env.COMPTOIR_WP_URL && process.env.COMPTOIR_API_KEY) });
     }
     if (req.method === 'POST' && path === '/api/pro/orders') {
       if (user.role !== 'admin' && user.role !== 'manager') return send(res, 403, { error: 'Réservé au personnel' });
@@ -1438,6 +1439,14 @@ const server = http.createServer(async (req, res) => {
       total = Math.round(total * 100) / 100;
       const o = { id: supplySeq, numero: 'PRO-' + String(supplySeq).padStart(4, '0'), boutiqueId: bId, items: items, total: total, status: 'envoyee', ts: Date.now(), by: user.name || null };
       supplySeq++; supplyOrders.push(o); persist();
+      // Reflet WooCommerce : creer une vraie commande (statut on-hold) que l'admin gere dans Woo. NON bloquant :
+      // si Woo est injoignable, la commande de reassort reste valide dans Comptoir.
+      try {
+        if (loyalty && typeof loyalty.createSupplyOrder === 'function') {
+          const wr = await loyalty.createSupplyOrder({ items: o.items, boutique: (boutiques[bId] && (boutiques[bId].label || bId)) || bId, numero: o.numero, by: o.by });
+          if (wr && wr.order_id) { o.wooOrderId = wr.order_id; o.wooUrl = wr.admin_url || null; persist(); }
+        }
+      } catch (e) { o.wooError = String((e && e.message) || e); }
       return send(res, 201, { ok: true, order: o });
     }
     if (req.method === 'GET' && path === '/api/pro/orders') {

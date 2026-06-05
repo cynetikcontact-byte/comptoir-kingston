@@ -67,6 +67,11 @@ class ComptoirLoyalty {
   async adjust(userRef, amount, reason, ref) {
     return this._call('/adjust', { method: 'POST', body: { user: userRef, amount, reason, ref, type: this.pointType } });
   }
+
+  /** Reassort B2B : cree une vraie commande WooCommerce (statut on-hold) a partir d'une commande de franchise. */
+  async createSupplyOrder({ items, boutique, numero, by } = {}) {
+    return this._call('/supply-order', { method: 'POST', body: { items: items, boutique: boutique, numero: numero, by: by } });
+  }
 }
 
 module.exports = { ComptoirLoyalty };
