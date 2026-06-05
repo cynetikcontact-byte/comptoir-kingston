@@ -336,6 +336,52 @@ function pontDeviceForBoutique(id) { let best = null; for (const k of Object.key
 function pontOnline(id) { const d = pontDeviceForBoutique(id); return !!d && (Date.now() - (d.lastSeen || 0)) < 12000; }
 function pontPaired(id) { return !!pontDeviceForBoutique(id); }
 function genShortCode() { const a = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; let s = ''; const r = crypto.randomBytes(6); for (let i = 0; i < 6; i++) s += a[r[i] % a.length]; return s; }
+// Jeton d'installation STABLE par boutique : permet au pont de s'appairer TOUT SEUL (libre-service) sans code saisi par l'admin.
+function pontTokenFor(id) { const b = boutiques[id]; if (!b) return null; if (!b.pontToken) { b.pontToken = crypto.randomBytes(18).toString('hex'); persist(); } return b.pontToken; }
+function boutiqueByPontToken(tok) { tok = String(tok || '').trim(); if (!tok) return null; for (const id of boutiqueIds()) { if (boutiques[id] && boutiques[id].pontToken === tok) return id; } return null; }
+// Installateur macOS PRE-REMPLI (jeton + serveur injectes) : la boutique double-clique, le pont s'installe, se lance au demarrage, detecte le terminal et s'appaire seul.
+function pontInstallerScript(base, token) {
+  return [
+    '#!/bin/bash',
+    '# KINGSTON - Installateur AUTOMATIQUE du pont de paiement (macOS).',
+    '# Pre-configure pour ta boutique : il s\'appaire TOUT SEUL. Rien a saisir.',
+    '# -> Double-clique ce fichier. (Si bloque : clic droit > Ouvrir.)',
+    'DEST="$HOME/KINGSTON-Pont"',
+    'PLIST="$HOME/Library/LaunchAgents/fr.kingtools.pont.plist"',
+    'SERVER="' + base + '"',
+    'TOKEN="' + token + '"',
+    'echo "== KINGSTON - Installation automatique du pont de paiement =="',
+    'NODE="$(command -v node || true)"',
+    'if [ -z "$NODE" ]; then echo "Node.js manquant. Installe-le depuis https://nodejs.org (bouton LTS) puis relance ce fichier."; read -p "Entree pour fermer."; exit 1; fi',
+    'mkdir -p "$DEST"',
+    'echo "Telechargement du pont..."',
+    'curl -fsSL "$SERVER/pont-paiement.js" -o "$DEST/pont-paiement.js" || { echo "Telechargement impossible (verifie internet)."; read -p "Entree pour fermer."; exit 1; }',
+    'mkdir -p "$HOME/Library/LaunchAgents"',
+    'cat > "$PLIST" <<PL',
+    '<?xml version="1.0" encoding="UTF-8"?>',
+    '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">',
+    '<plist version="1.0"><dict>',
+    '  <key>Label</key><string>fr.kingtools.pont</string>',
+    '  <key>ProgramArguments</key><array><string>$NODE</string><string>$DEST/pont-paiement.js</string></array>',
+    '  <key>WorkingDirectory</key><string>$DEST</string>',
+    '  <key>EnvironmentVariables</key><dict><key>KT_SERVER</key><string>$SERVER</string><key>KT_SETUP_TOKEN</key><string>$TOKEN</string></dict>',
+    '  <key>RunAtLoad</key><true/>',
+    '  <key>KeepAlive</key><true/>',
+    '  <key>StandardOutPath</key><string>$DEST/pont.log</string>',
+    '  <key>StandardErrorPath</key><string>$DEST/pont.log</string>',
+    '</dict></plist>',
+    'PL',
+    'launchctl unload "$PLIST" 2>/dev/null || true',
+    'launchctl load -w "$PLIST" 2>/dev/null || true',
+    'echo ""; echo "== TERMINE =="',
+    'echo "Le pont est installe, lance, et redemarre tout seul a chaque allumage."',
+    'echo "Il detecte le terminal sur le reseau et s\'appaire tout seul a ta boutique."',
+    'echo "Rien d\'autre a faire. (Etat: http://localhost:3002)"',
+    'sleep 2; open "http://localhost:3002" 2>/dev/null || true',
+    'read -p "Appuie sur Entree pour fermer."',
+    ''
+  ].join('\n');
+}
 function proUnitInfo(p) {
   // Prix de gros fixé MANUELLEMENT par l'admin (p.proPrice). Tant qu'il n'est pas defini -> price=null
   // (le franchise commande quand meme ses quantites ; le prix sera ajoute plus tard).
@@ -899,6 +945,23 @@ const server = http.createServer(async (req, res) => {
     return send(res, 200, { token: token, name: a.name, role: a.role, boutiqueId: a.boutiqueId });
   }
 
+  // ---- Installateur AUTO du pont (libre-service) : source du pont + installateur pre-rempli par jeton ----
+  if (req.method === 'GET' && path === '/pont-paiement.js') {
+    try {
+      const src = fs.readFileSync(pathmod.join(__dirname, 'pont-paiement.js'), 'utf8');
+      res.writeHead(200, Object.assign({ 'content-type': 'application/javascript; charset=utf-8', 'cache-control': 'no-store' }, res._cors || COMMON_CORS));
+      return res.end(src);
+    } catch (e) { return send(res, 404, { error: 'pont indisponible' }); }
+  }
+  if (req.method === 'GET' && path === '/pont/installer') {
+    const tok = String(u.searchParams.get('token') || '').trim();
+    if (!boutiqueByPontToken(tok)) return send(res, 404, { error: 'Jeton inconnu' });
+    const base = 'https://' + (req.headers.host || 'kingtools.fr');
+    const sh = pontInstallerScript(base, tok);
+    res.writeHead(200, Object.assign({ 'content-type': 'text/x-shellscript; charset=utf-8', 'content-disposition': 'attachment; filename="Installer-Pont-KINGSTON.command"' }, res._cors || COMMON_CORS));
+    return res.end(sh);
+  }
+
   // ---- Pont de paiement : appairage initie par le pont (routes publiques) ----
   // Le pont s'annonce avec son deviceId ; le serveur lui donne un code court a saisir dans Kingtools.
   if (req.method === 'POST' && path === '/api/pont/hello') {
@@ -908,6 +971,17 @@ const server = http.createServer(async (req, res) => {
     let dev = pontDevices[id];
     if (!dev) { dev = pontDevices[id] = { code: genShortCode(), boutiqueId: null, ip: '', tcpPort: 8888, lastSeen: Date.now() }; persist(); }
     dev.lastSeen = Date.now();
+    // AUTO-APPAIRAGE LIBRE-SERVICE : si le pont porte un jeton de boutique valide, il s'appaire TOUT SEUL (zero action admin).
+    const tokBoutique = boutiqueByPontToken(b && b.setupToken);
+    if (tokBoutique && dev.boutiqueId !== tokBoutique) {
+      dev.boutiqueId = tokBoutique;
+      for (const k of Object.keys(pontDevices)) { if (pontDevices[k] !== dev && pontDevices[k].boutiqueId === tokBoutique) delete pontDevices[k]; } // un seul pont par boutique
+    }
+    if (dev.boutiqueId) { // le pont remonte l'IP du terminal qu'il a detecte tout seul -> on la memorise (auto-cicatrisant)
+      if (typeof (b && b.terminalIp) === 'string' && b.terminalIp.trim()) dev.ip = b.terminalIp.trim();
+      if (b && b.terminalPort) dev.tcpPort = parseInt(b.terminalPort, 10) || dev.tcpPort;
+    }
+    persist();
     return send(res, 200, { claimed: !!dev.boutiqueId, code: dev.code, boutique: dev.boutiqueId || null, terminalIp: dev.ip || '', terminalPort: dev.tcpPort || 8888 });
   }
   if (req.method === 'GET' && path === '/api/pont/poll') {
@@ -1002,6 +1076,22 @@ const server = http.createServer(async (req, res) => {
       const stt = {};
       ids.forEach((id) => { stt[id] = { online: pontOnline(id), paired: pontPaired(id) }; });
       return send(res, 200, { terminals: stt });
+    }
+    // Jeton + lien d'installateur PRE-REMPLI pour une boutique (installation libre-service du pont).
+    if (req.method === 'GET' && path === '/api/pont/setup-token') {
+      if (user.role !== 'admin') return send(res, 403, { error: 'Reserve a l administrateur reseau' });
+      const bId = u.searchParams.get('boutique') || '';
+      if (!boutiques[bId]) return send(res, 404, { error: 'Boutique inconnue' });
+      const token = pontTokenFor(bId);
+      const base = 'https://' + (req.headers.host || 'kingtools.fr');
+      return send(res, 200, { boutique: bId, token: token, installerUrl: base + '/pont/installer?token=' + encodeURIComponent(token), online: pontOnline(bId), paired: pontPaired(bId) });
+    }
+    if (req.method === 'POST' && path === '/api/pont/setup-token/rotate') {
+      if (user.role !== 'admin') return send(res, 403, { error: 'Reserve a l administrateur reseau' });
+      const b = await readJson(req);
+      if (!boutiques[b.boutiqueId]) return send(res, 404, { error: 'Boutique inconnue' });
+      boutiques[b.boutiqueId].pontToken = crypto.randomBytes(18).toString('hex'); persist();
+      return send(res, 200, { ok: true, token: boutiques[b.boutiqueId].pontToken });
     }
     if (req.method === 'GET' && path === '/api/products') {
       if (PG) return send(res, 200, await PG.getProducts(user, u.searchParams.get('boutique')));

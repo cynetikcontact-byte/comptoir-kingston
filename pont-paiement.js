@@ -17,6 +17,7 @@ const http = require('http');
 const https = require('https');
 const net = require('net');
 const fs = require('fs');
+const os = require('os');
 const pathmod = require('path');
 
 const PORT = parseInt(process.env.PONT_PORT || '3002', 10);
@@ -35,11 +36,16 @@ let cfg = {
   // Mode cloud : le pont s'appaire a kingtools.fr et recoit les ordres de paiement (caisse iPad / multi-appareils).
   server: process.env.KT_SERVER || 'https://kingtools.fr',   // serveur Kingtools
   deviceId: '',                              // identifiant unique de ce pont (genere au 1er lancement)
+  setupToken: process.env.KT_SETUP_TOKEN || '',   // jeton de boutique : le pont s'appaire TOUT SEUL (libre-service)
+  autoDiscover: process.env.TPE_AUTODISCOVER !== '0', // detecte l'IP du terminal sur le reseau automatiquement
 };
 function loadCfg() { try { if (fs.existsSync(CONFIG_FILE)) cfg = Object.assign(cfg, JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'))); } catch (e) { console.error('Pont : lecture config impossible :', e.message); } }
 function saveCfg() { try { fs.writeFileSync(CONFIG_FILE, JSON.stringify(cfg, null, 2)); } catch (e) { console.error('Pont : ecriture config impossible :', e.message); } }
 loadCfg();
 if (!cfg.deviceId) { cfg.deviceId = require('crypto').randomBytes(16).toString('hex'); saveCfg(); }
+// L'installateur (LaunchAgent) impose le jeton + serveur via variables d'env : elles gagnent toujours.
+if (process.env.KT_SETUP_TOKEN) cfg.setupToken = process.env.KT_SETUP_TOKEN;
+if (process.env.KT_SERVER) cfg.server = process.env.KT_SERVER;
 var PAIR = { claimed: false, code: '', boutique: null };   // etat d'appairage, affiche sur la page d'etat (/)
 
 // CORS restreint : on n'autorise que les origines locales (la borne/caisse servies en localhost).
@@ -234,7 +240,9 @@ server.listen(PORT, '127.0.0.1', () => {
 function statusPage() {
   var body = PAIR.claimed
     ? '<div class="ok">Pont connecte</div><p>Boutique : <b>' + (PAIR.boutique || '?') + '</b><br>Terminal : ' + (cfg.ip || '?') + ':' + cfg.tcpPort + '</p><p>Tout est pret. Les encaissements faits sur kingtools.fr declenchent ce terminal.</p>'
-    : '<div class="wait">En attente de connexion</div><p>Sur <b>kingtools.fr</b> : Reglages &gt; Paiement par carte &gt; Connecter un pont, puis saisis ce code :</p><div class="code">' + (PAIR.code || '...') + '</div>';
+    : (cfg.setupToken
+        ? '<div class="wait">Appairage automatique en cours…</div><p>Ce pont s\'appaire <b>tout seul</b> a ta boutique et detecte le terminal sur le reseau. Patiente quelques secondes — rien a saisir.</p>' + (cfg.ip ? '<p>Terminal detecte : <b>' + cfg.ip + ':' + cfg.tcpPort + '</b></p>' : '<p>Recherche du terminal sur le reseau…</p>')
+        : '<div class="wait">En attente de connexion</div><p>Sur <b>kingtools.fr</b> : Reglages &gt; Paiement par carte &gt; Connecter un pont, puis saisis ce code :</p><div class="code">' + (PAIR.code || '...') + '</div>');
   return '<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta http-equiv="refresh" content="5"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Pont KINGSTON</title>'
     + '<style>body{font-family:-apple-system,system-ui,sans-serif;background:#16130d;color:#f4efe3;display:flex;min-height:100vh;align-items:center;justify-content:center;margin:0}'
     + '.card{max-width:480px;text-align:center;padding:30px}.wm{letter-spacing:.2em;font-weight:800;font-size:24px}.sub{color:#9a9180;font-size:12px;letter-spacing:.12em;margin-bottom:6px}'
@@ -269,6 +277,42 @@ function httpJson(method, urlStr, headers, bodyObj) {
     rq.end();
   });
 }
+/* ----- Auto-detection du terminal sur le reseau local (zero IP a saisir) ----- */
+function localSubnets() {
+  const out = []; const ifs = os.networkInterfaces();
+  for (const name of Object.keys(ifs)) for (const a of (ifs[name] || [])) {
+    if (a.family === 'IPv4' && !a.internal) { const p = a.address.split('.'); if (p.length === 4) out.push({ base: p[0] + '.' + p[1] + '.' + p[2] + '.', self: a.address }); }
+  }
+  return out;
+}
+function probeHost(ip, port, timeoutMs) {
+  return new Promise(function (resolve) {
+    let done = false; const sock = net.createConnection({ host: ip, port: port });
+    const fin = function (ok) { if (done) return; done = true; clearTimeout(to); try { sock.destroy(); } catch (e) {} resolve(ok); };
+    const to = setTimeout(function () { fin(false); }, timeoutMs);
+    sock.on('connect', function () { fin(true); });
+    sock.on('error', function () { fin(false); });
+  });
+}
+let discovering = false;
+async function discoverTerminal() {
+  if (cfg.ip || cfg.mode === 'serial' || !cfg.autoDiscover || discovering) return cfg.ip || '';
+  discovering = true;
+  const port = cfg.tcpPort || 8888;
+  try {
+    for (const n of localSubnets()) {
+      for (let start = 1; start <= 254; start += 32) {
+        const batch = [];
+        for (let i = start; i < start + 32 && i <= 254; i++) { const ip = n.base + i; if (ip === n.self) continue; batch.push(probeHost(ip, port, 350).then(function (ok) { return ok ? ip : null; })); }
+        const found = (await Promise.all(batch)).find(function (x) { return x; });
+        if (found) { cfg.ip = found; cfg.mode = 'ip'; saveCfg(); console.log('Terminal detecte automatiquement sur le reseau : ' + found + ':' + port); return found; }
+      }
+    }
+    console.log('Aucun terminal detecte sur le reseau (port ' + port + '). Branche-le en reseau, ou saisis l\'IP manuellement dans Reglages.');
+  } finally { discovering = false; }
+  return '';
+}
+
 function cloudLoop() {
   const base = String(cfg.server || '').replace(/\/$/, '');
   if (!base) return;
@@ -276,7 +320,7 @@ function cloudLoop() {
   let busy = false, warned = false, n = 0;
   async function hello() {
     try {
-      const r = await httpJson('POST', base + '/api/pont/hello', {}, { deviceId: cfg.deviceId });
+      const r = await httpJson('POST', base + '/api/pont/hello', {}, { deviceId: cfg.deviceId, setupToken: cfg.setupToken || '', terminalIp: cfg.ip || '', terminalPort: cfg.tcpPort || 8888 });
       const d = r.json || {};
       PAIR.claimed = !!d.claimed; PAIR.code = d.code || ''; PAIR.boutique = d.boutique || null;
       if (d.claimed) { if (d.terminalIp) cfg.ip = d.terminalIp; if (d.terminalPort) cfg.tcpPort = d.terminalPort; cfg.mode = 'ip'; }
@@ -303,9 +347,10 @@ function cloudLoop() {
       }
     } catch (e) {}
   }
+  if (!cfg.ip) discoverTerminal().catch(function () {});   // detecte le terminal des le demarrage (zero IP a saisir)
   hello();
   // hello frequent (~4.5s) meme une fois connecte : recupere vite l'IP/appairage et se
   // reconnecte tout seul en quelques secondes apres un redemarrage du serveur.
-  setInterval(function () { n++; if (!PAIR.claimed || n % 3 === 0) hello(); poll(); }, 1500);
+  setInterval(function () { n++; if (!PAIR.claimed || n % 3 === 0) hello(); poll(); if (!cfg.ip && n % 40 === 0) discoverTerminal().catch(function () {}); }, 1500);
 }
 cloudLoop();
