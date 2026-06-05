@@ -208,6 +208,52 @@ let proRate = Number(process.env.COMPTOIR_PRO_RATE || 0.5);   // 0.5 = -50% du p
 let supplyOrders = [];      // commandes de réassort (B2B)
 let supplySeq = 1;
 
+// ---- Réassort B2B branché sur le site GROSSISTE kingbase.fr : catalogue + prix de gros (tels quels) + commandes ----
+const PRO_WP_URL = (process.env.COMPTOIR_PRO_URL || 'https://kingbase.fr').replace(/\/$/, '');
+const PRO_WP_KEY = process.env.COMPTOIR_PRO_KEY || '';
+let proProducts = [];                 // catalogue de gros importe de kingbase.fr (SEPARE du catalogue retail)
+let lastProSync = 0, proSyncing = false;
+function findProProduct(id) { return proProducts.find((p) => p.id === id) || findProduct(id); }
+async function syncProCatalog() {
+  if (PG || !PRO_WP_URL) return { error: 'pas de site grossiste configure' };
+  if (proSyncing) return { busy: true };
+  if (typeof fetch === 'undefined') return { error: 'fetch indisponible (Node 18+ requis)' };
+  proSyncing = true;
+  try {
+    const apiBase = PRO_WP_URL + '/wp-json/wc/store/v1/products';
+    let list;
+    try { const r = await fetch(apiBase + '?per_page=100'); list = await r.json(); } catch (e) { return { error: 'kingbase injoignable : ' + e.message }; }
+    if (!Array.isArray(list)) return { error: 'Store API kingbase introuvable' };
+    const next = [];
+    for (const wp of list) {
+      const name = (wp.name || '').trim(); if (!name) continue;
+      try {
+        const mu = (wp.prices && wp.prices.currency_minor_unit) || 2; const div = Math.pow(10, mu);
+        const prod = { id: 'kb' + wp.id, wooId: wp.id, source: 'kingbase', custom: true, name: name,
+          cat: (wp.categories && wp.categories[0] && wp.categories[0].name) || 'Gros',
+          img: (wp.images && wp.images[0] && wp.images[0].src) || '' };
+        if (wp.type === 'variable' && Array.isArray(wp.variations) && wp.variations.length) {
+          // produit au gramme : prix de gros AU GRAMME, derive du plus gros conditionnement (meilleur tarif).
+          let best = null;
+          for (const v of wp.variations) {
+            let vp; try { vp = await (await fetch(apiBase + '/' + v.id)).json(); } catch (e) { continue; }
+            const grams = parseFloat(String((v.attributes || []).map((a) => a.value).join(' ')).replace(',', '.'));
+            const pr = Number(vp.prices && vp.prices.price) / div;
+            if (grams > 0 && isFinite(pr)) { const perG = pr / grams; if (!best || grams > best.grams) best = { grams: grams, perG: perG }; }
+          }
+          if (!best) continue;
+          prod.unit = 'g'; prod.proPrice = Math.round(best.perG * 100) / 100;
+        } else {
+          prod.unit = 'u'; prod.proPrice = Math.round((Number(wp.prices && wp.prices.price) / div) * 100) / 100;
+        }
+        ensureStock(prod); next.push(prod);
+      } catch (e) {}
+    }
+    if (next.length) { proProducts = next; lastProSync = Date.now(); persist(); console.log('Synchro kingbase (gros) : ' + next.length + ' produits.'); }
+    return { count: next.length, at: lastProSync };
+  } finally { proSyncing = false; }
+}
+
 // ---- Synchro catalogue WooCommerce (réassort « en direct ») : ajoute les nouveaux produits ET met à
 // jour les prix des produits déjà liés au site. Ne touche PAS au nom, à la catégorie, ni au prix de
 // gros (proPrice) fixé manuellement par l'admin. Tourne au démarrage puis toutes les heures. ----
@@ -355,7 +401,7 @@ function persist() {
       // Écriture ATOMIQUE : fichier temporaire puis renommage -> jamais de fichier tronqué en cas de coupure.
       // NB : fiscalKey n'est PLUS écrite ici (stockée à part, fichier protégé).
       const tmp = DATA_FILE + '.tmp';
-      fs.writeFileSync(tmp, JSON.stringify({ v: 1, savedAt: new Date().toISOString(), pointsPerEuro: POINTS_PER_EURO, hideBaseCatalog, customProducts, stock, boutiques, invoiceSeq, lastHash, invoices, orderSeq, orders, fiscalEvents, fiscalSeq, lastFiscalSig, clotureSeq, gtPerpetuel, gtPerpetuelAvoirs, seqByB, gtByB, gtAvoirsByB, clotureSeqByB, supplyOrders, supplySeq, proRate, pontDevices, sessions }), 'utf8');
+      fs.writeFileSync(tmp, JSON.stringify({ v: 1, savedAt: new Date().toISOString(), pointsPerEuro: POINTS_PER_EURO, hideBaseCatalog, customProducts, stock, boutiques, invoiceSeq, lastHash, invoices, orderSeq, orders, fiscalEvents, fiscalSeq, lastFiscalSig, clotureSeq, gtPerpetuel, gtPerpetuelAvoirs, seqByB, gtByB, gtAvoirsByB, clotureSeqByB, supplyOrders, supplySeq, proRate, pontDevices, sessions, proProducts, lastProSync }), 'utf8');
       fs.renameSync(tmp, DATA_FILE);
     } catch (e) { console.error('Persistance impossible :', e.message); }
   }, 200);
@@ -392,6 +438,8 @@ function loadPersisted() {
     if (Array.isArray(d.supplyOrders)) supplyOrders = d.supplyOrders;
     if (d.pontDevices && typeof d.pontDevices === 'object') Object.assign(pontDevices, d.pontDevices);
     if (d.sessions && typeof d.sessions === 'object') { const _now = Date.now(); for (const t in d.sessions) { const s = d.sessions[t]; if (s && s.exp > _now) sessions[t] = s; } } // garde les connexions actives apres un redemarrage
+    if (Array.isArray(d.proProducts)) { proProducts = d.proProducts; proProducts.forEach(ensureStock); }
+    if (typeof d.lastProSync === 'number') lastProSync = d.lastProSync;
     if (typeof d.supplySeq === 'number') supplySeq = d.supplySeq;
     if (typeof d.proRate === 'number') proRate = d.proRate;
     if (!d.seqByB || !d.gtByB) {                              // migration : numerotation continue + totaux par boutique
@@ -448,6 +496,14 @@ if (process.env.COMPTOIR_WP_URL && process.env.COMPTOIR_API_KEY) {
 } else {
   loyalty = makeDemoLoyalty();
   LOYALTY_MODE = 'demo (faux myCred local)';
+}
+
+// Connecteur GROSSISTE (kingbase.fr) : cree les commandes de reassort dans WooCommerce de kingbase.fr.
+// Necessite COMPTOIR_PRO_KEY (cle du plugin connecteur installe sur kingbase.fr). Le catalogue, lui,
+// se synchronise sans cle (Store API publique).
+let proConnector = null;
+if (PRO_WP_URL && PRO_WP_KEY && typeof fetch !== 'undefined') {
+  try { proConnector = new ComptoirLoyalty({ baseUrl: PRO_WP_URL, apiKey: PRO_WP_KEY, fetchImpl: fetch }); } catch (e) { proConnector = null; }
 }
 
 /* ----------------------------- Helpers fiscaux ---------------------------- */
@@ -1414,13 +1470,21 @@ const server = http.createServer(async (req, res) => {
 
     // ---------------- RÉASSORT PRO (B2B) : les franchisés commandent leur stock au réseau ----------------
     if (req.method === 'GET' && path === '/api/pro/catalog') {
-      const list = allCatalog().map((p) => {
+      const usePro = proProducts.length > 0;          // kingbase.fr branche -> le catalogue de gros = kingbase
+      const src = usePro ? proProducts : allCatalog();
+      const list = src.map((p) => {
         const pi = proUnitInfo(p);
         const retail = p.unit === 'g' ? ((p.tiers && p.tiers[0]) ? p.tiers[0][1] : 0) : (p.price || 0);
-        return { id: p.id, name: p.name, cat: p.cat, img: p.img || '', unit: p.unit, pro: pi ? pi.price : null, proUnit: pi ? pi.unit : 'u', step: pi ? pi.step : 1, retail: retail };
+        return { id: p.id, name: p.name, cat: p.cat, img: p.img || '', unit: p.unit, pro: pi ? pi.price : null, proUnit: pi ? pi.unit : 'u', step: pi ? pi.step : 1, retail: usePro ? null : retail };
       });
-      const wooOrdersUrl = (process.env.COMPTOIR_WP_URL || 'https://kingston-cbd.fr').replace(/\/$/, '') + '/wp-admin/edit.php?post_type=shop_order';
-      return send(res, 200, { rate: proRate, products: list, lastSync: lastWooSync, autoSync: true, wooOrdersUrl: wooOrdersUrl, wooLive: !!(process.env.COMPTOIR_WP_URL && process.env.COMPTOIR_API_KEY) });
+      const wooOrdersUrl = PRO_WP_URL + '/wp-admin/edit.php?post_type=shop_order';
+      return send(res, 200, { rate: usePro ? 1 : proRate, products: list, source: usePro ? 'kingbase' : 'retail', lastSync: usePro ? lastProSync : lastWooSync, autoSync: true, wooOrdersUrl: wooOrdersUrl, wooLive: !!proConnector });
+    }
+    if (req.method === 'POST' && path === '/api/pro/sync') {
+      if (user.role !== 'admin') return send(res, 403, { error: 'Reserve a l administrateur' });
+      const r = await syncProCatalog();
+      if (r && r.error) return send(res, 502, r);
+      return send(res, 200, Object.assign({ ok: true, lastSync: lastProSync }, r));
     }
     if (req.method === 'POST' && path === '/api/pro/orders') {
       if (user.role !== 'admin' && user.role !== 'manager') return send(res, 403, { error: 'Réservé au personnel' });
@@ -1428,7 +1492,7 @@ const server = http.createServer(async (req, res) => {
       const bId = user.role === 'admin' ? (b.boutiqueId || 'aix') : user.boutiqueId;
       const items = []; let total = 0;
       for (const it of (Array.isArray(b.items) ? b.items : [])) {
-        const p = findProduct(it.productId); if (!p) continue;
+        const p = findProProduct(it.productId); if (!p) continue;
         const pi = proUnitInfo(p); if (!pi) continue;
         const qty = Math.max(0, Math.floor(Number(it.qty) || 0)); if (qty <= 0) continue;
         const up = (pi.price != null ? pi.price : 0);
@@ -1439,11 +1503,12 @@ const server = http.createServer(async (req, res) => {
       total = Math.round(total * 100) / 100;
       const o = { id: supplySeq, numero: 'PRO-' + String(supplySeq).padStart(4, '0'), boutiqueId: bId, items: items, total: total, status: 'envoyee', ts: Date.now(), by: user.name || null };
       supplySeq++; supplyOrders.push(o); persist();
-      // Reflet WooCommerce : creer une vraie commande (statut on-hold) que l'admin gere dans Woo. NON bloquant :
-      // si Woo est injoignable, la commande de reassort reste valide dans Comptoir.
+      // Reflet WooCommerce sur kingbase.fr (site grossiste) : creer une vraie commande (statut on-hold) que
+      // l'admin gere dans Woo. NON bloquant : si kingbase est injoignable / cle absente, la commande de
+      // reassort reste valide dans Comptoir.
       try {
-        if (loyalty && typeof loyalty.createSupplyOrder === 'function') {
-          const wr = await loyalty.createSupplyOrder({ items: o.items, boutique: (boutiques[bId] && (boutiques[bId].label || bId)) || bId, numero: o.numero, by: o.by });
+        if (proConnector && typeof proConnector.createSupplyOrder === 'function') {
+          const wr = await proConnector.createSupplyOrder({ items: o.items, boutique: (boutiques[bId] && (boutiques[bId].label || bId)) || bId, numero: o.numero, by: o.by });
           if (wr && wr.order_id) { o.wooOrderId = wr.order_id; o.wooUrl = wr.admin_url || null; persist(); }
         }
       } catch (e) { o.wooError = String((e && e.message) || e); }
@@ -1645,4 +1710,10 @@ server.listen(PORT, () => {
 if (!PG && process.env.COMPTOIR_WOO_SYNC !== '0') {
   setTimeout(function () { syncWooCatalog({}).then(function (r) { if (r && !r.error) console.log('Synchro Woo au demarrage : ' + (r.created || 0) + ' crees, ' + (r.updated || 0) + ' maj.'); }).catch(function () {}); }, 15000);
   setInterval(function () { syncWooCatalog({}).catch(function () {}); }, 60 * 60 * 1000);
+}
+
+// Synchro catalogue GROSSISTE kingbase.fr (reassort B2B) : au demarrage (differee) puis toutes les heures.
+if (!PG && PRO_WP_URL && process.env.COMPTOIR_PRO_SYNC !== '0') {
+  setTimeout(function () { syncProCatalog().then(function (r) { if (r && !r.error) console.log('Synchro kingbase au demarrage : ' + (r.count || 0) + ' produits de gros.'); }).catch(function () {}); }, 20000);
+  setInterval(function () { syncProCatalog().catch(function () {}); }, 60 * 60 * 1000);
 }
