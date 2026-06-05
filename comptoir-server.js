@@ -352,10 +352,10 @@ function pontInstallerScript(base, token) {
     'TOKEN="' + token + '"',
     'echo "== KINGSTON - Installation automatique du pont de paiement =="',
     'NODE="$(command -v node || true)"',
-    'if [ -z "$NODE" ]; then echo "Node.js manquant. Installe-le depuis https://nodejs.org (bouton LTS) puis relance ce fichier."; read -p "Entree pour fermer."; exit 1; fi',
+    'if [ -z "$NODE" ]; then echo "Node.js manquant. Installe-le depuis https://nodejs.org (bouton LTS) puis relance ce fichier."; read -p "Entree pour fermer." </dev/tty 2>/dev/null || true; exit 1; fi',
     'mkdir -p "$DEST"',
     'echo "Telechargement du pont..."',
-    'curl -fsSL "$SERVER/pont-paiement.js" -o "$DEST/pont-paiement.js" || { echo "Telechargement impossible (verifie internet)."; read -p "Entree pour fermer."; exit 1; }',
+    'curl -fsSL "$SERVER/pont-paiement.js" -o "$DEST/pont-paiement.js" || { echo "Telechargement impossible (verifie internet)."; read -p "Entree pour fermer." </dev/tty 2>/dev/null || true; exit 1; }',
     'mkdir -p "$HOME/Library/LaunchAgents"',
     'cat > "$PLIST" <<PL',
     '<?xml version="1.0" encoding="UTF-8"?>',
@@ -378,7 +378,7 @@ function pontInstallerScript(base, token) {
     'echo "Il detecte le terminal sur le reseau et s\'appaire tout seul a ta boutique."',
     'echo "Rien d\'autre a faire. (Etat: http://localhost:3002)"',
     'sleep 2; open "http://localhost:3002" 2>/dev/null || true',
-    'read -p "Appuie sur Entree pour fermer."',
+    'read -p "Appuie sur Entree pour fermer." </dev/tty 2>/dev/null || true',
     ''
   ].join('\n');
 }

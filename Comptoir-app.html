@@ -1664,11 +1664,17 @@ table.tbl tr:hover td{background:#faf9f5;}
       if(ires)ires.innerHTML='<span class="muted" style="font-size:12px">Génération…</span>';
       apiGet('/api/pont/setup-token?boutique='+encodeURIComponent(ib)).then(function(d){
         var url=(d&&d.installerUrl)||'';
-        if(ires)ires.innerHTML='<div style="background:var(--gold-soft);border:1px solid #e7d3a0;border-radius:10px;padding:12px"><div style="font-weight:700;font-size:13px;margin-bottom:6px">Installateur de '+esc(BQNAME[ib]||ib)+' prêt 🎉</div><div class="muted" style="font-size:12px;margin-bottom:8px">Envoie ce lien à la boutique. Elle l\'ouvre, double-clique le fichier téléchargé, et c\'est fini — le pont s\'appaire et trouve le terminal tout seul.</div><div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><a class="btn btn-gold" href="'+esc(url)+'" target="_blank" rel="noopener" style="text-decoration:none">⬇️ Télécharger l\'installateur</a><button class="btn" data-act="copy-installer" data-url="'+esc(url)+'">Copier le lien</button></div><input id="pont-installer-url" value="'+esc(url)+'" readonly onclick="this.select()" style="margin-top:8px;width:100%;box-sizing:border-box;font-size:11.5px;padding:7px;border:1px solid var(--line);border-radius:7px;background:#fff"/></div>';
+        var cmd='curl -fsSL "'+url+'" | bash';
+        if(ires)ires.innerHTML='<div style="background:var(--gold-soft);border:1px solid #e7d3a0;border-radius:10px;padding:12px">'+
+          '<div style="font-weight:700;font-size:13px;margin-bottom:6px">Installateur de '+esc(BQNAME[ib]||ib)+' prêt 🎉</div>'+
+          '<div class="muted" style="font-size:12px;margin-bottom:6px"><b>Le plus simple</b> : sur le Mac de la boutique, ouvre <b>Terminal</b> (Applications → Utilitaires → Terminal), colle cette commande et fais Entrée. Le pont s\'installe et s\'appaire tout seul.</div>'+
+          '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><input id="pont-installer-cmd" value="'+esc(cmd)+'" readonly onclick="this.select()" style="flex:1;min-width:240px;box-sizing:border-box;font-family:ui-monospace,monospace;font-size:11.5px;padding:8px;border:1px solid var(--line);border-radius:7px;background:#fff"/><button class="btn btn-gold" data-act="copy-installer" data-url="'+esc(cmd)+'" data-target="pont-installer-cmd">Copier la commande</button></div>'+
+          '<div class="muted" style="font-size:11px;margin-top:10px;border-top:1px solid #e7d3a0;padding-top:8px">Autre méthode : <a href="'+esc(url)+'" target="_blank" rel="noopener">télécharger l\'installateur</a> puis <b>clic droit → Ouvrir</b> (un fichier téléchargé est bloqué au double-clic par macOS).</div>'+
+        '</div>';
       }).catch(function(e){if(ires)ires.innerHTML='<span class="tag tag-low">Échec : '+esc(e.message||e)+'</span>';});
       return;
     }
-    if(a==='copy-installer'){ var cu=el.getAttribute('data-url')||''; if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(cu).then(function(){toast('Lien copié');},function(){toast('Copie impossible');});}else{var cinp=document.getElementById('pont-installer-url');if(cinp){cinp.select();try{document.execCommand('copy');toast('Lien copié');}catch(e){toast('Copie impossible');}}} return; }
+    if(a==='copy-installer'){ var cu=el.getAttribute('data-url')||''; var tid=el.getAttribute('data-target')||'pont-installer-cmd'; if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(cu).then(function(){toast('Copié ✓');},function(){toast('Copie impossible');});}else{var cinp=document.getElementById(tid);if(cinp){cinp.select();try{document.execCommand('copy');toast('Copié ✓');}catch(e){toast('Copie impossible');}}} return; }
     if(a==='addfranch'){
       if(!API.on){toast('Connecte-toi au serveur');return;}
       var gv=function(id){return ((document.getElementById(id)||{}).value||'').trim();};
