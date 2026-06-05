@@ -11,13 +11,15 @@
 /* ----- Réassort : sélecteur de quantité simple (franchisé) ----- */
 .pro-card{padding:12px;display:flex;flex-direction:column}
 .pro-card.inpanier{border-color:var(--gold);box-shadow:0 0 0 2px var(--gold-soft)}
-.pro-stepper{display:flex;align-items:stretch;gap:6px;margin-top:10px}
-.pro-stepper .step{width:46px;flex:0 0 46px;border:1px solid var(--line);border-radius:10px;background:#fff;font-size:24px;font-weight:800;line-height:1;cursor:pointer;color:#1a1410}
-.pro-stepper .step:active{background:var(--gold-soft)}
-.pro-qtywrap{flex:1;display:flex;align-items:center;justify-content:center;gap:4px;border:1px solid var(--line);border-radius:10px;height:46px;padding:0 6px;background:#fbfaf6}
-.pro-qty{width:100%;border:0;background:transparent;text-align:center;font-size:21px;font-weight:800;color:#1a1410;outline:none;-moz-appearance:textfield}
+.pro-stepper{display:flex;align-items:stretch;gap:8px;margin-top:12px}
+.pro-stepper .step{width:54px;flex:0 0 54px;height:54px;border:1px solid var(--gold);border-radius:12px;background:var(--gold-soft);font-size:28px;font-weight:800;line-height:1;cursor:pointer;color:#7a5e16}
+.pro-stepper .step:active{background:var(--gold);color:#fff}
+.pro-qtywrap{flex:1;display:flex;align-items:center;justify-content:center;gap:5px;border:1.5px solid var(--line);border-radius:12px;height:54px;padding:0 6px;background:#fff}
+.pro-qtywrap:focus-within{border-color:var(--gold);box-shadow:0 0 0 2px var(--gold-soft)}
+.pro-qty{width:100%;border:0;background:transparent;text-align:center;font-size:23px;font-weight:800;color:#1a1410;outline:none;-moz-appearance:textfield}
 .pro-qty::-webkit-outer-spin-button,.pro-qty::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
-.pro-qtywrap .u{font-size:13px;font-weight:700;color:#8a8170}
+.pro-qtywrap .u{font-size:14px;font-weight:700;color:#8a8170}
+.pro-hint{font-size:11px;color:#8a8170;text-align:center;margin-top:6px}
 .pro-presets{display:flex;gap:6px;margin-top:8px}
 .pro-presets .chip{flex:1;padding:9px 0;border:1px solid var(--line);border-radius:9px;background:#fff;font-weight:700;font-size:13px;cursor:pointer;color:#1a1410}
 .pro-presets .chip.on{border-color:var(--gold);background:var(--gold-soft);color:#7a5e16}
@@ -990,21 +992,21 @@ table.tbl tr:hover td{background:#faf9f5;}
   function proCartLineCount(){ var n=0; for(var k in (st.proCart||{})) if(st.proCart[k]>0) n++; return n; }
   function proSetQty(id,val){ val=Math.max(0,Math.floor(Number(val)||0)); st.proCart=st.proCart||{}; if(val>0)st.proCart[id]=val; else delete st.proCart[id]; }
   function proCard(p){
-    var q=proQty(p.id), isG=(p.proUnit==='g'), u=(isG?'g':'u'), step=(isG?50:5);
+    var q=proQty(p.id), isG=(p.proUnit==='g'), u=(isG?'g':'u'), step=(isG?50:1);
     var price = p.pro!=null ? eur2(p.pro)+' / '+u : '<span class="muted">prix à définir</span>';
     var ph = p.img?'<div style="height:96px;border-radius:10px;background:#eceae2 center/cover no-repeat;background-image:url('+esc(p.img)+')"></div>':'<div style="height:96px;border-radius:10px;background:#15110a;display:flex;align-items:center;justify-content:center;color:#cfc7b5;font-family:var(--serif);letter-spacing:.1em;font-size:14px">KINGSTON</div>';
-    var chips=proPresets(p).map(function(v){ var lbl=(isG&&v>=1000)?((v/1000)+' kg'):(v+' '+u); return '<button type="button" class="chip'+(q===v?' on':'')+'" data-act="pro-set" data-id="'+esc(p.id)+'" data-q="'+v+'">'+lbl+'</button>'; }).join('');
     var stepper='<div class="pro-stepper">'+
         '<button type="button" class="step" data-act="pro-step" data-id="'+esc(p.id)+'" data-d="-'+step+'" aria-label="Diminuer">−</button>'+
         '<div class="pro-qtywrap"><input class="pro-qty" type="number" inputmode="numeric" min="0" step="'+step+'" data-pid="'+esc(p.id)+'" value="'+(q||'')+'" placeholder="0" aria-label="Quantité"/><span class="u">'+u+'</span></div>'+
         '<button type="button" class="step" data-act="pro-step" data-id="'+esc(p.id)+'" data-d="'+step+'" aria-label="Augmenter">+</button>'+
       '</div>';
+    var hint=isG?'<div class="pro-hint">− / + par 50 g · ou tape la quantité</div>':'<div class="pro-hint">− / + ou tape la quantité</div>';
     var lineTot=(q>0&&p.pro!=null)?'<div class="pro-linetot">= '+eur2(p.pro*q)+'</div>':'';
     var remove=q>0?'<button type="button" class="pro-remove" data-act="pro-clear" data-id="'+esc(p.id)+'">retirer</button>':'';
     return '<div class="card pro-card'+(q>0?' inpanier':'')+'">'+ph+
       '<div style="font-weight:800;margin-top:8px;line-height:1.2">'+esc(p.name)+'</div>'+
       '<div class="muted" style="font-size:12px">'+esc(p.cat)+' · '+price+'</div>'+
-      stepper+'<div class="pro-presets">'+chips+'</div>'+lineTot+remove+'</div>';
+      stepper+hint+lineTot+remove+'</div>';
   }
   function proRefreshBar(){ var bar=document.getElementById('pro-bar'); if(!bar)return; var n=proCartLineCount(); bar.innerHTML=n?('<div style="margin-right:auto;font-size:13.5px"><b>'+n+' produit'+(n>1?'s':'')+'</b> au panier · <b>'+eur2(proCartTotal())+'</b></div><button class="btn btn-gold" data-act="pro-order">Voir le panier ›</button>'):'<span class="muted">Choisis des quantités ci-dessus pour commander.</span>'; }
   function renderProCat(){
@@ -1021,7 +1023,7 @@ table.tbl tr:hover td{background:#faf9f5;}
     var items=proCartItems();
     if(!items.length){ toast('Ton panier est vide'); return; }
     var rows=items.map(function(x){
-      var u=(x.p.proUnit==='g'?'g':'u'), step=(x.p.proUnit==='g'?50:5);
+      var u=(x.p.proUnit==='g'?'g':'u'), step=(x.p.proUnit==='g'?50:1);
       return '<tr>'+
         '<td><b>'+esc(x.p.name)+'</b><div class="muted" style="font-size:11px">'+esc(x.p.cat||'')+' · '+(x.p.pro!=null?eur2(x.p.pro)+'/'+u:'prix à définir')+'</div></td>'+
         '<td style="white-space:nowrap;text-align:center">'+
