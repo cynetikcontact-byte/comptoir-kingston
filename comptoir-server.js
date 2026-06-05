@@ -1433,6 +1433,38 @@ const server = http.createServer(async (req, res) => {
       return send(res, 200, { role: user.role, voitLesBoutiques: scope, dashboard });
     }
 
+    // ---------------- CHALLENGE / COMPÉTITION : classement des boutiques par CA (jour + mois) ----------------
+    // Leaderboard "Mario Kart" : VISIBLE PAR TOUS les comptes (admin + managers) pour la compétition réseau.
+    // Chaque boutique voit en direct où elle se situe vs les autres. #1 = plus gros CA.
+    if (req.method === 'GET' && path === '/api/challenge') {
+      const now = new Date();
+      const today = now.toISOString().slice(0, 10);
+      const month = now.toISOString().slice(0, 7);
+      const r2 = (n) => Math.round(n * 100) / 100;
+      function board(pred) {
+        const rows = boutiqueIds().map((id) => {
+          const b = boutiques[id];
+          const inv = invoices.filter((i) => i.boutiqueId === id && pred(i.date || ''));
+          const ca = inv.reduce((a, i) => a + i.total, 0);
+          const tickets = inv.filter((i) => i.total >= 0).length;
+          return { boutique: id, label: (b && b.label) || id, ca: r2(ca), tickets: tickets };
+        });
+        rows.sort((a, x) => (x.ca - a.ca) || (x.tickets - a.tickets) || a.label.localeCompare(x.label));
+        rows.forEach((row, i) => { row.rang = i + 1; });
+        return rows;
+      }
+      const jour = board((d) => d.slice(0, 10) === today);
+      const mois = board((d) => d.slice(0, 7) === month);
+      return send(res, 200, {
+        generatedAt: now.toISOString(),
+        jour: today,
+        moisLabel: month,
+        you: user.role === 'admin' ? null : user.boutiqueId,
+        classementJour: jour,
+        classementMois: mois,
+      });
+    }
+
     // Entrée de stock avec un NUMÉRO DE LOT choisi (produit entrant / arrivage). Admin ou manager (sa boutique).
     if (req.method === 'POST' && path === '/api/stock/lot') {
       if (user.role !== 'admin' && user.role !== 'manager') return send(res, 403, { error: 'Réservé au personnel' });

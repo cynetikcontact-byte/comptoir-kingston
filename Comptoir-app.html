@@ -248,6 +248,34 @@ table.tbl tr:hover td{background:#faf9f5;}
 .login-card .fld input,.login-card .fld select{background:#0e0c08;border:1px solid #2c2a20;border-radius:9px;padding:11px;color:var(--cream);width:100%;box-sizing:border-box;font-size:14px;}
 .login-card .fld input:focus,.login-card .fld select:focus{outline:none;border-color:var(--gold);}
 @media(max-width:900px){.pos{grid-template-columns:1fr;height:auto;}.kpis{grid-template-columns:1fr 1fr;}.tiers{grid-template-columns:1fr;}}
+/* ----- Challenge / Compétition (classement façon Mario Kart) ----- */
+.ch-live{display:inline-flex;align-items:center;gap:7px;font-size:12px;font-weight:700;letter-spacing:.03em;color:#b4452f;background:#fbeae6;border:1px solid #f1cfc6;padding:6px 13px;border-radius:999px;margin-bottom:16px;}
+.ch-dot{width:8px;height:8px;border-radius:50%;background:#e23b2e;box-shadow:0 0 0 0 rgba(226,59,46,.6);animation:chPulse 1.6s infinite;}
+@keyframes chPulse{0%{box-shadow:0 0 0 0 rgba(226,59,46,.55)}70%{box-shadow:0 0 0 7px rgba(226,59,46,0)}100%{box-shadow:0 0 0 0 rgba(226,59,46,0)}}
+.ch-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start;}
+@media(max-width:880px){.ch-grid{grid-template-columns:1fr;}}
+.ch-board{background:#fff;border:1px solid var(--line);border-radius:16px;padding:14px;}
+.ch-bhead{font-family:var(--serif);font-size:18px;font-weight:800;margin:2px 2px 12px;display:flex;align-items:center;gap:8px;}
+.ch-row{display:flex;align-items:center;gap:12px;padding:11px;border-radius:13px;margin-bottom:9px;background:#faf8f3;border:1px solid var(--line);transition:transform .25s ease;}
+.ch-row:last-child{margin-bottom:0;}
+.ch-row:hover{transform:translateX(3px);}
+.ch-1{background:linear-gradient(95deg,#fff5d8,#fffdf6);border-color:#e7c66a;box-shadow:0 2px 14px rgba(200,162,75,.18);}
+.ch-2{background:linear-gradient(95deg,#f1f1f4,#fcfcfd);border-color:#cfd2da;}
+.ch-3{background:linear-gradient(95deg,#f7ead9,#fdfaf6);border-color:#e3c39c;}
+.ch-you{box-shadow:0 0 0 2px #1f6f43,0 2px 14px rgba(31,111,67,.14);border-color:#1f6f43;}
+.ch-rank{font-size:27px;width:44px;text-align:center;flex:none;line-height:1;}
+.ch-num{display:inline-flex;align-items:center;justify-content:center;width:31px;height:31px;border-radius:50%;background:#15110b;color:#fff;font-weight:800;font-size:14px;font-family:var(--serif);}
+.ch-main{flex:1;min-width:0;}
+.ch-top{display:flex;justify-content:space-between;align-items:baseline;gap:8px;}
+.ch-name{font-weight:700;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.ch-ca{font-family:var(--serif);font-size:21px;font-weight:800;flex:none;color:var(--text);}
+.ch-youtag{font-size:9.5px;font-weight:800;color:#1f6f43;background:#e7f3ec;border:1px solid #1f6f43;border-radius:6px;padding:1px 5px;vertical-align:middle;margin-left:5px;letter-spacing:.04em;}
+.ch-bar{height:9px;background:#ece7dd;border-radius:999px;overflow:hidden;margin:7px 0 5px;}
+.ch-fill{height:100%;border-radius:999px;background:linear-gradient(90deg,#c8a24b,#e7c66a);transition:width .7s cubic-bezier(.3,1,.4,1);}
+.ch-1 .ch-fill{background:linear-gradient(90deg,#d8a312,#ffd76a);}
+.ch-sub{display:flex;justify-content:space-between;align-items:center;font-size:12px;color:var(--muted);}
+.ch-lead{color:#b8902f;font-weight:800;letter-spacing:.02em;}
+.ch-gap{color:#9a463a;font-weight:700;}
 </style>
 </head>
 <body>
@@ -263,6 +291,7 @@ table.tbl tr:hover td{background:#faf9f5;}
       <div class="nav-item" data-view="pos"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="13" rx="2"/><path d="M7 21h10M9 17v4M15 17v4"/></svg> Caisse</div>
       <div class="nav-item" data-view="borne"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="6" y="2" width="12" height="20" rx="2"/><path d="M10 18h4"/></svg> Borne</div>
       <div class="nav-item" data-view="commandes"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg> Commandes</div>
+      <div class="nav-item" data-view="challenge"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M8 21h8M12 17v4M7 4h10v4a5 5 0 0 1-10 0z"/><path d="M7 6H5a2 2 0 0 0 0 4h2M17 6h2a2 2 0 0 1 0 4h-2"/></svg> Challenge</div>
       <div class="nav-grp">Gestion</div>
       <div class="nav-item" data-view="produits"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 7l9-4 9 4-9 4-9-4z"/><path d="M3 7v10l9 4 9-4V7"/></svg> Produits</div>
       <div class="nav-item" data-view="stock"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 9h18M3 14h18"/><rect x="3" y="4" width="18" height="16" rx="2"/></svg> Stock (grammes)</div>
@@ -502,7 +531,7 @@ table.tbl tr:hover td{background:#faf9f5;}
   function custRowsHtml(list,actName){if(!list.length)return '<div class="muted" style="padding:14px">Aucun client trouvé.</div>';return list.map(function(c,i){return '<div class="cust-row" data-act="'+actName+'" data-i="'+i+'"><div><b>'+esc(c.name||c.email)+'</b><div class="muted" style="font-size:12px">'+esc(c.email||'')+(c.phone?' · '+esc(c.phone):'')+'</div></div><div style="color:var(--gold);font-weight:700">'+Math.round(c.points||0)+' pts</div></div>';}).join('');}
 
   // ---------- Vues ----------
-  var titles={dash:'Tableau de bord',pos:'Caisse',borne:'Borne',commandes:'Commandes — Centre de commande',journal:'Journal des ventes — Borne & Caisse',produits:'Produits',stock:'Stock (grammes & lots)',fidelite:'Fidélité — Kingston Club',factu:'Facturation',conformite:'Conformité caisse — NF525',franchises:'Franchisés — réseau multi-boutiques',pro:'Réassort pro — commander du stock',reglages:'Réglages — Fidélité myCred'};
+  var titles={dash:'Tableau de bord',pos:'Caisse',borne:'Borne',commandes:'Commandes — Centre de commande',challenge:'Challenge — Classement des boutiques',journal:'Journal des ventes — Borne & Caisse',produits:'Produits',stock:'Stock (grammes & lots)',fidelite:'Fidélité — Kingston Club',factu:'Facturation',conformite:'Conformité caisse — NF525',franchises:'Franchisés — réseau multi-boutiques',pro:'Réassort pro — commander du stock',reglages:'Réglages — Fidélité myCred'};
 
   function viewDash(){
     if(st.user&&st.user.role!=='admin'){return viewDashBoutique();}
@@ -858,6 +887,54 @@ table.tbl tr:hover td{background:#faf9f5;}
       '<div class="net-note" style="margin-top:14px">'+crown('#b8902f')+' Pour ta comptable : « Export comptable (CSV) » = le journal détaillé (HT, TVA, TTC par vente). « Résumé e-reporting » = le total par TVA et par paiement, prêt pour la transmission e-reporting (ventes au détail).</div>';
   }
 
+  // ---------- Challenge / Compétition : classement des boutiques en direct (façon Mario Kart) ----------
+  var challengeData={loaded:false,loading:false,data:null};
+  function loadChallenge(){
+    if(!API.on||challengeData.loading)return;
+    challengeData.loading=true;
+    apiGet('/api/challenge').then(function(d){challengeData.data=d;challengeData.loaded=true;challengeData.loading=false;if(st.view==='challenge')renderChallengeBody();})
+      .catch(function(){challengeData.loading=false;challengeData.loaded=true;if(st.view==='challenge')renderChallengeBody();});
+  }
+  function chMedal(rang){return rang===1?'🥇':rang===2?'🥈':rang===3?'🥉':'';}
+  function chRow(row,leaderCa,you){
+    var isYou=(you&&row.boutique===you);
+    var pct=leaderCa>0?Math.max(5,Math.round(row.ca/leaderCa*100)):5;
+    var rankClass=row.rang===1?'ch-1':row.rang===2?'ch-2':row.rang===3?'ch-3':'ch-n';
+    var gap=row.rang===1?'<span class="ch-lead">👑 EN TÊTE</span>':('<span class="ch-gap">−'+eur(leaderCa-row.ca)+'</span>');
+    var badge=chMedal(row.rang)||('<span class="ch-num">'+row.rang+'</span>');
+    return '<div class="ch-row '+rankClass+(isYou?' ch-you':'')+'">'+
+      '<div class="ch-rank">'+badge+'</div>'+
+      '<div class="ch-main">'+
+        '<div class="ch-top"><span class="ch-name">'+esc(row.label)+(isYou?' <span class="ch-youtag">VOUS</span>':'')+'</span><span class="ch-ca">'+eur(row.ca)+'</span></div>'+
+        '<div class="ch-bar"><div class="ch-fill" style="width:'+pct+'%"></div></div>'+
+        '<div class="ch-sub"><span>'+row.tickets+' vente'+(row.tickets>1?'s':'')+'</span>'+gap+'</div>'+
+      '</div></div>';
+  }
+  function chBoard(title,emoji,rows,you){
+    var leader=rows.length?rows[0].ca:0;
+    var body=(rows||[]).map(function(r){return chRow(r,leader,you);}).join('')||'<div class="muted" style="padding:16px">Aucune vente pour l\'instant.</div>';
+    return '<div class="ch-board"><div class="ch-bhead">'+emoji+' <span>'+title+'</span></div>'+body+'</div>';
+  }
+  function renderChallengeBody(){
+    var el=document.getElementById('challenge-body');if(!el)return;
+    var d=challengeData.data;
+    if(!d){el.innerHTML='<div class="muted" style="padding:20px">Chargement du classement…</div>';return;}
+    var you=d.you;
+    var t=new Date(d.generatedAt||Date.now());
+    var hh=('0'+t.getHours()).slice(-2)+':'+('0'+t.getMinutes()).slice(-2)+':'+('0'+t.getSeconds()).slice(-2);
+    el.innerHTML='<div class="ch-live"><span class="ch-dot"></span> EN DIRECT · mis à jour à '+hh+' · rafraîchissement auto toutes les 15 s</div>'+
+      '<div class="ch-grid">'+
+        chBoard('Aujourd’hui','🏆',d.classementJour||[],you)+
+        chBoard('Ce mois-ci','📅',d.classementMois||[],you)+
+      '</div>';
+  }
+  function viewChallenge(){
+    if(!API.on){return '<div class="vhead"><div><h1>🏁 Challenge KINGSTON</h1><p>Connecte l\'app au serveur pour voir le classement en direct des boutiques.</p></div></div>'; }
+    setTimeout(loadChallenge,0);
+    return '<div class="vhead"><div><h1>🏁 Challenge KINGSTON</h1><p>Le classement des boutiques, en direct. Qui rapporte le plus aujourd’hui et ce mois-ci ? Première tout en haut, dernière tout en bas — à toi de grimper.</p></div></div>'+
+      '<div id="challenge-body"><div class="muted" style="padding:20px">Chargement du classement…</div></div>';
+  }
+
   // ---------- Conformité caisse (loi anti-fraude TVA / NF525) ----------
   var fiscalData={loaded:false,loading:false,etat:null,clotures:[],evenements:[],verify:null};
   function loadFiscal(){
@@ -1203,7 +1280,7 @@ table.tbl tr:hover td{background:#faf9f5;}
     }).catch(function(e){toast('Échec : '+(e.message||e));});
   }
 
-  var viewsMap={dash:viewDash,pos:viewPos,produits:viewProduits,stock:viewStock,fidelite:viewFidelite,factu:viewFactu,borne:viewBorne,commandes:viewCommandes,journal:viewJournal,conformite:viewConformite,franchises:viewFranchises,pro:viewPro,reglages:viewReglages};
+  var viewsMap={dash:viewDash,pos:viewPos,produits:viewProduits,stock:viewStock,fidelite:viewFidelite,factu:viewFactu,borne:viewBorne,commandes:viewCommandes,challenge:viewChallenge,journal:viewJournal,conformite:viewConformite,franchises:viewFranchises,pro:viewPro,reglages:viewReglages};
 
   function render(){
     if(!st.user){showLogin();return;}
@@ -1215,6 +1292,7 @@ table.tbl tr:hover td{background:#faf9f5;}
     var sel=document.getElementById('boutiqueSel');if(sel){sel.style.display=st.user.role==='admin'?'':'none';}
     var nfr=document.getElementById('nav-franchises');if(nfr){nfr.style.display=(st.user.role==='admin')?'':'none';}
     if(st.user && !window.__proBadgeInit){ window.__proBadgeInit=true; refreshProBadge(); setInterval(function(){try{refreshProBadge();}catch(e){}},45000); }
+    if(st.user && !window.__challengeInit){ window.__challengeInit=true; setInterval(function(){try{ if(st.view==='challenge'&&API.on) loadChallenge(); }catch(e){} },15000); }
     var sf=document.getElementById('sideFoot');if(sf){sf.innerHTML='<b>'+st.user.name+'</b>'+st.user.roleLabel+' · KINGSTON<button class="btn" style="width:100%;margin-top:10px;background:transparent;color:#cfc9ba;border-color:rgba(255,255,255,.16)" data-act="logout">Se déconnecter</button>';}
   }
 
