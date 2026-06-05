@@ -11,14 +11,14 @@
 /* ----- Réassort : sélecteur de quantité simple (franchisé) ----- */
 .pro-card{padding:12px;display:flex;flex-direction:column}
 .pro-card.inpanier{border-color:var(--gold);box-shadow:0 0 0 2px var(--gold-soft)}
-.pro-stepper{display:flex;align-items:stretch;gap:8px;margin-top:12px}
-.pro-stepper .step{width:54px;flex:0 0 54px;height:54px;border:1px solid var(--gold);border-radius:12px;background:var(--gold-soft);font-size:28px;font-weight:800;line-height:1;cursor:pointer;color:#7a5e16}
+.pro-stepper{display:flex;align-items:stretch;gap:7px;margin-top:12px}
+.pro-stepper .step{width:42px;flex:0 0 42px;height:48px;border:1px solid var(--gold);border-radius:11px;background:var(--gold-soft);font-size:26px;font-weight:800;line-height:1;cursor:pointer;color:#7a5e16;padding:0}
 .pro-stepper .step:active{background:var(--gold);color:#fff}
-.pro-qtywrap{flex:1;display:flex;align-items:center;justify-content:center;gap:5px;border:1.5px solid var(--line);border-radius:12px;height:54px;padding:0 6px;background:#fff}
+.pro-qtywrap{flex:1;min-width:0;display:flex;align-items:center;justify-content:center;gap:3px;border:1.5px solid var(--line);border-radius:11px;height:48px;padding:0 4px;background:#fff}
 .pro-qtywrap:focus-within{border-color:var(--gold);box-shadow:0 0 0 2px var(--gold-soft)}
-.pro-qty{width:100%;border:0;background:transparent;text-align:center;font-size:23px;font-weight:800;color:#1a1410;outline:none;-moz-appearance:textfield}
+.pro-qty{flex:1;min-width:0;width:auto;border:0;background:transparent;text-align:center;font-size:20px;font-weight:800;color:#1a1410;outline:none;-moz-appearance:textfield}
 .pro-qty::-webkit-outer-spin-button,.pro-qty::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
-.pro-qtywrap .u{font-size:14px;font-weight:700;color:#8a8170}
+.pro-qtywrap .u{flex:0 0 auto;font-size:13px;font-weight:700;color:#8a8170}
 .pro-hint{font-size:11px;color:#8a8170;text-align:center;margin-top:6px}
 .pro-presets{display:flex;gap:6px;margin-top:8px}
 .pro-presets .chip{flex:1;padding:9px 0;border:1px solid var(--line);border-radius:9px;background:#fff;font-weight:700;font-size:13px;cursor:pointer;color:#1a1410}
