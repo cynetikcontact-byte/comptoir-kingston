@@ -992,7 +992,7 @@ table.tbl tr:hover td{background:#faf9f5;}
   function proCartLineCount(){ var n=0; for(var k in (st.proCart||{})) if(st.proCart[k]>0) n++; return n; }
   function proSetQty(id,val){ val=Math.max(0,Math.floor(Number(val)||0)); st.proCart=st.proCart||{}; if(val>0)st.proCart[id]=val; else delete st.proCart[id]; }
   function proCard(p){
-    var q=proQty(p.id), isG=(p.proUnit==='g'), u=(isG?'g':'u'), step=(isG?50:1);
+    var q=proQty(p.id), isG=(p.proUnit==='g'), u=(isG?'g':'u'), step=(isG?100:1);
     var price = p.pro!=null ? eur2(p.pro)+' / '+u : '<span class="muted">prix à définir</span>';
     var ph = p.img?'<div style="height:96px;border-radius:10px;background:#eceae2 center/cover no-repeat;background-image:url('+esc(p.img)+')"></div>':'<div style="height:96px;border-radius:10px;background:#15110a;display:flex;align-items:center;justify-content:center;color:#cfc7b5;font-family:var(--serif);letter-spacing:.1em;font-size:14px">KINGSTON</div>';
     var stepper='<div class="pro-stepper">'+
@@ -1000,13 +1000,14 @@ table.tbl tr:hover td{background:#faf9f5;}
         '<div class="pro-qtywrap"><input class="pro-qty" type="number" inputmode="numeric" min="0" step="'+step+'" data-pid="'+esc(p.id)+'" value="'+(q||'')+'" placeholder="0" aria-label="Quantité"/><span class="u">'+u+'</span></div>'+
         '<button type="button" class="step" data-act="pro-step" data-id="'+esc(p.id)+'" data-d="'+step+'" aria-label="Augmenter">+</button>'+
       '</div>';
-    var hint=isG?'<div class="pro-hint">− / + par 50 g · ou tape la quantité</div>':'<div class="pro-hint">− / + ou tape la quantité</div>';
+    var hint=isG?'<div class="pro-hint">− / + par 100 g · ou tape la quantité</div>':'<div class="pro-hint">− / + ou tape la quantité</div>';
     var lineTot=(q>0&&p.pro!=null)?'<div class="pro-linetot">= '+eur2(p.pro*q)+'</div>':'';
     var remove=q>0?'<button type="button" class="pro-remove" data-act="pro-clear" data-id="'+esc(p.id)+'">retirer</button>':'';
+    var lotRow=(st.user&&st.user.role==='admin')?'<div style="margin-top:8px"><input class="pro-lot-f" data-id="'+esc(p.id)+'" value="'+esc(p.lot||'')+'" placeholder="N° de lot (sur facture)" title="Visible sur la facture kingbase du franchisé" style="width:100%;box-sizing:border-box;padding:7px 9px;border:1px dashed var(--gold);border-radius:9px;font-size:12.5px;background:var(--gold-soft);color:#1a1410"/></div>':(p.lot?'<div class="muted" style="font-size:11px;margin-top:6px">Lot : '+esc(p.lot)+'</div>':'');
     return '<div class="card pro-card'+(q>0?' inpanier':'')+'">'+ph+
       '<div style="font-weight:800;margin-top:8px;line-height:1.2">'+esc(p.name)+'</div>'+
       '<div class="muted" style="font-size:12px">'+esc(p.cat)+' · '+price+'</div>'+
-      stepper+hint+lineTot+remove+'</div>';
+      lotRow+stepper+hint+lineTot+remove+'</div>';
   }
   function proRefreshBar(){ var bar=document.getElementById('pro-bar'); if(!bar)return; var n=proCartLineCount(); bar.innerHTML=n?('<div style="margin-right:auto;font-size:13.5px"><b>'+n+' produit'+(n>1?'s':'')+'</b> au panier · <b>'+eur2(proCartTotal())+'</b></div><button class="btn btn-gold" data-act="pro-order">Voir le panier ›</button>'):'<span class="muted">Choisis des quantités ci-dessus pour commander.</span>'; }
   function renderProCat(){
@@ -1598,7 +1599,7 @@ table.tbl tr:hover td{background:#faf9f5;}
     if(e.target&&e.target.classList&&e.target.classList.contains('pro-qty')){ proSetQty(e.target.getAttribute('data-pid'), e.target.value); proRefreshBar(); var pc=e.target.closest&&e.target.closest('.pro-card'); if(pc)pc.classList.toggle('inpanier', proQty(e.target.getAttribute('data-pid'))>0); return; }
     if(e.target&&e.target.classList&&e.target.classList.contains('ship-f')){ proShipGet(); st.proShip[e.target.getAttribute('data-k')]=e.target.value; return; }
   });
-  document.body.addEventListener('change',function(e){ if(e.target&&e.target.id==='tpe-mode'){ tpeToggle(); } if(e.target&&e.target.id==='pay-mode'){ setPayMode(e.target.value); } if(e.target&&e.target.classList&&e.target.classList.contains('pro-qty')){ proSetQty(e.target.getAttribute('data-pid'), e.target.value); renderProCat(); } });
+  document.body.addEventListener('change',function(e){ if(e.target&&e.target.id==='tpe-mode'){ tpeToggle(); } if(e.target&&e.target.id==='pay-mode'){ setPayMode(e.target.value); } if(e.target&&e.target.classList&&e.target.classList.contains('pro-qty')){ proSetQty(e.target.getAttribute('data-pid'), e.target.value); renderProCat(); } if(e.target&&e.target.classList&&e.target.classList.contains('pro-lot-f')){ var lid=e.target.getAttribute('data-id'); var lv=(e.target.value||'').trim(); apiPost('/api/pro/lots',{productId:lid,lot:lv}).then(function(){ var it=(proData.catalog||[]).filter(function(x){return x.id===lid;})[0]; if(it)it.lot=lv; toast(lv?('Lot « '+lv+' » enregistré sur '+((it&&it.name)||'le produit')):'Lot retiré'); }).catch(function(err){toast('Échec : '+(err.message||err));}); } });
 
   // Reprise de session : si la caisse etait deja connectee sur cet appareil, on la reconnecte toute seule.
   (function(){ try{ var s=JSON.parse(localStorage.getItem('kt_session')||'null'); if(s&&s.token){ st.user=s; API.token=s.token; st.boutique=s.boutiqueId?boutiqueName(s.boutiqueId):'Réseau (toutes boutiques)'; } }catch(e){} })();

@@ -212,6 +212,7 @@ let supplySeq = 1;
 const PRO_WP_URL = (process.env.COMPTOIR_PRO_URL || 'https://kingbase.fr').replace(/\/$/, '');
 const PRO_WP_KEY = process.env.COMPTOIR_PRO_KEY || '';
 let proProducts = [];                 // catalogue de gros importe de kingbase.fr (SEPARE du catalogue retail)
+let proLots = {};                     // n0 de lot par produit de gros (defini par l'admin) -> apparait sur la facture kingbase du franchise
 let lastProSync = 0, proSyncing = false;
 function findProProduct(id) { return proProducts.find((p) => p.id === id) || findProduct(id); }
 async function syncProCatalog() {
@@ -401,7 +402,7 @@ function persist() {
       // Écriture ATOMIQUE : fichier temporaire puis renommage -> jamais de fichier tronqué en cas de coupure.
       // NB : fiscalKey n'est PLUS écrite ici (stockée à part, fichier protégé).
       const tmp = DATA_FILE + '.tmp';
-      fs.writeFileSync(tmp, JSON.stringify({ v: 1, savedAt: new Date().toISOString(), pointsPerEuro: POINTS_PER_EURO, hideBaseCatalog, customProducts, stock, boutiques, invoiceSeq, lastHash, invoices, orderSeq, orders, fiscalEvents, fiscalSeq, lastFiscalSig, clotureSeq, gtPerpetuel, gtPerpetuelAvoirs, seqByB, gtByB, gtAvoirsByB, clotureSeqByB, supplyOrders, supplySeq, proRate, pontDevices, sessions, proProducts, lastProSync }), 'utf8');
+      fs.writeFileSync(tmp, JSON.stringify({ v: 1, savedAt: new Date().toISOString(), pointsPerEuro: POINTS_PER_EURO, hideBaseCatalog, customProducts, stock, boutiques, invoiceSeq, lastHash, invoices, orderSeq, orders, fiscalEvents, fiscalSeq, lastFiscalSig, clotureSeq, gtPerpetuel, gtPerpetuelAvoirs, seqByB, gtByB, gtAvoirsByB, clotureSeqByB, supplyOrders, supplySeq, proRate, pontDevices, sessions, proProducts, lastProSync, proLots }), 'utf8');
       fs.renameSync(tmp, DATA_FILE);
     } catch (e) { console.error('Persistance impossible :', e.message); }
   }, 200);
@@ -439,6 +440,7 @@ function loadPersisted() {
     if (d.pontDevices && typeof d.pontDevices === 'object') Object.assign(pontDevices, d.pontDevices);
     if (d.sessions && typeof d.sessions === 'object') { const _now = Date.now(); for (const t in d.sessions) { const s = d.sessions[t]; if (s && s.exp > _now) sessions[t] = s; } } // garde les connexions actives apres un redemarrage
     if (Array.isArray(d.proProducts)) { proProducts = d.proProducts; proProducts.forEach(ensureStock); }
+    if (d.proLots && typeof d.proLots === 'object') proLots = d.proLots;
     if (typeof d.lastProSync === 'number') lastProSync = d.lastProSync;
     if (typeof d.supplySeq === 'number') supplySeq = d.supplySeq;
     if (typeof d.proRate === 'number') proRate = d.proRate;
@@ -1475,7 +1477,7 @@ const server = http.createServer(async (req, res) => {
       const list = src.map((p) => {
         const pi = proUnitInfo(p);
         const retail = p.unit === 'g' ? ((p.tiers && p.tiers[0]) ? p.tiers[0][1] : 0) : (p.price || 0);
-        return { id: p.id, name: p.name, cat: p.cat, img: p.img || '', unit: p.unit, pro: pi ? pi.price : null, proUnit: pi ? pi.unit : 'u', step: pi ? pi.step : 1, retail: usePro ? null : retail };
+        return { id: p.id, name: p.name, cat: p.cat, img: p.img || '', unit: p.unit, pro: pi ? pi.price : null, proUnit: pi ? pi.unit : 'u', step: pi ? pi.step : 1, retail: usePro ? null : retail, lot: proLots[p.id] || '' };
       });
       const wooOrdersUrl = PRO_WP_URL + '/wp-admin/edit.php?post_type=shop_order';
       return send(res, 200, { rate: usePro ? 1 : proRate, products: list, source: usePro ? 'kingbase' : 'retail', lastSync: usePro ? lastProSync : lastWooSync, autoSync: true, wooOrdersUrl: wooOrdersUrl, wooLive: !!proConnector });
@@ -1485,6 +1487,18 @@ const server = http.createServer(async (req, res) => {
       const r = await syncProCatalog();
       if (r && r.error) return send(res, 502, r);
       return send(res, 200, Object.assign({ ok: true, lastSync: lastProSync }, r));
+    }
+    // L'admin attribue un n0 de lot a un produit de gros : il sera repris sur chaque nouvelle commande de
+    // reassort (ligne de la commande/facture WooCommerce kingbase). Vide => on retire le lot du produit.
+    if (req.method === 'POST' && path === '/api/pro/lots') {
+      if (user.role !== 'admin') return send(res, 403, { error: 'Réservé à l\'administrateur réseau' });
+      const b = await readJson(req);
+      const pid = String(b.productId || '').slice(0, 80);
+      if (!pid) return send(res, 400, { error: 'Produit manquant' });
+      const lot = String(b.lot || '').trim().slice(0, 60);
+      if (lot) proLots[pid] = lot; else delete proLots[pid];
+      persist();
+      return send(res, 200, { ok: true, productId: pid, lot: lot });
     }
     if (req.method === 'POST' && path === '/api/pro/orders') {
       if (user.role !== 'admin' && user.role !== 'manager') return send(res, 403, { error: 'Réservé au personnel' });
@@ -1497,7 +1511,7 @@ const server = http.createServer(async (req, res) => {
         const qty = Math.max(0, Math.floor(Number(it.qty) || 0)); if (qty <= 0) continue;
         const up = (pi.price != null ? pi.price : 0);
         const lineTotal = Math.round(up * qty * 100) / 100; total += lineTotal;
-        items.push({ productId: p.id, name: p.name, unit: pi.unit, qty: qty, unitPrice: pi.price, lineTotal: lineTotal });
+        items.push({ productId: p.id, name: p.name, unit: pi.unit, qty: qty, unitPrice: pi.price, lineTotal: lineTotal, lot: proLots[p.id] || '' });
       }
       if (!items.length) return send(res, 400, { error: 'Commande de réassort vide' });
       total = Math.round(total * 100) / 100;
