@@ -1457,8 +1457,8 @@ table.tbl tr:hover td{background:#faf9f5;}
   }
 
   // ---------- Identité entreprise (Réglages) + facture imprimable par achat ----------
-  var companyInfo={denomination:'',siret:'',tva:'',contactPrenom:'',contactNom:'',telephone:'',factureAuto:false};
-  function loadCompany(){ if(!API.on)return; apiGet('/api/company').then(function(d){ if(d&&d.entreprise){companyInfo=d.entreprise; if(st.view==='reglages')render();} }).catch(function(){}); }
+  var companyInfo={denomination:'',siret:'',tva:'',contactPrenom:'',contactNom:'',telephone:'',factureAuto:false}, companyLoaded=false;
+  function loadCompany(){ if(!API.on||companyLoaded)return; companyLoaded=true; apiGet('/api/company').then(function(d){ if(d&&d.entreprise){companyInfo=d.entreprise; if(st.view==='reglages')render();} }).catch(function(){companyLoaded=false;}); }
   function saveCompany(){
     if(!API.on){toast('Connecte le serveur d\'abord');return;}
     var g=function(id){var e=document.getElementById(id);return e?e.value:'';};
