@@ -371,8 +371,8 @@ const SELLER = SELLER_DEFAULT;
 function sellerFor(boutiqueId) { const b = boutiques[boutiqueId]; return (b && b.seller) || SELLER_DEFAULT; }
 
 // ---- Identite de l'entreprise (emetteur legal des factures) : editable depuis l'ecran Reglages. ----
-let entreprise = { denomination: '', siret: '', tva: '', contactPrenom: '', contactNom: '', telephone: '', factureAuto: false };
-function entrepriseSafe() { return { denomination: entreprise.denomination || '', siret: entreprise.siret || '', tva: entreprise.tva || '', contactPrenom: entreprise.contactPrenom || '', contactNom: entreprise.contactNom || '', telephone: entreprise.telephone || '', factureAuto: !!entreprise.factureAuto }; }
+let entreprise = { denomination: '', adresse: '', codePostal: '', ville: '', siret: '', tva: '', contactPrenom: '', contactNom: '', telephone: '', factureAuto: false };
+function entrepriseSafe() { return { denomination: entreprise.denomination || '', adresse: entreprise.adresse || '', codePostal: entreprise.codePostal || '', ville: entreprise.ville || '', siret: entreprise.siret || '', tva: entreprise.tva || '', contactPrenom: entreprise.contactPrenom || '', contactNom: entreprise.contactNom || '', telephone: entreprise.telephone || '', factureAuto: !!entreprise.factureAuto }; }
 
 /* ----------------------------- Persistance disque (mode memoire) ---------------------------- */
 // En mode PostgreSQL la base fait foi. Sinon, factures + commandes sont conservees dans un
@@ -1480,6 +1480,9 @@ const server = http.createServer(async (req, res) => {
       const b = await readJson(req);
       const str = (v) => (v == null ? '' : String(v)).slice(0, 120);
       if ('denomination' in b) entreprise.denomination = str(b.denomination).trim();
+      if ('adresse' in b) entreprise.adresse = str(b.adresse).trim();
+      if ('codePostal' in b) entreprise.codePostal = str(b.codePostal).trim();
+      if ('ville' in b) entreprise.ville = str(b.ville).trim();
       if ('siret' in b) entreprise.siret = str(b.siret).replace(/\s/g, '');
       if ('tva' in b) entreprise.tva = str(b.tva).replace(/\s/g, '').toUpperCase();
       if ('contactPrenom' in b) entreprise.contactPrenom = str(b.contactPrenom).trim();
