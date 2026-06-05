@@ -1503,18 +1503,38 @@ const server = http.createServer(async (req, res) => {
       total = Math.round(total * 100) / 100;
       const o = { id: supplySeq, numero: 'PRO-' + String(supplySeq).padStart(4, '0'), boutiqueId: bId, items: items, total: total, status: 'envoyee', ts: Date.now(), by: user.name || null };
       supplySeq++; supplyOrders.push(o); persist();
-      // Reflet WooCommerce sur kingbase.fr (site grossiste) : creer une vraie commande (statut on-hold) que
-      // l'admin gere dans Woo. NON bloquant : si kingbase est injoignable / cle absente, la commande de
-      // reassort reste valide dans Comptoir.
+      // Reflet WooCommerce sur kingbase.fr (site grossiste) : creer une vraie commande (statut pending,
+      // PAYABLE par le franchise) que l'admin gere dans Woo. NON bloquant : si kingbase est injoignable /
+      // cle absente, la commande de reassort reste valide dans Comptoir.
       try {
         if (proConnector && typeof proConnector.createSupplyOrder === 'function') {
           const wr = await proConnector.createSupplyOrder({ items: o.items, boutique: (boutiques[bId] && (boutiques[bId].label || bId)) || bId, numero: o.numero, by: o.by });
-          if (wr && wr.order_id) { o.wooOrderId = wr.order_id; o.wooUrl = wr.admin_url || null; persist(); }
+          if (wr && wr.order_id) { o.wooOrderId = wr.order_id; o.wooUrl = wr.admin_url || null; o.payUrl = wr.pay_url || null; o.wooStatus = wr.status || null; persist(); }
         }
       } catch (e) { o.wooError = String((e && e.message) || e); }
       return send(res, 201, { ok: true, order: o });
     }
     if (req.method === 'GET' && path === '/api/pro/orders') {
+      // Reflet du paiement : pour les commandes non encore payees ayant une commande Woo, on rafraichit
+      // l'etat depuis kingbase (lazy, borne a 10, throttle 60s par commande) afin d'afficher "Paye ✓"
+      // et de masquer le bouton "Payer" une fois reglee. Non bloquant en cas d'erreur/timeout.
+      if (proConnector && typeof proConnector.getOrderStatus === 'function') {
+        const now = Date.now();
+        const toRefresh = supplyOrders
+          .filter((o) => o.wooOrderId && !o.wooPaid && (now - (o.wooStatusAt || 0) > 60000))
+          .filter((o) => user.role === 'admin' || o.boutiqueId === user.boutiqueId)
+          .slice(-10);
+        if (toRefresh.length) {
+          await Promise.allSettled(toRefresh.map(async (o) => {
+            try {
+              const s = await proConnector.getOrderStatus(o.wooOrderId, { timeoutMs: 7000 });
+              o.wooStatusAt = Date.now();
+              if (s) { if (s.status) o.wooStatus = s.status; if (s.paid) o.wooPaid = true; if (s.pay_url) o.payUrl = s.pay_url; }
+            } catch (e) { o.wooStatusAt = Date.now(); }
+          }));
+          persist();
+        }
+      }
       const list = supplyOrders.filter((o) => user.role === 'admin' ? true : o.boutiqueId === user.boutiqueId).slice().sort((a, b) => b.id - a.id);
       return send(res, 200, { orders: list });
     }

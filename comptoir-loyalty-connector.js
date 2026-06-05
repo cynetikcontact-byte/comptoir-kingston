@@ -24,15 +24,25 @@ class ComptoirLoyalty {
     if (!this._fetch) throw new Error('fetch indisponible : fournissez fetchImpl');
   }
 
-  async _call(path, { method = 'GET', body } = {}) {
-    const res = await this._fetch(`${this.baseUrl}/wp-json/comptoir/v1${path}`, {
-      method,
-      headers: { 'Content-Type': 'application/json', 'X-Comptoir-Key': this.apiKey },
-      body: body ? JSON.stringify(body) : undefined,
-    });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error('myCred: ' + ((data && data.message) || ('Erreur ' + res.status)));
-    return data;
+  async _call(path, { method = 'GET', body, timeoutMs } = {}) {
+    let ctrl = null, to = null;
+    if (timeoutMs && typeof AbortController !== 'undefined') {
+      ctrl = new AbortController();
+      to = setTimeout(() => { try { ctrl.abort(); } catch (e) {} }, timeoutMs);
+    }
+    try {
+      const res = await this._fetch(`${this.baseUrl}/wp-json/comptoir/v1${path}`, {
+        method,
+        headers: { 'Content-Type': 'application/json', 'X-Comptoir-Key': this.apiKey },
+        body: body ? JSON.stringify(body) : undefined,
+        signal: ctrl ? ctrl.signal : undefined,
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error('myCred: ' + ((data && data.message) || ('Erreur ' + res.status)));
+      return data;
+    } finally {
+      if (to) clearTimeout(to);
+    }
   }
 
   /** Solde de points d'un client (e-mail, telephone ou ID WordPress). */
@@ -68,9 +78,14 @@ class ComptoirLoyalty {
     return this._call('/adjust', { method: 'POST', body: { user: userRef, amount, reason, ref, type: this.pointType } });
   }
 
-  /** Reassort B2B : cree une vraie commande WooCommerce (statut on-hold) a partir d'une commande de franchise. */
+  /** Reassort B2B : cree une vraie commande WooCommerce (statut pending, payable) a partir d'une commande de franchise. */
   async createSupplyOrder({ items, boutique, numero, by } = {}) {
     return this._call('/supply-order', { method: 'POST', body: { items: items, boutique: boutique, numero: numero, by: by } });
+  }
+
+  /** Etat de paiement d'une commande de reassort cote WooCommerce (paid / needs_payment / pay_url). */
+  async getOrderStatus(orderId, { timeoutMs = 8000 } = {}) {
+    return this._call('/order-status?id=' + encodeURIComponent(orderId), { timeoutMs: timeoutMs });
   }
 }
 
