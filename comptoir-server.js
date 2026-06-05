@@ -339,6 +339,35 @@ function genShortCode() { const a = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; let s = 
 // Jeton d'installation STABLE par boutique : permet au pont de s'appairer TOUT SEUL (libre-service) sans code saisi par l'admin.
 function pontTokenFor(id) { const b = boutiques[id]; if (!b) return null; if (!b.pontToken) { b.pontToken = crypto.randomBytes(18).toString('hex'); persist(); } return b.pontToken; }
 function boutiqueByPontToken(tok) { tok = String(tok || '').trim(); if (!tok) return null; for (const id of boutiqueIds()) { if (boutiques[id] && boutiques[id].pontToken === tok) return id; } return null; }
+// Generateur de ZIP minimal (pur Node) : sert a livrer le .command AVEC le droit "executable" (mode 0755),
+// pour que macOS l'execute au double-clic apres decompression (un fichier telecharge seul n'a pas ce droit).
+const CRC_TABLE = (function () { const t = []; for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1); t[n] = c >>> 0; } return t; })();
+function crc32(buf) { let c = 0xFFFFFFFF; for (let i = 0; i < buf.length; i++) c = CRC_TABLE[(c ^ buf[i]) & 0xFF] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; }
+function zipSingleFile(name, content, unixMode) {
+  const nameBuf = Buffer.from(name, 'utf8');
+  const data = Buffer.isBuffer(content) ? content : Buffer.from(content, 'utf8');
+  const crc = crc32(data);
+  const lh = Buffer.alloc(30);
+  lh.writeUInt32LE(0x04034b50, 0); lh.writeUInt16LE(20, 4); lh.writeUInt16LE(0, 6); lh.writeUInt16LE(0, 8);
+  lh.writeUInt16LE(0, 10); lh.writeUInt16LE(0x21, 12); lh.writeUInt32LE(crc, 14);
+  lh.writeUInt32LE(data.length, 18); lh.writeUInt32LE(data.length, 22);
+  lh.writeUInt16LE(nameBuf.length, 26); lh.writeUInt16LE(0, 28);
+  const localHeader = Buffer.concat([lh, nameBuf, data]);
+  const ch = Buffer.alloc(46);
+  ch.writeUInt32LE(0x02014b50, 0); ch.writeUInt16LE((3 << 8) | 20, 4); ch.writeUInt16LE(20, 6);
+  ch.writeUInt16LE(0, 8); ch.writeUInt16LE(0, 10); ch.writeUInt16LE(0, 12); ch.writeUInt16LE(0x21, 14);
+  ch.writeUInt32LE(crc, 16); ch.writeUInt32LE(data.length, 20); ch.writeUInt32LE(data.length, 24);
+  ch.writeUInt16LE(nameBuf.length, 28); ch.writeUInt16LE(0, 30); ch.writeUInt16LE(0, 32);
+  ch.writeUInt16LE(0, 34); ch.writeUInt16LE(0, 36);
+  ch.writeUInt32LE(((unixMode || 0o644) << 16) >>> 0, 38);   // attributs externes : permissions Unix (0755 = executable)
+  ch.writeUInt32LE(0, 42);
+  const central = Buffer.concat([ch, nameBuf]);
+  const eocd = Buffer.alloc(22);
+  eocd.writeUInt32LE(0x06054b50, 0); eocd.writeUInt16LE(0, 4); eocd.writeUInt16LE(0, 6);
+  eocd.writeUInt16LE(1, 8); eocd.writeUInt16LE(1, 10);
+  eocd.writeUInt32LE(central.length, 12); eocd.writeUInt32LE(localHeader.length, 16); eocd.writeUInt16LE(0, 20);
+  return Buffer.concat([localHeader, central, eocd]);
+}
 // Installateur macOS PRE-REMPLI (jeton + serveur injectes) : la boutique double-clique, le pont s'installe, se lance au demarrage, detecte le terminal et s'appaire seul.
 function pontInstallerScript(base, token) {
   return [
@@ -958,6 +987,12 @@ const server = http.createServer(async (req, res) => {
     if (!boutiqueByPontToken(tok)) return send(res, 404, { error: 'Jeton inconnu' });
     const base = 'https://' + (req.headers.host || 'kingtools.fr');
     const sh = pontInstallerScript(base, tok);
+    if (u.searchParams.get('format') === 'zip') {
+      // .zip contenant le .command en mode 0755 -> double-clic du .zip = fichier executable (le double-clic marche).
+      const zip = zipSingleFile('Installer-Pont-KINGSTON.command', sh, 0o100755);
+      res.writeHead(200, Object.assign({ 'content-type': 'application/zip', 'content-disposition': 'attachment; filename="Installer-Pont-KINGSTON.zip"' }, res._cors || COMMON_CORS));
+      return res.end(zip);
+    }
     res.writeHead(200, Object.assign({ 'content-type': 'text/x-shellscript; charset=utf-8', 'content-disposition': 'attachment; filename="Installer-Pont-KINGSTON.command"' }, res._cors || COMMON_CORS));
     return res.end(sh);
   }

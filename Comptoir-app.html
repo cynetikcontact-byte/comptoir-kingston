@@ -1665,11 +1665,12 @@ table.tbl tr:hover td{background:#faf9f5;}
       apiGet('/api/pont/setup-token?boutique='+encodeURIComponent(ib)).then(function(d){
         var url=(d&&d.installerUrl)||'';
         var cmd='curl -fsSL "'+url+'" | bash';
+        var zipUrl=url+(url.indexOf('?')>-1?'&':'?')+'format=zip';
         if(ires)ires.innerHTML='<div style="background:var(--gold-soft);border:1px solid #e7d3a0;border-radius:10px;padding:12px">'+
-          '<div style="font-weight:700;font-size:13px;margin-bottom:6px">Installateur de '+esc(BQNAME[ib]||ib)+' prêt 🎉</div>'+
-          '<div class="muted" style="font-size:12px;margin-bottom:6px"><b>Le plus simple</b> : sur le Mac de la boutique, ouvre <b>Terminal</b> (Applications → Utilitaires → Terminal), colle cette commande et fais Entrée. Le pont s\'installe et s\'appaire tout seul.</div>'+
-          '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><input id="pont-installer-cmd" value="'+esc(cmd)+'" readonly onclick="this.select()" style="flex:1;min-width:240px;box-sizing:border-box;font-family:ui-monospace,monospace;font-size:11.5px;padding:8px;border:1px solid var(--line);border-radius:7px;background:#fff"/><button class="btn btn-gold" data-act="copy-installer" data-url="'+esc(cmd)+'" data-target="pont-installer-cmd">Copier la commande</button></div>'+
-          '<div class="muted" style="font-size:11px;margin-top:10px;border-top:1px solid #e7d3a0;padding-top:8px">Autre méthode : <a href="'+esc(url)+'" target="_blank" rel="noopener">télécharger l\'installateur</a> puis <b>clic droit → Ouvrir</b> (un fichier téléchargé est bloqué au double-clic par macOS).</div>'+
+          '<div style="font-weight:700;font-size:13px;margin-bottom:8px">Installateur de '+esc(BQNAME[ib]||ib)+' prêt 🎉</div>'+
+          '<a class="btn btn-gold" href="'+esc(zipUrl)+'" style="text-decoration:none;display:inline-block">⬇️ Télécharger l\'installateur (.zip)</a>'+
+          '<div class="muted" style="font-size:12px;margin-top:8px;line-height:1.55">Envoie ce fichier à la boutique. Sur le Mac : <b>1)</b> double-clique le <b>.zip</b> pour le décompresser, <b>2)</b> <b>clic droit</b> sur le fichier obtenu → <b>Ouvrir</b> → <b>Ouvrir</b>. Fini : le pont s\'installe et s\'appaire tout seul. <i>(Le clic droit n\'est utile que la 1re fois — sécurité macOS.)</i></div>'+
+          '<div class="muted" style="font-size:11px;margin-top:10px;border-top:1px solid #e7d3a0;padding-top:8px"><b>Ou en une commande</b> (Terminal de la boutique) :<div style="display:flex;gap:6px;align-items:center;margin-top:5px"><input id="pont-installer-cmd" value="'+esc(cmd)+'" readonly onclick="this.select()" style="flex:1;min-width:200px;box-sizing:border-box;font-family:ui-monospace,monospace;font-size:11px;padding:7px;border:1px solid var(--line);border-radius:7px;background:#fff"/><button class="btn" data-act="copy-installer" data-url="'+esc(cmd)+'" data-target="pont-installer-cmd" style="padding:5px 10px">Copier</button></div></div>'+
         '</div>';
       }).catch(function(e){if(ires)ires.innerHTML='<span class="tag tag-low">Échec : '+esc(e.message||e)+'</span>';});
       return;
