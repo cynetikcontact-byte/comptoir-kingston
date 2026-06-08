@@ -852,7 +852,45 @@ table.tbl tr:hover td{background:#faf9f5;}
       toast('Export Excel téléchargé ✓');
     }catch(e){toast('Export Excel : '+(e.message||e));}});
   }
-  function printDetailsVentes(){
+  function ensurePdfLibs(cb){
+    if(window.__pdfReady&&window.jspdf&&window.jspdf.jsPDF){cb(true);return;}
+    var base='https://cdnjs.cloudflare.com/ajax/libs/';
+    function add(src,next){var s=document.createElement('script');s.src=src;s.onload=function(){next();};s.onerror=function(){cb(false);};document.head.appendChild(s);}
+    add(base+'jspdf/2.5.1/jspdf.umd.min.js',function(){add(base+'jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js',function(){window.__pdfReady=true;cb(true);});});
+  }
+  function pdfDetailsVentes(){
+    if(!comptaData.data){toast('Génère d\'abord le rapport.');return;}
+    toast('Préparation du PDF…');
+    ensurePdfLibs(function(ok){
+      if(!ok||!window.jspdf||!window.jspdf.jsPDF){toast('Module PDF indisponible — aperçu imprimable.');printDetailsVentesFallback();return;}
+      try{
+        var d=comptaData.data,v=d.ventes,m=d.meta,jsPDF=window.jspdf.jsPDF;
+        var doc=new jsPDF({unit:'pt',format:'a4'});var W=doc.internal.pageSize.getWidth();
+        var euro=function(n){return (Math.round((Number(n)||0)*100)/100).toFixed(2).replace('.',',')+' €';};
+        var INK=[21,16,11],SOFT=[250,248,243];
+        doc.setFont('helvetica','bold');doc.setFontSize(16);doc.text('KINGSTON',40,46);
+        doc.setFont('helvetica','normal');doc.setFontSize(9);
+        var sl=[m.seller.name||'KINGSTON'];if(m.seller.address)sl.push(m.seller.address);if(m.seller.zip||m.seller.city)sl.push((m.seller.zip||'')+' '+(m.seller.city||''));
+        doc.text(sl,40,62);
+        doc.setFont('helvetica','bold');doc.setFontSize(13);doc.text('Détails des ventes',40,100);
+        doc.setFont('helvetica','normal');doc.setFontSize(9);
+        doc.text((m.boutiqueLabel||'')+'  ·  du '+fcFr(m.from)+' au '+fcFr(m.to),40,116);
+        doc.text('Généré le '+fcFr((m.genereLe||'').slice(0,10)),W-40,116,{align:'right'});
+        var body=[],catIdx={},ri=0;
+        v.categories.forEach(function(c){body.push([c.cat,'',c.qty?cQty(c.qty):'',euro(c.ht)]);catIdx[ri]=1;ri++;c.produits.forEach(function(p){body.push([(p.code?'['+p.code+'] ':'')+p.name,p.unit||'',p.qty?cQty(p.qty):'',euro(p.ht)]);ri++;});});
+        body.push(['Total HT','','',euro(v.totalHT)]);catIdx[ri]=2;
+        doc.autoTable({startY:132,head:[['Désignation','Unité','Qté','Total HT']],body:body,styles:{fontSize:8,cellPadding:3},headStyles:{fillColor:INK},columnStyles:{2:{halign:'right'},3:{halign:'right'}},didParseCell:function(data){if(data.section==='body'&&catIdx[data.row.index]){data.cell.styles.fontStyle='bold';if(catIdx[data.row.index]===1)data.cell.styles.fillColor=SOFT;}}});
+        var ty=doc.lastAutoTable.finalY+18;doc.setFont('helvetica','bold');doc.setFontSize(11);doc.text('Taxes sur les ventes',40,ty);
+        doc.autoTable({startY:ty+6,head:[['Taux','Base HT','TVA','TTC']],body:v.taxes.map(function(t){return ['TVA '+t.taux,euro(t.baseHT),euro(t.tva),euro(t.ttc)];}).concat([['Total',euro(v.totalHT),euro(v.totalTVA),euro(v.totalTTC)]]),styles:{fontSize:8,cellPadding:3},headStyles:{fillColor:INK},columnStyles:{1:{halign:'right'},2:{halign:'right'},3:{halign:'right'}},didParseCell:function(data){if(data.section==='body'&&data.row.index===v.taxes.length)data.cell.styles.fontStyle='bold';}});
+        var tt=doc.lastAutoTable.finalY+16;doc.setFont('helvetica','bold');doc.setFontSize(12);doc.text('Total TTC : '+euro(v.totalTTC),W-40,tt,{align:'right'});
+        var py=tt+24;doc.setFontSize(11);doc.text('Paiements',40,py);
+        doc.autoTable({startY:py+6,head:[['Mode','Commande','Montant']],body:d.paiements.lignes.map(function(p){return [p.mode,p.num,euro(p.montant)];}),styles:{fontSize:8,cellPadding:3},headStyles:{fillColor:INK},columnStyles:{2:{halign:'right'}}});
+        doc.save('Details_ventes_KINGSTON_'+(m.from||'')+'_'+(m.to||'')+'.pdf');
+        toast('PDF téléchargé ✓');
+      }catch(e){toast('PDF : '+(e.message||e));printDetailsVentesFallback();}
+    });
+  }
+  function printDetailsVentesFallback(){
     if(!comptaData.data){toast('Génère d\'abord le rapport.');return;}
     var d=comptaData.data,v=d.ventes,m=d.meta;
     var sl=[m.seller.name||'KINGSTON'];if(m.seller.address)sl.push(m.seller.address);if(m.seller.zip||m.seller.city)sl.push((m.seller.zip||'')+' '+(m.seller.city||''));
@@ -1789,7 +1827,7 @@ table.tbl tr:hover td{background:#faf9f5;}
     if(a==='fc-quick'){var fq=el.getAttribute('data-q');var dq=new Date();if(fq==='last')dq.setMonth(dq.getMonth()-1);comptaData.monthValue=dq.getFullYear()+'-'+('0'+(dq.getMonth()+1)).slice(-2);comptaData.mode='mois';render();loadComptable();return;}
     if(a==='fc-load'){loadComptable();return;}
     if(a==='fc-xlsx'){exportComptableXlsx();return;}
-    if(a==='fc-pdf'){printDetailsVentes();return;}
+    if(a==='fc-pdf'){pdfDetailsVentes();return;}
     if(a==='login'){
       var ukey=document.getElementById('lg-user').value;var pass=(document.getElementById('lg-pass').value||'');
       var er=document.getElementById('lg-err');if(er){er.style.color='#8a8273';er.textContent='Connexion…';}
