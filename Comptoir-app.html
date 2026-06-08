@@ -4,6 +4,7 @@
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>Comptoir — KINGSTON</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 26 22'%3E%3Crect width='26' height='22' rx='4' fill='%23151009'/%3E%3Cpath d='M3 17 L5 7 L9.5 12.5 L13 5 L16.5 12.5 L21 7 L23 17 Z' fill='%23d8b252'/%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
 <link href="https://fonts.googleapis.com/css2?family=Anton&family=Open+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
@@ -67,7 +68,7 @@ button{font-family:inherit;}
 .role-badge{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--muted);}
 .role-badge .av{width:30px;height:30px;border-radius:50%;background:var(--ink);color:var(--gold2);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:12px;font-family:var(--serif);}
 .role-badge b{color:var(--text);font-weight:600;}
-.view{padding:24px;overflow:auto;flex:1;}
+.view{padding:24px;overflow:auto;flex:1;max-width:1320px;width:100%;margin-inline:auto;}
 
 /* Generic */
 .vhead{display:flex;align-items:flex-end;justify-content:space-between;margin-bottom:18px;flex-wrap:wrap;gap:10px;}
@@ -116,7 +117,7 @@ table.tbl tr:hover td{background:#faf9f5;}
 .pcard .pc-cat{font-size:9.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--gold);font-weight:700;}
 .pcard .pc-name{font-weight:700;font-size:14.5px;}
 .pcard .pc-cbd{font-size:11px;color:var(--muted);}
-.pc-img{height:88px;border-radius:9px;background:#1a1a1f center/cover no-repeat;margin-bottom:2px;}
+.pc-img{height:96px;border-radius:10px;background:#f5f3ec center/contain no-repeat;border:1px solid var(--line);margin-bottom:2px;}
 .pcard .pc-foot{margin-top:auto;display:flex;align-items:center;justify-content:space-between;padding-top:6px;}
 .pcard .pc-price{font-family:var(--serif);font-weight:700;font-size:15px;}
 .pcard .pc-stock{font-size:10.5px;color:var(--muted);}
@@ -413,7 +414,6 @@ table.tbl tr:hover td{background:#faf9f5;}
         <button class="hamburger" data-act="navtoggle" aria-label="Ouvrir le menu"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h18M3 12h18M3 18h18"/></svg></button>
         <span class="mbrand"><svg width="19" height="15" viewBox="0 0 26 20" aria-hidden="true"><path d="M2 17 L4 6 L9 12 L13 4 L17 12 L22 6 L24 17 Z" fill="#d8b252"/></svg>KINGSTON</span>
         <div class="top-title" id="topTitle">Tableau de bord</div>
-        <span class="demo-pill">Prototype</span>
       </div>
       <div class="top-r">
         <select class="boutique-sel" id="boutiqueSel">
@@ -634,7 +634,7 @@ table.tbl tr:hover td{background:#faf9f5;}
   function custRowsHtml(list,actName){if(!list.length)return '<div class="muted" style="padding:14px">Aucun client trouvé.</div>';return list.map(function(c,i){return '<div class="cust-row" data-act="'+actName+'" data-i="'+i+'"><div><b>'+esc(c.name||c.email)+'</b><div class="muted" style="font-size:12px">'+esc(c.email||'')+(c.phone?' · '+esc(c.phone):'')+'</div></div><div style="color:var(--gold);font-weight:700">'+Math.round(c.points||0)+' pts</div></div>';}).join('');}
 
   // ---------- Vues ----------
-  var titles={dash:'Tableau de bord',pos:'Caisse',borne:'Borne',commandes:'Commandes — Centre de commande',challenge:'Challenge — Classement des boutiques',journal:'Journal des ventes — Borne & Caisse',produits:'Produits',stock:'Stock (grammes & lots)',fidelite:'Fidélité — Kingston Club',factu:'Facturation',conformite:'Conformité caisse — NF525',franchises:'Franchisés — réseau multi-boutiques',pro:'Réassort pro — commander du stock',reglages:'Réglages — Fidélité myCred'};
+  var titles={dash:'Tableau de bord',pos:'Caisse',borne:'Borne',commandes:'Commandes',challenge:'Challenge',journal:'Journal des ventes',produits:'Produits',stock:'Stock',fidelite:'Fidélité',factu:'Facturation',conformite:'Conformité',franchises:'Franchisés',pro:'Réassort pro',reglages:'Réglages'};
 
   function viewDash(){
     if(st.user&&st.user.role!=='admin'){return viewDashBoutique();}
@@ -707,7 +707,7 @@ table.tbl tr:hover td{background:#faf9f5;}
         ? 'Paliers : '+(p.tiers||[]).map(function(t){return t[0]+' g = '+eur(t[1]);}).join(' · ')
         : eur(p.price)+' / unité'+((p.packs&&p.packs.length)?'  ·  Packs : '+p.packs.map(function(k){return 'x'+k.qty+' = '+eur(k.price);}).join(' · '):'');
       var thumb=p.img
-        ? '<div style="width:48px;height:48px;border-radius:9px;background:#15110a center/cover no-repeat;background-image:url(\''+esc(p.img)+'\');flex:0 0 48px"></div>'
+        ? '<div style="width:52px;height:52px;border-radius:9px;background:#f5f3ec center/contain no-repeat;border:1px solid var(--line);background-image:url(\''+esc(p.img)+'\');flex:0 0 52px"></div>'
         : '<div style="width:48px;height:48px;border-radius:9px;background:var(--ink);flex:0 0 48px;display:flex;align-items:center;justify-content:center;color:var(--muted)">'+(p.unit==='g'?'g':'u')+'</div>';
       var actions=p.custom
         ? '<button class="toggle" data-act="editprod" data-id="'+p.id+'">Modifier</button><button class="toggle" data-act="delprod" data-id="'+p.id+'" style="color:#b4452f;border-color:#e7c4bb">Supprimer</button>'
@@ -975,9 +975,12 @@ table.tbl tr:hover td{background:#faf9f5;}
     setTimeout(payInit,0);setTimeout(loyInit,0);setTimeout(loadCompany,0);
     var apiStatus=API.on?'<span class="tag tag-ok">Connecté · '+API.base+'</span>':'<span class="tag tag-low">Hors ligne (données locales)</span>';
     return '<div class="vhead"><div><h1>Réglages</h1><p>Branche l\'application sur le vrai serveur Comptoir, et relie la fidélité à ton myCred.</p></div></div>'+
-      '<div class="card" style="padding:18px;max-width:660px;margin-bottom:16px"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px"><b style="font-family:var(--serif);font-size:16px">Serveur Comptoir (moteur)</b>'+apiStatus+'</div>'+
-        '<div style="display:flex;gap:12px;margin-bottom:14px;flex-wrap:wrap"><div class="fld" style="flex:1;min-width:200px"><label>Adresse du serveur</label><input id="rg-api-url" value="'+(API.base||'http://localhost:3000')+'"/></div><div class="fld" style="width:170px"><label>Jeton (rôle)</label><input id="rg-api-token" value="'+(API.token||'aix-token')+'"/></div></div>'+
-        '<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">'+(API.on?'<button class="btn" data-act="apidisconnect">Se déconnecter</button>':'<button class="btn btn-gold" data-act="apiconnect">Connecter au serveur</button>')+'<span class="muted" style="font-size:12px">Lance d\'abord  node comptoir-server.js  sur ta machine.</span></div>'+
+      '<div class="card" style="padding:18px;max-width:660px;margin-bottom:16px"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"><b style="font-family:var(--serif);font-size:16px">Connexion serveur</b>'+apiStatus+'</div>'+
+        '<div class="muted" style="font-size:12.5px;margin-bottom:10px">'+(API.on?'Application connectée au serveur KINGSTON. Ventes, stock et fidélité synchronisés en direct.':'Application hors-ligne — données de démonstration. Reconnecte-toi ci-dessous.')+'</div>'+
+        '<details><summary style="cursor:pointer;font-size:12.5px;color:var(--muted);user-select:none">Réglages avancés (technique)</summary>'+
+          '<div style="display:flex;gap:12px;margin:12px 0 12px;flex-wrap:wrap"><div class="fld" style="flex:1;min-width:200px"><label>Adresse du serveur</label><input id="rg-api-url" value="'+esc(API.base||location.origin)+'"/></div><div class="fld" style="width:170px"><label>Jeton (rôle)</label><input id="rg-api-token" type="password" value="'+esc(API.token||'')+'"/></div></div>'+
+          '<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">'+(API.on?'<button class="btn" data-act="apidisconnect">Se déconnecter</button>':'<button class="btn btn-gold" data-act="apiconnect">Connecter au serveur</button>')+'</div>'+
+        '</details>'+
         '<div id="rg-api-res" style="margin-top:12px"></div>'+
       '</div>'+
       '<div class="card" style="padding:18px;max-width:660px"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px"><b style="font-family:var(--serif);font-size:16px">Fidélité myCred</b><span id="loy-mode" class="tag tag-low">Vérification…</span></div>'+
