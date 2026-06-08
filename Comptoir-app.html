@@ -93,6 +93,21 @@ button{font-family:inherit;}
 .kpi .lbl{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;}
 .kpi .val{font-family:var(--serif);font-size:27px;font-weight:700;margin-top:6px;}
 .kpi .dlt{font-size:11.5px;margin-top:4px;color:var(--green);}
+/* Tableau de bord : KPI enrichis + graphiques */
+.kpi-top{display:flex;align-items:center;gap:9px;margin-bottom:6px;}
+.kpi-ic{display:inline-flex;width:30px;height:30px;border-radius:9px;background:var(--gold-soft);color:var(--gold);align-items:center;justify-content:center;flex:0 0 30px;}
+.kpi-ic svg{width:17px;height:17px;}
+.kpi .kpi-top .lbl{margin:0;}
+.kpi-spark{margin-top:9px;height:32px;opacity:.9;}
+.dash-row{display:grid;grid-template-columns:1.9fr 1fr;gap:16px;margin:18px 0;}
+@media(max-width:880px){.dash-row{grid-template-columns:1fr;}}
+.dash-ttl{font-family:var(--serif);font-size:14px;margin:0 2px 12px;display:flex;align-items:center;justify-content:space-between;}
+.dash-chart{padding:16px 16px 10px;}
+.dash-donut{padding:16px;}
+.donut-wrap{position:relative;width:150px;height:150px;flex:0 0 150px;}
+.donut-center{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;pointer-events:none;}
+.dc-val{font-family:var(--serif);font-size:17px;line-height:1.1;} .dc-lbl{font-size:9.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.1em;margin-top:2px;}
+.leg{font-size:12.5px;margin:6px 0;display:flex;align-items:center;gap:7px;} .leg .dot{width:10px;height:10px;border-radius:3px;display:inline-block;flex:0 0 10px;}
 
 /* Table */
 table.tbl{width:100%;border-collapse:collapse;font-size:13.5px;}
@@ -627,6 +642,88 @@ table.tbl tr:hover td{background:#faf9f5;}
   function toast(m){toastEl.textContent=m;toastEl.className='toast show';setTimeout(function(){toastEl.className='toast';},2200);}
   function esc(s){return (''+s).replace(/&/g,'&amp;').replace(/</g,'&lt;');}
 
+  // ---------- Graphiques SVG (légers, sans dépendance) ----------
+  var ICONS={
+    euro:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M16 8.5a5 5 0 1 0 0 7M5 10.5h8M5 13.5h8"/></svg>',
+    ticket:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 7h16v3a2 2 0 0 0 0 4v3H4v-3a2 2 0 0 0 0-4z"/></svg>',
+    cart:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 5h2l1.6 9.5h10L20 8H7"/><circle cx="9.5" cy="19" r="1.3"/><circle cx="17" cy="19" r="1.3"/></svg>',
+    cal:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 9h18M8 3v4M16 3v4"/></svg>'
+  };
+  function svgArea(series){
+    if(!series||!series.length)return '';
+    var W=1000,H=200,pad=10;
+    var vals=series.map(function(p){return p.ttc;});
+    var max=Math.max.apply(null,vals.concat([1]));
+    var n=series.length;
+    var X=function(i){return pad+(n<=1?0:i*(W-2*pad)/(n-1));};
+    var Y=function(v){return H-pad-(v/max)*(H-2*pad-6);};
+    var line='',i;
+    for(i=0;i<n;i++){line+=(i?'L':'M')+X(i).toFixed(1)+' '+Y(series[i].ttc).toFixed(1)+' ';}
+    var area=line+'L'+X(n-1).toFixed(1)+' '+(H-pad)+' L'+X(0).toFixed(1)+' '+(H-pad)+' Z';
+    var lx=X(n-1),ly=Y(series[n-1].ttc);
+    return '<svg viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="none" style="width:100%;height:150px;display:block">'+
+      '<defs><linearGradient id="caGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#d8b252" stop-opacity="0.34"/><stop offset="100%" stop-color="#d8b252" stop-opacity="0"/></linearGradient></defs>'+
+      '<path d="'+area+'" fill="url(#caGrad)"/>'+
+      '<path d="'+line+'" fill="none" stroke="#b8902f" stroke-width="3" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/>'+
+      '<circle cx="'+lx.toFixed(1)+'" cy="'+ly.toFixed(1)+'" r="5" fill="#b8902f"/>'+
+    '</svg>';
+  }
+  function svgSpark(vals,color){
+    if(!vals||!vals.length)return '';
+    var W=160,H=32,pad=2;var max=Math.max.apply(null,vals.concat([1])),min=Math.min.apply(null,vals.concat([0]));
+    var rng=(max-min)||1,n=vals.length;
+    var X=function(i){return pad+(n<=1?0:i*(W-2*pad)/(n-1));};
+    var Y=function(v){return H-pad-((v-min)/rng)*(H-2*pad);};
+    var line='',i;for(i=0;i<n;i++){line+=(i?'L':'M')+X(i).toFixed(1)+' '+Y(vals[i]).toFixed(1)+' ';}
+    return '<svg viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="none" style="width:100%;height:32px;display:block"><path d="'+line+'" fill="none" stroke="'+(color||'#b8902f')+'" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke"/></svg>';
+  }
+  function svgDonut(segs){
+    var size=150,r=58,sw=22,cx=size/2,cy=size/2;
+    var total=segs.reduce(function(a,s){return a+Math.max(0,s.value);},0)||1;
+    var circ=2*Math.PI*r,off=0;
+    var arcs=segs.map(function(s){
+      var len=(Math.max(0,s.value)/total)*circ;
+      var el='<circle cx="'+cx+'" cy="'+cy+'" r="'+r+'" fill="none" stroke="'+s.color+'" stroke-width="'+sw+'" stroke-linecap="butt" stroke-dasharray="'+len.toFixed(2)+' '+(circ-len).toFixed(2)+'" stroke-dashoffset="'+(-off).toFixed(2)+'" transform="rotate(-90 '+cx+' '+cy+')"/>';
+      off+=len;return el;
+    }).join('');
+    return '<svg viewBox="0 0 '+size+' '+size+'" width="150" height="150"><circle cx="'+cx+'" cy="'+cy+'" r="'+r+'" fill="none" stroke="#ece7dd" stroke-width="'+sw+'"/>'+arcs+'</svg>';
+  }
+  function payColor(m){return m==='Espèces'?'#5bbd7a':(m==='Carte'?'#b8902f':'#9a8d72');}
+
+  // ---------- Tableau de bord : vraies données + graphiques ----------
+  var dashData={loaded:false,loading:false,data:null};
+  function loadDashboard(){
+    if(!API.on)return;
+    dashData.loading=true;
+    var b=document.getElementById('dash-body');if(b&&!dashData.data)b.innerHTML='<div class="muted" style="padding:20px">Chargement des chiffres…</div>';
+    apiGet('/api/dashboard').then(function(d){dashData.data=d;dashData.loaded=true;dashData.loading=false;renderDashboardBody();})
+      .catch(function(e){dashData.loading=false;var x=document.getElementById('dash-body');if(x)x.innerHTML='<div class="net-note">Tableau de bord indisponible : '+esc(e.message||e)+'</div>';});
+  }
+  function dashKpi(icon,label,value,sub,spark){
+    return '<div class="card kpi"><div class="kpi-top"><span class="kpi-ic">'+icon+'</span><span class="lbl">'+label+'</span></div><div class="val">'+value+'</div>'+(sub?'<div class="dlt" style="color:var(--muted)">'+sub+'</div>':'')+(spark?'<div class="kpi-spark">'+spark+'</div>':'')+'</div>';
+  }
+  function renderDashboardBody(){
+    var b=document.getElementById('dash-body');if(!b)return;var d=dashData.data;if(!d){b.innerHTML='';return;}
+    var k=d.kpis,caVals=(d.parJour||[]).map(function(p){return p.ttc;});
+    var kpis='<div class="kpis">'+
+      dashKpi(ICONS.euro,'CA du jour',eur(k.caJour),'',svgSpark(caVals))+
+      dashKpi(ICONS.ticket,'Tickets du jour',k.ticketsJour,k.ticketsJour?('panier moyen '+eur(k.panierMoyen)):'aucune vente aujourd\'hui','')+
+      dashKpi(ICONS.cart,'Panier moyen',eur(k.panierMoyen),'sur la journée','')+
+      dashKpi(ICONS.cal,'CA du mois',eur(k.caMois),k.ticketsMois+' tickets','')+
+    '</div>';
+    var segs=(d.parPaiement||[]).map(function(p){return {label:p.moyen,value:p.montant,color:payColor(p.moyen)};});
+    var payTotal=(d.parPaiement||[]).reduce(function(a,p){return a+p.montant;},0);
+    var legend=segs.length?segs.map(function(s){return '<div class="leg"><span class="dot" style="background:'+s.color+'"></span>'+esc(s.label)+' · <b>'+eur(s.value)+'</b></div>';}).join(''):'<div class="muted" style="font-size:12px">Aucun encaissement sur 30 j.</div>';
+    var row='<div class="dash-row">'+
+      '<div class="card dash-chart"><div class="dash-ttl"><span>Chiffre d\'affaires</span><span class="muted" style="font-size:11px;font-family:var(--sans);font-weight:400">30 derniers jours</span></div>'+(svgArea(d.parJour)||'<div class="muted" style="padding:24px 0;text-align:center">Pas encore de ventes.</div>')+'</div>'+
+      '<div class="card dash-donut"><div class="dash-ttl"><span>Encaissements</span><span class="muted" style="font-size:11px;font-family:var(--sans);font-weight:400">30 j</span></div>'+
+        '<div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;justify-content:center"><div class="donut-wrap">'+svgDonut(segs.length?segs:[{label:'—',value:1,color:'#ece7dd'}])+'<div class="donut-center"><div class="dc-val">'+eur(payTotal)+'</div><div class="dc-lbl">total</div></div></div><div style="min-width:120px">'+legend+'</div></div>'+
+      '</div>'+
+    '</div>';
+    var table=(d.boutiques&&d.boutiques.length>1)?'<div class="card" style="overflow:hidden"><div style="padding:13px 16px 0"><b style="font-family:var(--serif);font-size:14px">Par boutique</b></div><table class="tbl"><thead><tr><th>Boutique</th><th style="text-align:right">CA du jour</th><th style="text-align:right">Tickets</th><th style="text-align:right">CA du mois</th><th>Stock</th></tr></thead><tbody>'+d.boutiques.map(function(x){return '<tr><td><b>'+esc(x.label)+'</b></td><td style="text-align:right">'+eur(x.caJour)+'</td><td style="text-align:right">'+x.ticketsJour+'</td><td style="text-align:right">'+eur(x.caMois)+'</td><td>'+(x.alertes?'<span class="tag tag-low">'+x.alertes+' à réappro</span>':'<span class="tag tag-ok">OK</span>')+'</td></tr>';}).join('')+'</tbody></table></div>':'';
+    b.innerHTML=kpis+row+table;
+  }
+
   // ---------- Clients réels du site (via le serveur → myCred) ----------
   var remoteCustomers=[];
   function tierOf(p){p=p||0;return p>=1000?'Or':(p>=200?'Argent':'Bronze');}
@@ -637,21 +734,14 @@ table.tbl tr:hover td{background:#faf9f5;}
   var titles={dash:'Tableau de bord',pos:'Caisse',borne:'Borne',commandes:'Commandes',challenge:'Challenge',journal:'Journal des ventes',produits:'Produits',stock:'Stock',fidelite:'Fidélité',factu:'Facturation',conformite:'Conformité',franchises:'Franchisés',pro:'Réassort pro',reglages:'Réglages'};
 
   function viewDash(){
-    if(st.user&&st.user.role!=='admin'){return viewDashBoutique();}
-    var totCA=boutiques.reduce(function(s,b){return s+b.ca;},0);
-    var totTk=boutiques.reduce(function(s,b){return s+b.tickets;},0);
-    var avg=totTk?totCA/totTk:0;
-    return '<div class="vhead"><div><h1>Bonjour Lenny</h1><p>Vue réseau · '+new Date().toLocaleDateString('fr-FR',{weekday:'long',day:'numeric',month:'long'})+'</p></div></div>'+
-    '<div class="net-note">'+crown('#b8902f')+' Tu vois l\'ensemble du réseau. Chaque franchisé, lui, ne voit que sa propre boutique (isolation des données).</div>'+
-    '<div class="kpis">'+
-      kpi("Chiffre d'affaires (jour)",eur(totCA),'+12% vs hier')+
-      kpi('Tickets',totTk,'4 boutiques')+
-      kpi('Panier moyen',eur(avg),'')+
-      kpi('Membres Club',customers.length+' · 1 720 pts','Or, Argent, Bronze')+
-    '</div>'+
-    '<div class="card"><table class="tbl"><thead><tr><th>Boutique</th><th>CA du jour</th><th>Tickets</th><th>Alertes stock</th><th>Statut</th></tr></thead><tbody>'+
-    boutiques.map(function(b){return '<tr><td><b>'+b.name+'</b></td><td>'+eur(b.ca)+'</td><td>'+b.tickets+'</td><td>'+(b.alertes?'<span class="tag tag-low">'+b.alertes+' à réappro</span>':'<span class="tag tag-ok">OK</span>')+'</td><td>'+(b.statut==='Ouverte'?'<span class="tag tag-ok">Ouverte</span>':'<span class="muted">Fermée</span>')+'</td></tr>';}).join('')+
-    '</tbody></table></div>';
+    if(!API.on){ return '<div class="vhead"><div><h1>Bonjour '+esc((((st.user&&st.user.name)||'').split(' ')[0])||'')+'</h1><p>Connecte l\'app au serveur pour voir tes chiffres en direct.</p></div></div><div class="net-note">'+crown('#b8902f')+' Va dans Réglages → Connecter au serveur.</div>'; }
+    var isAdmin=st.user&&st.user.role==='admin';
+    var prenom=esc((((st.user&&st.user.name)||'Lenny').split(' ')[0])||'Lenny');
+    var sousTitre=(isAdmin?'Vue réseau':'Boutique '+esc(boutiqueName(st.user.boutiqueId)))+' · '+new Date().toLocaleDateString('fr-FR',{weekday:'long',day:'numeric',month:'long'});
+    setTimeout(function(){ if(!dashData.loaded&&!dashData.loading)loadDashboard(); else renderDashboardBody(); },0);
+    return '<div class="vhead"><div><h1>Bonjour '+prenom+'</h1><p>'+sousTitre+'</p></div></div>'+
+      (isAdmin?'<div class="net-note">'+crown('#b8902f')+' Vue réseau — chaque franchisé ne voit que sa propre boutique (isolation des données).</div>':'')+
+      '<div id="dash-body"><div class="muted" style="padding:20px">Chargement…</div></div>';
   }
   function kpi(l,v,d){return '<div class="card kpi"><div class="lbl">'+l+'</div><div class="val">'+v+'</div>'+(d?'<div class="dlt">'+d+'</div>':'')+'</div>';}
 
@@ -1548,6 +1638,7 @@ table.tbl tr:hover td{background:#faf9f5;}
     var nfr=document.getElementById('nav-franchises');if(nfr){nfr.style.display=(st.user.role==='admin')?'':'none';}
     if(st.user && !window.__proBadgeInit){ window.__proBadgeInit=true; refreshProBadge(); setInterval(function(){try{refreshProBadge();}catch(e){}},45000); }
     if(st.user && !window.__challengeInit){ window.__challengeInit=true; setInterval(function(){try{ if(st.view==='challenge'&&API.on) loadChallenge(); }catch(e){} },15000); }
+    if(st.user && !window.__dashInit){ window.__dashInit=true; setInterval(function(){try{ if(st.view==='dash'&&API.on) loadDashboard(); }catch(e){} },60000); }
     var sf=document.getElementById('sideFoot');if(sf){sf.innerHTML='<b>'+st.user.name+'</b>'+st.user.roleLabel+' · KINGSTON<button class="btn" style="width:100%;margin-top:10px;background:transparent;color:#cfc9ba;border-color:rgba(255,255,255,.16)" data-act="logout">Se déconnecter</button>';}
   }
 

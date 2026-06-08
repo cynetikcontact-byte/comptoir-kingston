@@ -1556,12 +1556,40 @@ const server = http.createServer(async (req, res) => {
 
     if (req.method === 'GET' && path === '/api/dashboard') {
       if (PG) return send(res, 200, await PG.dashboard(user));
+      const r2 = (n) => Math.round(n * 100) / 100;
+      const now = new Date();
+      const today = now.toISOString().slice(0, 10);
+      const month = now.toISOString().slice(0, 7);
       const scope = user.role === 'admin' ? boutiqueIds() : [user.boutiqueId];
-      const dashboard = scope.map((id) => {
-        const inv = invoices.filter((i) => i.boutiqueId === id);
-        return { boutique: id, tickets: inv.length, ca: Math.round(inv.reduce((a, i) => a + i.total, 0) * 100) / 100 };
+      // Périmètre des KPIs/graphiques : réseau (admin) ou la boutique du manager. Optionnel ?boutique= pour l'admin.
+      const sel = user.role === 'admin' ? (u.searchParams.get('boutique') || '') : user.boutiqueId;
+      const kpiScope = sel ? [sel] : scope;
+      const payNorm = (p) => { const s = String(p || '').toLowerCase(); if (/esp|cash|liquide/.test(s)) return 'Espèces'; if (/carte|cb|monetico|cic|bancaire|tpe/.test(s)) return 'Carte'; return p || 'Autre'; };
+      const start = new Date(now); start.setDate(start.getDate() - 29); const startStr = start.toISOString().slice(0, 10);
+      let caJour = 0, ticketsJour = 0, caMois = 0, ticketsMois = 0;
+      const byDay = {}, byPay = {};
+      invoices.filter((i) => kpiScope.indexOf(i.boutiqueId) >= 0).forEach((i) => {
+        const d = (i.date || '').slice(0, 10);
+        if (d === today) { caJour += i.total; if (i.total >= 0) ticketsJour++; }
+        if ((i.date || '').slice(0, 7) === month) { caMois += i.total; if (i.total >= 0) ticketsMois++; }
+        if (d >= startStr) { byDay[d] = (byDay[d] || 0) + i.total; const m = payNorm(i.payment); byPay[m] = (byPay[m] || 0) + i.total; }
       });
-      return send(res, 200, { role: user.role, voitLesBoutiques: scope, dashboard });
+      const parJour = [];
+      for (let k = 29; k >= 0; k--) { const dt = new Date(now); dt.setDate(dt.getDate() - k); const ds = dt.toISOString().slice(0, 10); parJour.push({ date: ds, ttc: r2(byDay[ds] || 0) }); }
+      const parPaiement = Object.keys(byPay).sort().map((m) => ({ moyen: m, montant: r2(byPay[m]) }));
+      const cat = (() => { try { return allCatalog(); } catch (e) { return []; } })();
+      const perB = scope.map((id) => {
+        let cj = 0, tj = 0, cm = 0;
+        invoices.filter((i) => i.boutiqueId === id).forEach((i) => { const d = (i.date || '').slice(0, 10); if (d === today) { cj += i.total; if (i.total >= 0) tj++; } if ((i.date || '').slice(0, 7) === month) cm += i.total; });
+        let alertes = 0; const stb = stock[id] || {};
+        cat.forEach((p) => { const s = stb[p.id]; if (!s) return; if (p.unit === 'g') { if (totalGrams(s) < 25) alertes++; } else if ((s.units || 0) < 5) alertes++; });
+        return { boutique: id, label: (boutiques[id] || {}).label || id, caJour: r2(cj), ticketsJour: tj, caMois: r2(cm), alertes: alertes, statut: 'Ouverte' };
+      });
+      return send(res, 200, {
+        role: user.role, scope: scope, jour: today,
+        kpis: { caJour: r2(caJour), ticketsJour: ticketsJour, panierMoyen: ticketsJour ? r2(caJour / ticketsJour) : 0, caMois: r2(caMois), ticketsMois: ticketsMois },
+        parJour: parJour, parPaiement: parPaiement, boutiques: perB,
+      });
     }
 
     // ---------------- CHALLENGE / COMPÉTITION : classement des boutiques par CA (jour + mois) ----------------
