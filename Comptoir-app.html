@@ -780,14 +780,114 @@ table.tbl tr:hover td{background:#faf9f5;}
   }
   function tierCard(n,c,t){return '<div class="card tier"><div class="dot" style="background:'+c+'"></div><div class="nm">'+n+'</div><div class="th">'+t+'</div></div>';}
 
-  function viewFactu(){
-    var rows=invoices.slice().reverse().map(function(f){
-      var statut=f.total<0?'<span class="tag tag-g">Avoir</span>':(f.refunded?'<span class="tag tag-low">Remboursée</span>':'<span class="tag tag-ok">Émise</span>');
-      var action=(f.total>=0&&!f.refunded&&f.lines)?'<button class="toggle" data-act="refund" data-num="'+f.num+'" style="color:#b4452f;border-color:#e7c4bb">Rembourser</button>':'';
-      return '<tr><td><b>'+f.num+'</b></td><td class="muted">'+f.date+'</td><td>'+esc(f.client)+'</td><td>'+f.pay+'</td><td>'+eur(f.total)+'</td><td>'+statut+'</td><td style="text-align:right">'+action+'</td></tr>';
+  // ---------- Facturation : export comptable (3 tableaux) ----------
+  var comptaData=(function(){var d=new Date();var mv=d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2);var last=new Date(d.getFullYear(),d.getMonth()+1,0).getDate();return {loaded:false,loading:false,data:null,period:null,mode:'mois',monthValue:mv,from:mv+'-01',to:mv+'-'+('0'+last).slice(-2),boutique:''};})();
+  function fcFr(iso){return (iso&&/^\d{4}-\d{2}-\d{2}/.test(iso))?iso.slice(0,10).split('-').reverse().join('/'):(iso||'');}
+  function cQty(n){n=Math.round((Number(n)||0)*100)/100;return (n%1===0?n.toFixed(0):String(n).replace('.',','));}
+  var FC_MOIS=['janvier','février','mars','avril','mai','juin','juillet','août','septembre','octobre','novembre','décembre'];
+  function fcSync(){var m=document.getElementById('fc-month');if(m)comptaData.monthValue=m.value;var f=document.getElementById('fc-from');if(f)comptaData.from=f.value;var t=document.getElementById('fc-to');if(t)comptaData.to=t.value;var b=document.getElementById('fc-bq');if(b)comptaData.boutique=b.value;}
+  function fcPeriod(){
+    if(comptaData.mode==='plage'){return {from:comptaData.from||'',to:comptaData.to||'',label:fcFr(comptaData.from)+' → '+fcFr(comptaData.to)};}
+    var m=comptaData.monthValue||'';var pr=m.split('-');var y=+pr[0],mo=+pr[1];var last=new Date(y,mo,0).getDate();
+    return {from:m+'-01',to:m+'-'+('0'+last).slice(-2),label:(FC_MOIS[mo-1]||'')+' '+y};
+  }
+  function loadComptable(){
+    if(!API.on)return;
+    fcSync();var p=fcPeriod();var bq=(st.user&&st.user.role==='admin')?(comptaData.boutique||''):'';
+    comptaData.loading=true;comptaData.loaded=false;comptaData.period=p;
+    var body=document.getElementById('fc-body');if(body)body.innerHTML='<div class="muted" style="padding:22px">Génération du rapport comptable…</div>';
+    var qs='?from='+encodeURIComponent(p.from)+'&to='+encodeURIComponent(p.to)+(bq?'&boutique='+encodeURIComponent(bq):'');
+    apiGet('/api/factu/comptable'+qs).then(function(d){comptaData.data=d;comptaData.loaded=true;comptaData.loading=false;renderComptableBody();})
+      .catch(function(e){comptaData.loading=false;var b=document.getElementById('fc-body');if(b)b.innerHTML='<div class="net-note">Rapport indisponible : '+esc(e.message||e)+'</div>';});
+  }
+  function cCard(title,sub,inner){return '<div class="card" style="padding:0;margin-bottom:18px;overflow:hidden"><div style="padding:14px 16px;border-bottom:1px solid var(--line)"><b style="font-family:var(--serif);font-size:16px">'+esc(title)+'</b>'+(sub?'<div class="muted" style="font-size:12px;margin-top:3px">'+esc(sub)+'</div>':'')+'</div>'+inner+'</div>';}
+  function cT1(d){
+    var p=d.parJourMode;var modes=p.modes;
+    var head='<tr><th>Date</th>'+modes.map(function(m){return '<th style="text-align:right">'+esc(m)+'</th>';}).join('')+'<th style="text-align:right">Total</th></tr>';
+    var tot='<tr style="font-weight:700;background:#faf8f3"><td>Total période</td>'+modes.map(function(m){return '<td style="text-align:right">'+eur(p.totaux[m]||0)+'</td>';}).join('')+'<td style="text-align:right">'+eur(p.totalGeneral)+'</td></tr>';
+    var rows=p.jours.map(function(j){return '<tr><td>'+fcFr(j.date)+'</td>'+modes.map(function(m){return '<td style="text-align:right">'+eur(j.modes[m]||0)+'</td>';}).join('')+'<td style="text-align:right;font-weight:600">'+eur(j.total)+'</td></tr>';}).join('');
+    return cCard('1 · CA par jour et mode de paiement','Chiffre d\'affaires TTC encaissé, par jour et par moyen de paiement.','<table class="tbl"><thead>'+head+'</thead><tbody>'+tot+rows+(rows?'':'<tr><td colspan="'+(modes.length+2)+'" class="muted" style="padding:16px">Aucune vente sur la période.</td></tr>')+'</tbody></table>');
+  }
+  function cT2(d){
+    var pm=d.paiements.parMode;
+    var summary=pm.map(function(m){return '<span style="display:inline-block;margin:0 16px 6px 0"><b>'+esc(m.mode)+'</b> · '+m.count+' paiements · '+eur(m.total)+'</span>';}).join('');
+    var rows=d.paiements.lignes.map(function(p){var dt=new Date(p.datetime);var ok=!isNaN(dt);return '<tr><td>'+(ok?dt.toLocaleDateString('fr-FR'):fcFr(p.datetime))+'</td><td class="muted">'+(ok?dt.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'}):'')+'</td><td>'+esc(p.mode)+'</td><td>'+esc(p.num)+'</td><td style="text-align:right">'+eur(p.montant)+'</td></tr>';}).join('');
+    return cCard('2 · Détail des paiements','Chaque encaissement : date, mode, n° de commande, montant.','<div style="padding:11px 14px;font-size:12.5px" class="muted">'+(summary||'—')+'</div><table class="tbl"><thead><tr><th>Date</th><th>Heure</th><th>Mode</th><th>N° commande</th><th style="text-align:right">Montant</th></tr></thead><tbody>'+(rows||'<tr><td colspan="5" class="muted" style="padding:16px">Aucun paiement.</td></tr>')+'</tbody></table>');
+  }
+  function cT3(d){
+    var v=d.ventes;
+    var catRows=v.categories.map(function(c){
+      var head='<tr style="background:#faf8f3"><td><b>'+esc(c.cat)+'</b></td><td></td><td style="text-align:right"><b>'+(c.qty?cQty(c.qty):'')+'</b></td><td style="text-align:right;font-weight:700">'+eur(c.ht)+'</td></tr>';
+      var prods=c.produits.map(function(p){return '<tr><td style="padding-left:22px">'+(p.code?'<span class="muted">['+esc(p.code)+'] </span>':'')+esc(p.name)+'</td><td class="muted">'+esc(p.unit||'')+'</td><td style="text-align:right">'+(p.qty?cQty(p.qty):'')+'</td><td style="text-align:right">'+eur(p.ht)+'</td></tr>';}).join('');
+      return head+prods;
     }).join('');
-    return '<div class="vhead"><div><h1>Facturation</h1><p>Numérotation séquentielle et inaltérable (conformité fiscale). Aucune facture ne peut être supprimée, seulement corrigée.</p></div><button class="btn" data-act="exportfec">Exporter (FEC)</button></div>'+
-    '<div class="card"><table class="tbl"><thead><tr><th>N° facture</th><th>Date</th><th>Client</th><th>Paiement</th><th>Montant</th><th>Statut</th><th></th></tr></thead><tbody>'+rows+'</tbody></table></div>';
+    var ventesTbl='<table class="tbl"><thead><tr><th>Désignation</th><th>Unité</th><th style="text-align:right">Qté</th><th style="text-align:right">Total HT</th></tr></thead><tbody>'+catRows+'<tr style="font-weight:700;border-top:2px solid var(--ink)"><td colspan="3">Total HT</td><td style="text-align:right">'+eur(v.totalHT)+'</td></tr></tbody></table>';
+    var taxRows=v.taxes.map(function(t){return '<tr><td>TVA '+esc(t.taux)+'</td><td style="text-align:right">'+eur(t.baseHT)+'</td><td style="text-align:right">'+eur(t.tva)+'</td><td style="text-align:right">'+eur(t.ttc)+'</td></tr>';}).join('');
+    var taxTbl='<table class="tbl"><thead><tr><th>Taux</th><th style="text-align:right">Base HT</th><th style="text-align:right">TVA</th><th style="text-align:right">TTC</th></tr></thead><tbody>'+taxRows+'<tr style="font-weight:700;border-top:2px solid var(--ink)"><td>Total</td><td style="text-align:right">'+eur(v.totalHT)+'</td><td style="text-align:right">'+eur(v.totalTVA)+'</td><td style="text-align:right">'+eur(v.totalTTC)+'</td></tr></tbody></table>';
+    return cCard('3 · Détails des ventes','Ventes par catégorie et produit (HT), taxes par taux, total TTC.',ventesTbl+'<div style="padding:14px 14px 2px"><b style="font-family:var(--serif);font-size:14px">Taxes sur les ventes</b></div>'+taxTbl);
+  }
+  function renderComptableBody(){var b=document.getElementById('fc-body');if(!b)return;var d=comptaData.data;if(!d){b.innerHTML='';return;}b.innerHTML='<div class="muted" style="font-size:12.5px;margin:-4px 0 14px">Période : <b>'+esc((comptaData.period&&comptaData.period.label)||'')+'</b> · '+esc(d.meta.boutiqueLabel||'')+' · '+d.meta.nbVentes+' ventes</div>'+cT1(d)+cT2(d)+cT3(d);}
+  function ensureXLSX(cb){if(window.XLSX){cb();return;}var s=document.createElement('script');s.src='https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';s.onload=function(){cb();};s.onerror=function(){toast('Module Excel introuvable (réseau).');};document.head.appendChild(s);}
+  function exportComptableXlsx(){
+    if(!comptaData.data){toast('Génère d\'abord le rapport.');return;}
+    toast('Préparation du fichier Excel…');
+    ensureXLSX(function(){try{
+      var d=comptaData.data,p=d.parJourMode,v=d.ventes,wb=XLSX.utils.book_new();
+      var s1=[['CA par jour et mode de paiement'],['Période',d.meta.from+' → '+d.meta.to,'Boutique',d.meta.boutiqueLabel],[],['Date'].concat(p.modes).concat(['Total'])];
+      s1.push(['Total période'].concat(p.modes.map(function(m){return p.totaux[m]||0;})).concat([p.totalGeneral]));
+      p.jours.forEach(function(j){s1.push([fcFr(j.date)].concat(p.modes.map(function(m){return j.modes[m]||0;})).concat([j.total]));});
+      XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(s1),'CA jour x mode');
+      var s2=[['Détail des paiements'],['Période',d.meta.from+' → '+d.meta.to],[],['Récapitulatif par mode']];
+      d.paiements.parMode.forEach(function(m){s2.push([m.mode,m.count+' paiements','',m.total]);});
+      s2.push([],['Date','Heure','Mode','N° commande','Montant']);
+      d.paiements.lignes.forEach(function(x){var dt=new Date(x.datetime);var ok=!isNaN(dt);s2.push([ok?dt.toLocaleDateString('fr-FR'):x.datetime,ok?dt.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'}):'',x.mode,x.num,x.montant]);});
+      XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(s2),'Paiements');
+      var s3=[['Détails des ventes'],['Période',d.meta.from+' → '+d.meta.to,'Boutique',d.meta.boutiqueLabel],[],['Désignation','Unité','Qté','Total HT']];
+      v.categories.forEach(function(c){s3.push([c.cat,'',c.qty||'',c.ht]);c.produits.forEach(function(pr){s3.push([(pr.code?'['+pr.code+'] ':'')+pr.name,pr.unit||'',pr.qty||'',pr.ht]);});});
+      s3.push(['Total HT','','',v.totalHT],[],['Taxes sur les ventes'],['Taux','Base HT','TVA','TTC']);
+      v.taxes.forEach(function(t){s3.push([t.taux,t.baseHT,t.tva,t.ttc]);});
+      s3.push(['Total',v.totalHT,v.totalTVA,v.totalTTC],[],['Total TTC encaissé','','',v.totalTTC]);
+      XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(s3),'Détails des ventes');
+      XLSX.writeFile(wb,'Comptable_KINGSTON_'+(d.meta.from||'')+'_'+(d.meta.to||'')+'.xlsx');
+      toast('Export Excel téléchargé ✓');
+    }catch(e){toast('Export Excel : '+(e.message||e));}});
+  }
+  function printDetailsVentes(){
+    if(!comptaData.data){toast('Génère d\'abord le rapport.');return;}
+    var d=comptaData.data,v=d.ventes,m=d.meta;
+    var sl=[m.seller.name||'KINGSTON'];if(m.seller.address)sl.push(m.seller.address);if(m.seller.zip||m.seller.city)sl.push((m.seller.zip||'')+' '+(m.seller.city||''));
+    var ventesHtml=v.categories.map(function(c){return '<tr><td><b>'+esc(c.cat)+'</b></td><td></td><td style="text-align:right"><b>'+(c.qty?cQty(c.qty):'')+'</b></td><td style="text-align:right"><b>'+eur(c.ht)+'</b></td></tr>'+c.produits.map(function(p){return '<tr><td style="padding-left:16px">'+(p.code?'['+esc(p.code)+'] ':'')+esc(p.name)+'</td><td>'+esc(p.unit||'')+'</td><td style="text-align:right">'+(p.qty?cQty(p.qty):'')+'</td><td style="text-align:right">'+eur(p.ht)+'</td></tr>';}).join('');}).join('');
+    var taxHtml=v.taxes.map(function(t){return '<tr><td>'+esc(t.taux)+'</td><td style="text-align:right">'+eur(t.tva)+'</td><td style="text-align:right">'+eur(t.baseHT)+'</td></tr>';}).join('');
+    var payHtml=d.paiements.lignes.map(function(p){return '<tr><td>'+esc(p.mode)+'</td><td>'+esc(p.num)+'</td><td style="text-align:right">'+eur(p.montant)+'</td></tr>';}).join('');
+    var html='<div class="fac" style="font-size:12px">'+
+      '<div class="fac-top"><div class="fac-em">'+sl.map(esc).join('<br>')+'</div><div class="fac-no"><div class="fac-big">KINGSTON</div><div class="fac-t">Détails des ventes</div><div>À la date du '+fcFr((m.genereLe||'').slice(0,10))+'</div></div></div>'+
+      '<div class="muted" style="margin-bottom:10px">'+esc(m.boutiqueLabel||'')+' · du '+fcFr(m.from)+' au '+fcFr(m.to)+'</div>'+
+      '<div class="fac-t" style="margin:10px 0 4px">Ventes</div><table class="fac-tbl"><tbody>'+ventesHtml+'<tr style="font-weight:700;border-top:2px solid #000"><td>Total</td><td></td><td style="text-align:right">'+cQty(v.totalQty)+'</td><td style="text-align:right">'+eur(v.totalHT)+'</td></tr></tbody></table>'+
+      '<div class="fac-t" style="margin:14px 0 4px">Taxes sur les ventes</div><table class="fac-tbl"><thead><tr><th>Taux</th><th style="text-align:right">Taxe</th><th style="text-align:right">Base</th></tr></thead><tbody>'+taxHtml+'<tr style="font-weight:700"><td>Total</td><td style="text-align:right">'+eur(v.totalTVA)+'</td><td style="text-align:right">'+eur(v.totalHT)+'</td></tr></tbody></table>'+
+      '<div style="text-align:right;font-weight:800;font-size:15px;margin:10px 0">Total TTC : '+eur(v.totalTTC)+'</div>'+
+      '<div class="fac-t" style="margin:14px 0 4px">Paiements</div><table class="fac-tbl"><thead><tr><th>Mode</th><th>Commande</th><th style="text-align:right">Montant</th></tr></thead><tbody>'+payHtml+'</tbody></table>'+
+      '<div class="fac-legal">Rapport généré par Comptoir KINGSTON. Produits CBD · THC &lt; 0,3 %.</div>'+
+    '</div>';
+    var rc=document.getElementById('receipt');if(rc){rc.innerHTML=html;window.print();setTimeout(function(){rc.innerHTML='';},800);}
+  }
+  function viewFactu(){
+    if(!API.on){return '<div class="vhead"><div><h1>Facturation</h1><p>Connecte l\'app au serveur pour générer le rapport comptable.</p></div></div><div class="net-note">'+crown('#b8902f')+' Va dans Réglages → Connecter au serveur (normalement automatique à la connexion).</div>';}
+    var isAdmin=st.user&&st.user.role==='admin';
+    var onMois=comptaData.mode!=='plage';
+    var seg='<div style="display:inline-flex;border:1px solid var(--line);border-radius:9px;overflow:hidden;height:40px">'+
+      '<button class="btn" data-act="fc-mode" data-m="mois" style="border:0;border-radius:0;'+(onMois?'background:var(--ink);color:var(--gold2)':'background:#fff')+'">Par mois</button>'+
+      '<button class="btn" data-act="fc-mode" data-m="plage" style="border:0;border-radius:0;border-left:1px solid var(--line);'+(!onMois?'background:var(--ink);color:var(--gold2)':'background:#fff')+'">Plage perso</button></div>';
+    var inputs=onMois
+      ? '<div class="fld"><label>Mois</label><input type="month" id="fc-month" value="'+esc(comptaData.monthValue||'')+'"/></div><button class="btn" data-act="fc-quick" data-q="this">Ce mois</button><button class="btn" data-act="fc-quick" data-q="last">Mois dernier</button>'
+      : '<div class="fld"><label>Du</label><input type="date" id="fc-from" value="'+esc(comptaData.from||'')+'"/></div><div class="fld"><label>Au</label><input type="date" id="fc-to" value="'+esc(comptaData.to||'')+'"/></div>';
+    var bqSel=isAdmin?'<div class="fld"><label>Boutique</label><select id="fc-bq" style="padding:9px;border:1px solid var(--line);border-radius:8px;height:40px"><option value="">Réseau (toutes)</option>'+boutiqueOptions(comptaData.boutique)+'</select></div>':'';
+    if(API.on){setTimeout(function(){if(!comptaData.loaded&&!comptaData.loading)loadComptable();else renderComptableBody();},0);}
+    return '<div class="vhead"><div><h1>Facturation</h1><p>Tout ce dont ton comptable a besoin : CA par jour et mode de paiement, détail des paiements, et détails des ventes (TVA incluse).</p></div></div>'+
+      '<div class="card" style="padding:16px;margin-bottom:18px">'+
+        '<div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap">'+seg+inputs+bqSel+'<button class="btn btn-gold" data-act="fc-load" style="height:40px">Générer</button></div>'+
+        '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:14px;border-top:1px solid var(--line);padding-top:14px;align-items:center"><button class="btn btn-dark" data-act="fc-xlsx">⬇️ Export Excel (3 onglets)</button><button class="btn" data-act="fc-pdf">⬇️ PDF « Détails des ventes »</button><span class="muted" style="font-size:12px">À transmettre tel quel à ton comptable.</span></div>'+
+      '</div>'+
+      '<div id="fc-body"><div class="muted" style="padding:20px">Chargement…</div></div>';
   }
 
   function viewBorne(){
@@ -823,7 +923,7 @@ table.tbl tr:hover td{background:#faf9f5;}
     badge.className='tag tag-low'; badge.textContent='Terminal : vérification…';
     if(API.on){ apiGet('/api/terminal/status').then(function(d){ var ts=(d&&d.terminals)||{}; var key=(st.user&&st.user.boutiqueId)||Object.keys(ts)[0]; var t=ts[key]||{}; if(t.online){ badge.className='tag tag-ok'; badge.textContent='Terminal prêt'; } else { badge.className='tag tag-low'; badge.textContent=t.paired?'Pont hors ligne':'Pont non appairé'; } }).catch(function(){ badge.textContent='Terminal : statut indisponible'; }); }
   }
-  function boutiqueOptions(){ return Object.keys(BQNAME).map(function(id){ return '<option value="'+id+'">'+esc(BQNAME[id])+'</option>'; }).join(''); }
+  function boutiqueOptions(sel){ return Object.keys(BQNAME).map(function(id){ return '<option value="'+id+'"'+(sel===id?' selected':'')+'>'+esc(BQNAME[id])+'</option>'; }).join(''); }
   function payInit(){ var sel=document.getElementById('pay-mode'); if(sel)sel.value=PAY_MODE; payModeRender(); }
   function setPayMode(m){ PAY_MODE=(m==='auto')?'auto':'manuel'; try{ localStorage.setItem('kt_pay_mode',PAY_MODE); }catch(e){} payModeRender(); }
   function loyInit(){
@@ -1685,6 +1785,11 @@ table.tbl tr:hover td{background:#faf9f5;}
     var a=el.getAttribute('data-act');
     if(a==='navtoggle'){document.body.classList.toggle('nav-open');return;}
     if(a==='navclose'){document.body.classList.remove('nav-open');return;}
+    if(a==='fc-mode'){fcSync();comptaData.mode=el.getAttribute('data-m');render();return;}
+    if(a==='fc-quick'){var fq=el.getAttribute('data-q');var dq=new Date();if(fq==='last')dq.setMonth(dq.getMonth()-1);comptaData.monthValue=dq.getFullYear()+'-'+('0'+(dq.getMonth()+1)).slice(-2);comptaData.mode='mois';render();loadComptable();return;}
+    if(a==='fc-load'){loadComptable();return;}
+    if(a==='fc-xlsx'){exportComptableXlsx();return;}
+    if(a==='fc-pdf'){printDetailsVentes();return;}
     if(a==='login'){
       var ukey=document.getElementById('lg-user').value;var pass=(document.getElementById('lg-pass').value||'');
       var er=document.getElementById('lg-err');if(er){er.style.color='#8a8273';er.textContent='Connexion…';}

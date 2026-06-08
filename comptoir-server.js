@@ -1941,6 +1941,79 @@ const server = http.createServer(async (req, res) => {
       }
     }
 
+    // ---------------- Export comptable : les 3 tableaux que le comptable attend ----------------
+    // 1) CA par jour x mode de paiement   2) Detail des paiements   3) Detail des ventes (categories/produits + taxes)
+    if (req.method === 'GET' && path === '/api/factu/comptable') {
+      if (PG) return send(res, 501, { error: 'Indisponible en mode PostgreSQL (prototype)' });
+      const bId = user.role === 'admin' ? (u.searchParams.get('boutique') || null) : user.boutiqueId;
+      const from = u.searchParams.get('from') || '';
+      const to = u.searchParams.get('to') || '';
+      const inRange = (iso) => { const d = (iso || '').slice(0, 10); if (from && d < from) return false; if (to && d > to) return false; return true; };
+      const list = invoices.filter((i) => (bId ? i.boutiqueId === bId : true)).filter((i) => inRange(i.date)).slice().sort((a, b) => (a.date < b.date ? -1 : 1));
+      const r2 = (n) => Math.round(n * 100) / 100;
+
+      // Index categorie (par id produit, sinon par nom)
+      const catById = {}, catByName = {};
+      try { allCatalog().forEach((p) => { catById[p.id] = p.cat || 'Divers'; catByName[String(p.name || '').toLowerCase()] = p.cat || 'Divers'; }); } catch (e) {}
+      const catOf = (l) => (l.productId && catById[l.productId]) || catByName[String(l.produit || l.name || '').toLowerCase()] || 'Divers';
+      // Normalisation du mode de paiement -> Especes / Carte (sinon tel quel)
+      const payNorm = (p) => { const s = String(p || '').toLowerCase(); if (/esp|cash|liquide/.test(s)) return 'Espèces'; if (/carte|cb|monetico|cic|bancaire|tpe/.test(s)) return 'Carte'; return p || 'Autre'; };
+
+      // 1) Pivot : CA TTC par jour x mode
+      const days = {}, modeSet = {};
+      list.forEach((i) => { const d = (i.date || '').slice(0, 10); const m = payNorm(i.payment); modeSet[m] = 1; days[d] = days[d] || {}; days[d][m] = (days[d][m] || 0) + i.total; });
+      const modes = Object.keys(modeSet).sort();
+      const jours = Object.keys(days).sort().map((d) => { const row = { date: d, modes: {}, total: 0 }; modes.forEach((m) => { const v = days[d][m] || 0; row.modes[m] = r2(v); row.total += v; }); row.total = r2(row.total); return row; });
+      const totauxMode = {}; let totalGeneral = 0; modes.forEach((m) => { let s = 0; jours.forEach((j) => { s += j.modes[m]; }); totauxMode[m] = r2(s); totalGeneral += s; });
+      const parJourMode = { modes: modes, jours: jours, totaux: totauxMode, totalGeneral: r2(totalGeneral) };
+
+      // 2) Detail des paiements (chaque facture = un reglement)
+      const paiements = list.map((i) => ({ datetime: i.date, mode: payNorm(i.payment), modeBrut: i.payment, num: i.num, montant: r2(i.total) })).sort((a, b) => (a.datetime < b.datetime ? 1 : -1));
+      const parMode = {}; paiements.forEach((p) => { parMode[p.mode] = parMode[p.mode] || { count: 0, total: 0 }; parMode[p.mode].count++; parMode[p.mode].total = r2(parMode[p.mode].total + p.montant); });
+      const paiementsParMode = Object.keys(parMode).sort().map((m) => ({ mode: m, count: parMode[m].count, total: parMode[m].total }));
+
+      // 3) Detail des ventes : produits par categorie (qte + HT brut) + taxes par taux (net)
+      const catMap = {}, taxMap = {};
+      let grossHT = 0;
+      list.forEach((i) => {
+        (i.lines || []).forEach((l) => {
+          const c = catOf(l); const rate = (typeof l.vat === 'number' ? l.vat : 0.20);
+          const ttc = Number(l.prix) || 0; const ht = ttc / (1 + rate);
+          const q = (l.grams != null ? Number(l.grams) : (Number(l.qty) || 1));
+          const unit = (l.grams != null ? 'g' : 'Unité(s)');
+          catMap[c] = catMap[c] || { cat: c, qty: 0, ht: 0, prods: {} };
+          catMap[c].qty += q; catMap[c].ht += ht; grossHT += ht;
+          const key = String(l.produit || l.name || 'Article');
+          catMap[c].prods[key] = catMap[c].prods[key] || { name: key, code: l.productId || '', qty: 0, unit: unit, ht: 0 };
+          catMap[c].prods[key].qty += q; catMap[c].prods[key].ht += ht;
+        });
+        // Taxes par taux : on agrege la ventilation NETTE de chaque facture (remises deduites) -> reconcilie avec le TTC encaisse
+        const vent = (i.tva && i.tva.ventilation) ? i.tva.ventilation : null;
+        if (vent) { vent.forEach((v) => { taxMap[v.taux] = taxMap[v.taux] || { taux: v.taux, baseHT: 0, tva: 0, ttc: 0 }; taxMap[v.taux].baseHT += v.baseHT; taxMap[v.taux].tva += v.tva; taxMap[v.taux].ttc += v.ttc; }); }
+        else { (i.lines || []).forEach((l) => { const rate = (typeof l.vat === 'number' ? l.vat : 0.20); const taux = Math.round(rate * 100) + '%'; const ttc = Number(l.prix) || 0; const ht = ttc / (1 + rate); taxMap[taux] = taxMap[taux] || { taux: taux, baseHT: 0, tva: 0, ttc: 0 }; taxMap[taux].baseHT += ht; taxMap[taux].tva += (ttc - ht); taxMap[taux].ttc += ttc; }); }
+      });
+      const taxes = Object.keys(taxMap).sort().map((t) => ({ taux: t, baseHT: r2(taxMap[t].baseHT), tva: r2(taxMap[t].tva), ttc: r2(taxMap[t].ttc) }));
+      const netHT = r2(taxes.reduce((a, v) => a + v.baseHT, 0));
+      const totalTVA = r2(taxes.reduce((a, v) => a + v.tva, 0));
+      const totalTTC = r2(taxes.reduce((a, v) => a + v.ttc, 0));
+      const categories = Object.keys(catMap).sort().map((c) => { const o = catMap[c]; return { cat: c, qty: r2(o.qty), ht: r2(o.ht), produits: Object.keys(o.prods).map((k) => { const p = o.prods[k]; return { name: p.name, code: p.code, qty: r2(p.qty), unit: p.unit, ht: r2(p.ht) }; }).sort((a, b) => b.ht - a.ht) }; });
+      // Ligne de remise/fidelite pour reconcilier les ventes (brut) avec le net encaisse (comme Odoo).
+      // Seuil 0,05 EUR : on ignore le simple bruit d'arrondi, on ne montre la ligne que pour de vraies remises.
+      const diff = r2(netHT - r2(grossHT));
+      if (Math.abs(diff) >= 0.05) categories.push({ cat: 'Remises & fidélité', qty: 0, ht: diff, produits: [{ name: 'Remises fidélité, coupons & ajustements', code: '', qty: 0, unit: '', ht: diff }] });
+
+      const sl = sellerFor(bId);
+      return send(res, 200, {
+        meta: {
+          from: from || null, to: to || null, boutique: bId, boutiqueLabel: (boutiques[bId] || {}).label || 'Réseau KINGSTON',
+          seller: { name: sl.name, address: sl.address, zip: sl.zip, city: sl.city, siren: sl.siren, vat: sl.vat }, nbVentes: list.length, genereLe: new Date().toISOString(),
+        },
+        parJourMode: parJourMode,
+        paiements: { lignes: paiements, parMode: paiementsParMode },
+        ventes: { categories: categories, totalQty: r2(Object.keys(catMap).reduce((a, c) => a + catMap[c].qty, 0)), totalHT: netHT, taxes: taxes, totalTVA: totalTVA, totalTTC: totalTTC, paiements: paiementsParMode },
+      });
+    }
+
     return send(res, 404, { error: 'Route inconnue : ' + path });
   } catch (e) {
     return send(res, 400, { error: String(e.message || e) });
