@@ -296,11 +296,91 @@ table.tbl tr:hover td{background:#faf9f5;}
 .fac-ttc td{font-family:var(--serif);font-size:18px;font-weight:800;border-top:2px solid #15110b;}
 .fac-pay{margin-top:14px;font-size:12.5px;font-weight:700;}
 .fac-legal{margin-top:18px;font-size:10.5px;color:#777;border-top:1px solid #eee;padding-top:10px;line-height:1.5;}
+
+/* =====================================================================
+   RESPONSIVE MOBILE — tiroir de navigation + mise en page fluide
+   ===================================================================== */
+.hamburger{display:none;align-items:center;justify-content:center;width:42px;height:42px;flex:0 0 42px;border:1px solid var(--line);background:#fff;border-radius:11px;cursor:pointer;padding:0;color:var(--ink);}
+.hamburger:active{background:var(--paper);transform:scale(.96);}
+.hamburger svg{width:21px;height:21px;display:block;}
+.mbrand{display:none;align-items:center;gap:7px;font-family:var(--serif);font-size:19px;letter-spacing:.10em;color:var(--ink);white-space:nowrap;}
+.mbrand svg{flex:none;}
+.side-backdrop{display:none;position:fixed;inset:0;z-index:290;background:rgba(12,9,5,.5);opacity:0;transition:opacity .28s ease;-webkit-backdrop-filter:blur(2px);backdrop-filter:blur(2px);}
+
+@media(max-width:860px){
+  /* --- Sidebar -> tiroir coulissant --- */
+  .side{position:fixed;top:0;left:0;bottom:0;width:80%;max-width:296px;flex-basis:auto;z-index:300;
+        overflow-y:auto;-webkit-overflow-scrolling:touch;
+        transform:translateX(-100%);transition:transform .3s cubic-bezier(.4,0,.2,1);
+        box-shadow:0 0 48px rgba(0,0,0,.45);}
+  body.nav-open .side{transform:translateX(0);}
+  body.nav-open .side-backdrop{display:block;opacity:1;}
+  body.nav-open{overflow:hidden;}
+  .nav-item{padding:13px 12px;font-size:14.5px;}              /* cibles tactiles + grandes */
+  .nav-grp{padding-top:16px;}
+
+  /* --- Top bar compacte : hamburger + marque --- */
+  .hamburger{display:inline-flex;}
+  .mbrand{display:inline-flex;}
+  .top{height:58px;flex-basis:58px;padding:0 13px;gap:10px;position:sticky;top:0;z-index:40;}
+  .top-l{gap:11px;min-width:0;flex:1;}
+  .top-title,.demo-pill{display:none;}
+  .top-r{gap:8px;flex:none;}
+  .boutique-sel{max-width:150px;font-size:12px;padding:8px 26px 8px 11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .role-badge div{display:none;}                              /* on garde l'avatar */
+
+  /* --- Contenu --- */
+  .view{padding:16px 14px;}
+  .vhead{align-items:flex-start;}
+  .vhead h1{font-size:20px;}
+  .vhead p{font-size:12.5px;}
+
+  /* --- KPI : 2 colonnes --- */
+  .kpis{grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px;}
+  .kpi{padding:13px 14px;}
+  .kpi .val{font-size:22px;}
+
+  /* --- Caisse : empilée, ticket sous la grille --- */
+  .pos{grid-template-columns:1fr;height:auto;gap:14px;}
+  .pgrid{grid-template-columns:repeat(auto-fill,minmax(132px,1fr));overflow:visible;}
+  .ticket{min-height:auto;}
+
+  /* --- Grilles diverses --- */
+  .stock-grid{grid-template-columns:1fr;}
+  .ch-grid{grid-template-columns:1fr;}
+  .tiers{grid-template-columns:1fr;}
+
+  /* --- Tableaux -> défilement horizontal --- */
+  .tbl-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;border-radius:12px;}
+  .tbl-scroll table.tbl{min-width:520px;}
+  table.tbl th,table.tbl td{padding:10px 11px;font-size:12.5px;}
+
+  /* --- Modales en feuille basse (bottom-sheet) --- */
+  .modal-backdrop{align-items:flex-end;justify-content:center;padding:0;}
+  .modal{max-width:none;width:100%;max-height:90vh;overflow-y:auto;-webkit-overflow-scrolling:touch;border-radius:18px 18px 0 0;}
+  .modal-grid{grid-template-columns:1fr;}
+
+  /* --- Borne (kiosque) : 2 colonnes mini --- */
+  .b-grid{grid-template-columns:repeat(auto-fill,minmax(148px,1fr));}
+
+  /* --- Évite le zoom auto iOS au focus (champs >=16px) --- */
+  input,select,textarea,.pos-search,.login-card .fld input,.login-card .fld select{font-size:16px;}
+}
+
+@media(max-width:520px){
+  .pgrid{grid-template-columns:repeat(auto-fill,minmax(118px,1fr));}
+  .b-grid{grid-template-columns:1fr 1fr;}
+  .vhead h1{font-size:19px;}
+}
+@media(max-width:370px){
+  .kpis{grid-template-columns:1fr;}
+}
 </style>
 </head>
 <body>
 <div id="app">
-  <aside class="side">
+  <div class="side-backdrop" id="sideBk" data-act="navclose"></div>
+  <aside class="side" id="side">
     <div class="side-brand">
       <svg width="22" height="17" viewBox="0 0 26 20" aria-hidden="true"><path d="M2 17 L4 6 L9 12 L13 4 L17 12 L22 6 L24 17 Z" fill="#d8b252"/></svg>
       <div><div class="wm">KINGSTON</div><div class="sub">Comptoir</div></div>
@@ -330,6 +410,8 @@ table.tbl tr:hover td{background:#faf9f5;}
   <main class="main">
     <header class="top">
       <div class="top-l">
+        <button class="hamburger" data-act="navtoggle" aria-label="Ouvrir le menu"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h18M3 12h18M3 18h18"/></svg></button>
+        <span class="mbrand"><svg width="19" height="15" viewBox="0 0 26 20" aria-hidden="true"><path d="M2 17 L4 6 L9 12 L13 4 L17 12 L22 6 L24 17 Z" fill="#d8b252"/></svg>KINGSTON</span>
         <div class="top-title" id="topTitle">Tableau de bord</div>
         <span class="demo-pill">Prototype</span>
       </div>
@@ -1304,10 +1386,20 @@ table.tbl tr:hover td{background:#faf9f5;}
 
   var viewsMap={dash:viewDash,pos:viewPos,produits:viewProduits,stock:viewStock,fidelite:viewFidelite,factu:viewFactu,borne:viewBorne,commandes:viewCommandes,challenge:viewChallenge,journal:viewJournal,conformite:viewConformite,franchises:viewFranchises,pro:viewPro,reglages:viewReglages};
 
+  // Enrobe chaque tableau .tbl dans un conteneur à défilement horizontal (utile sur mobile ; transparent sur desktop).
+  function wrapTables(root){
+    try{ (root||document).querySelectorAll('table.tbl').forEach(function(t){
+      var p=t.parentNode; if(!p||(p.classList&&p.classList.contains('tbl-scroll')))return;
+      var w=document.createElement('div'); w.className='tbl-scroll';
+      p.insertBefore(w,t); w.appendChild(t);
+    }); }catch(e){}
+  }
   function render(){
     if(!st.user){showLogin();return;}
     var lr=document.getElementById('login-root');if(lr)lr.innerHTML='';
     view.innerHTML=(viewsMap[st.view]||viewDash)();
+    wrapTables(view);
+    if(!window.__tblMo){try{window.__tblMo=new MutationObserver(function(){wrapTables(view);});window.__tblMo.observe(view,{childList:true,subtree:true});}catch(e){}}
     document.querySelectorAll('.nav-item').forEach(function(n){n.classList.toggle('active',n.getAttribute('data-view')===st.view);});
     $("#topTitle").textContent=titles[st.view]||'';
     var rb=document.querySelector('.role-badge');if(rb){rb.innerHTML='<span class="av">'+st.user.initials+'</span><div>'+st.user.roleLabel+'<br><b>'+st.user.name+'</b></div>';}
@@ -1585,12 +1677,14 @@ table.tbl tr:hover td{background:#faf9f5;}
   // ---------- Événements ----------
   document.body.addEventListener('click',function(ev){
     var n=ev.target.closest('[data-view]');
-    if(n){st.view=n.getAttribute('data-view');render();return;}
+    if(n){st.view=n.getAttribute('data-view');document.body.classList.remove('nav-open');render();return;}
     var b=ev.target.closest('[data-b]');
     if(b){handleBorne(b,ev);return;}
     var el=ev.target.closest('[data-act]');
     if(!el)return;
     var a=el.getAttribute('data-act');
+    if(a==='navtoggle'){document.body.classList.toggle('nav-open');return;}
+    if(a==='navclose'){document.body.classList.remove('nav-open');return;}
     if(a==='login'){
       var ukey=document.getElementById('lg-user').value;var pass=(document.getElementById('lg-pass').value||'');
       var er=document.getElementById('lg-err');if(er){er.style.color='#8a8273';er.textContent='Connexion…';}
