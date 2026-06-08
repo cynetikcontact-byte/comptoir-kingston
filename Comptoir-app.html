@@ -355,9 +355,9 @@ table.tbl tr:hover td{background:#faf9f5;}
   .tbl-scroll table.tbl{min-width:520px;}
   table.tbl th,table.tbl td{padding:10px 11px;font-size:12.5px;}
 
-  /* --- Modales en feuille basse (bottom-sheet) --- */
-  .modal-backdrop{align-items:flex-end;justify-content:center;padding:0;}
-  .modal{max-width:none;width:100%;max-height:90vh;overflow-y:auto;-webkit-overflow-scrolling:touch;border-radius:18px 18px 0 0;}
+  /* --- Modales : ancrées EN HAUT pour rester au-dessus du clavier mobile --- */
+  .modal-backdrop{align-items:flex-start;justify-content:center;padding:0;}
+  .modal{max-width:none;width:100%;max-height:94vh;overflow-y:auto;-webkit-overflow-scrolling:touch;border-radius:0 0 18px 18px;}
   .modal-grid{grid-template-columns:1fr;}
 
   /* --- Borne (kiosque) : 2 colonnes mini --- */
@@ -1479,7 +1479,7 @@ table.tbl tr:hover td{background:#faf9f5;}
   function clientModal(){
     if(API.on){
       openModal('<div class="modal-h">Associer un membre Kingston Club</div><div class="modal-b">'+
-        '<input id="cm-search" placeholder="Nom, e-mail ou téléphone…" style="width:100%;background:var(--ink);border:1px solid var(--line);border-radius:10px;padding:11px 13px;color:var(--cream);margin-bottom:10px"/>'+
+        '<div style="position:sticky;top:0;background:#fff;padding:2px 0 10px;z-index:3"><input id="cm-search" placeholder="Nom, e-mail ou téléphone…" autocomplete="off" style="width:100%;background:var(--ink);border:1px solid var(--line);border-radius:10px;padding:12px 13px;color:var(--cream);font-size:16px"/></div>'+
         '<div id="cm-list"><div class="muted" style="padding:8px">Chargement…</div></div></div>');
       setTimeout(function(){loadClientSearch('');var i=document.getElementById('cm-search');if(i)i.focus();},0);
       return;
