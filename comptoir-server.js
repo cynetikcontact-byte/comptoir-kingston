@@ -1592,6 +1592,37 @@ const server = http.createServer(async (req, res) => {
       });
     }
 
+    // ---------------- Remise à zéro (mise en service réelle) ----------------
+    // Efface ventes + chaîne fiscale + commandes (borne & réassort). GARDE catalogue, stock, identité, fidélité, pont.
+    // Sauvegarde horodatée AVANT toute modification (les données test restent récupérables). Admin + phrase de confirmation.
+    if (req.method === 'POST' && path === '/api/admin/reset') {
+      if (user.role !== 'admin') return send(res, 403, { error: 'Reserve a l administrateur reseau' });
+      if (PG) return send(res, 501, { error: 'Indisponible en mode PostgreSQL' });
+      let body = {}; try { body = await readJson(req); } catch (e) {}
+      if (!body || body.confirm !== 'REMISE-A-ZERO') return send(res, 400, { error: 'Confirmation requise', confirmAttendu: 'REMISE-A-ZERO' });
+      // 1) Sauvegarde horodatée AVANT toute modification — si elle échoue, on n'efface RIEN.
+      let backupName = null;
+      try {
+        const bdir = pathmod.join(pathmod.dirname(DATA_FILE), 'comptoir-backups');
+        if (!fs.existsSync(bdir)) fs.mkdirSync(bdir, { recursive: true });
+        const bf = pathmod.join(bdir, 'comptoir-PRE-RESET-' + new Date().toISOString().replace(/[:.]/g, '-') + '.json');
+        if (fs.existsSync(DATA_FILE)) { fs.copyFileSync(DATA_FILE, bf); backupName = pathmod.basename(bf); }
+      } catch (e) { return send(res, 500, { error: 'Sauvegarde pre-reset impossible (' + e.message + ') — remise a zero ANNULEE.' }); }
+      const avant = { factures: invoices.length, commandesBorne: orders.length, reassort: supplyOrders.length, grandTotal: gtPerpetuel, evenementsFiscaux: fiscalEvents.length };
+      // 2) Remise a zero des ventes + chaine fiscale + commandes (invoices est const -> on vide le tableau en place)
+      invoices.length = 0; invoiceSeq = 0; lastHash = 'GENESIS';
+      orders.length = 0; orderSeq = 1;
+      supplyOrders.length = 0; supplySeq = 1;
+      fiscalEvents.length = 0; fiscalSeq = 0; lastFiscalSig = 'GENESIS';
+      clotureSeq = { Z: 0, M: 0, A: 0 };
+      gtPerpetuel = 0; gtPerpetuelAvoirs = 0;
+      seqByB = {}; gtByB = {}; gtAvoirsByB = {}; clotureSeqByB = {};
+      // 3) Demarre la NOUVELLE chaine fiscale par un evenement de mise en service (documente le point de depart reel)
+      logFiscalEvent('MISE_EN_SERVICE', null, { par: user.name || 'admin', motif: 'Remise a zero avant lancement reel', sauvegarde: backupName });
+      persist();
+      return send(res, 200, { ok: true, message: 'Systeme remis a zero, pret pour le lancement reel.', sauvegarde: backupName, avant: avant, apres: { factures: invoices.length, commandesBorne: orders.length, reassort: supplyOrders.length, grandTotal: gtPerpetuel, evenementsFiscaux: fiscalEvents.length } });
+    }
+
     // ---------------- CHALLENGE / COMPÉTITION : classement des boutiques par CA (jour + mois) ----------------
     // Leaderboard "Mario Kart" : VISIBLE PAR TOUS les comptes (admin + managers) pour la compétition réseau.
     // Chaque boutique voit en direct où elle se situe vs les autres. #1 = plus gros CA.
