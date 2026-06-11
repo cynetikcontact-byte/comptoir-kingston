@@ -393,12 +393,14 @@ table.tbl tr:hover td{background:#faf9f5;}
   input,select,textarea,.pos-search,.login-card .fld input,.login-card .fld select{font-size:16px;}
 }
 
-/* ----- Heatmap stock : carrés du rouge (vide) au vert (max) ----- */
+/* ----- Heatmap stock v2 : familles, vert=grammes, bleu=unités, rouge=vide ----- */
 .hm-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(92px,1fr));gap:8px;}
-.hm-tile{aspect-ratio:1/1;border-radius:12px;padding:8px;display:flex;flex-direction:column;justify-content:space-between;color:#fff;overflow:hidden;box-shadow:inset 0 0 0 1px rgba(255,255,255,.12);}
-.hm-q{font-family:var(--serif);font-size:18px;font-weight:700;line-height:1;}
-.hm-q span{font-size:11px;font-weight:400;opacity:.85;margin-left:2px;}
-.hm-n{font-size:10.5px;line-height:1.25;opacity:.95;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;}
+.hm-fam{font-family:var(--serif);font-weight:700;font-size:14px;margin:14px 2px 7px;}
+.hm-tile{aspect-ratio:1/1;border-radius:12px;padding:8px;display:flex;flex-direction:column;justify-content:space-between;color:#fff;overflow:hidden;box-shadow:inset 0 0 0 1px rgba(255,255,255,.12);cursor:pointer;transition:transform .12s ease;}
+.hm-tile:active{transform:scale(.96);}
+.hm-q{font-family:var(--serif);font-size:18px;font-weight:700;line-height:1;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.35);}
+.hm-q span{font-size:11px;font-weight:400;opacity:.9;margin-left:2px;}
+.hm-n{font-size:10.5px;line-height:1.25;color:#fff;font-weight:700;text-shadow:0 1px 2px rgba(0,0,0,.4);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;}
 @media(max-width:520px){.hm-grid{grid-template-columns:repeat(auto-fill,minmax(76px,1fr));}}
 /* ----- Caisse mobile : barre total fixe + ticket coulissant ----- */
 .tk-close{display:none;background:none;border:none;font-size:26px;line-height:1;color:#a59c88;cursor:pointer;padding:0 2px;}
@@ -870,14 +872,45 @@ table.tbl tr:hover td{background:#faf9f5;}
       note+'<div class="card">'+(rows||'<div class="muted" style="padding:14px">Aucun produit pour le moment.</div>')+'</div>';
   }
 
+  function hmModal(pid){
+    var p=products.find(function(x){return x.id===pid;}); if(!p)return;
+    var isG=p.unit==='g';
+    var tot=isG?totalStockG(p):(p.stockU||0);
+    var lots=isG?'<table class="lots"><thead><tr><th>Lot</th><th>Qté</th><th>Péremption</th><th>COA</th></tr></thead><tbody>'+(((p.lots||[]).map(function(l){return '<tr><td><b>'+esc(l.lot)+'</b></td><td>'+l.g+' g</td><td>'+esc(l.exp||'')+'</td><td class="muted">'+esc(l.coa||'—')+'</td></tr>';}).join(''))||'<tr><td colspan="4" class="muted">Aucun lot en stock</td></tr>')+'</tbody></table>':'';
+    openModal('<div class="modal-h">'+esc(p.name)+' — '+tot+' '+(isG?'g':'u')+'</div><div class="modal-b">'+
+      '<div class="muted" style="font-size:12px;margin-bottom:8px">'+esc(p.cat||'')+(isG?' · stock au gramme (lots, FEFO)':' · stock à l’unité')+'</div>'+lots+
+      '<div style="margin:14px 0 6px;font-weight:700;font-family:var(--serif)">Ajuster le stock</div>'+
+      '<div style="display:flex;gap:8px;margin-bottom:8px"><button class="btn hm-sens btn-gold" data-hm-sens="ajout" data-act="hmsens" style="flex:1">+ Ajouter</button><button class="btn hm-sens" data-hm-sens="retrait" data-act="hmsens" style="flex:1">− Retirer</button></div>'+
+      '<input id="hm-qty" type="number" min="0" step="'+(isG?'0.5':'1')+'" placeholder="Quantité ('+(isG?'grammes':'unités')+')" style="width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:10px;font-size:15px;margin-bottom:8px"/>'+
+      '<input id="hm-motif" placeholder="Motif obligatoire (casse, inventaire, erreur de saisie…)" style="width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:10px;font-size:14px;margin-bottom:10px"/>'+
+      '<button class="btn btn-gold" style="width:100%;min-height:46px" data-act="hmadjust" data-id="'+p.id+'">Valider l’ajustement</button>'+
+      '<div id="hm-err" style="color:#b4452f;font-size:12.5px;margin-top:6px"></div>'+
+      '<div style="margin:16px 0 6px;font-weight:700;font-family:var(--serif)">Derniers mouvements</div><div id="hm-moves" class="muted" style="font-size:12.5px">'+(API.on?'Chargement…':'Disponible une fois connecté au serveur.')+'</div>'+
+      '<div style="margin-top:14px"><button class="btn" style="width:100%" data-act="closemodal">Fermer</button></div></div>');
+    if(API.on){apiGet('/api/stock/moves?productId='+encodeURIComponent(p.id)+((st.user&&st.user.role==='admin')?'&boutique='+encodeURIComponent(st.boutiqueId||''):'')).then(function(d){var el2=document.getElementById('hm-moves');if(!el2)return;var ms=(d&&d.mouvements)||[];el2.innerHTML=ms.length?ms.slice(0,8).map(function(m){return '<div style="padding:6px 0;border-bottom:1px dashed var(--line)"><b>'+(m.sens==='ajout'?'+':'−')+m.quantite+' '+m.unite+'</b> · '+esc(m.motif)+'<br><span class="muted">'+new Date(m.date).toLocaleString('fr-FR')+' · '+esc(m.par||'')+' · reste : '+m.stockApres+' '+m.unite+'</span></div>';}).join(''):'Aucun mouvement enregistré pour ce produit.';}).catch(function(){var el2=document.getElementById('hm-moves');if(el2)el2.textContent='Historique indisponible.';});}
+  }
   function viewStock(){
     var fleurs=products.filter(function(p){return p.unit==='g';});
     var acc=products.filter(function(p){return p.unit==='u';});
-    var hmAll=fleurs.map(function(p){return {n:p.name,q:totalStockG(p),u:'g'};}).concat(acc.map(function(p){return {n:p.name,q:(p.stockU||0),u:'u'};}));
-    var hmMaxG=Math.max.apply(null,[1].concat(hmAll.filter(function(x){return x.u==='g';}).map(function(x){return x.q;})));
-    var hmMaxU=Math.max.apply(null,[1].concat(hmAll.filter(function(x){return x.u==='u';}).map(function(x){return x.q;})));
-    var hmTiles=hmAll.map(function(x){var mx=x.u==='g'?hmMaxG:hmMaxU;var r=Math.max(0,Math.min(1,x.q/mx));var hue=Math.round(r*120);return '<div class="hm-tile" title="'+esc(x.n)+' : '+x.q+' '+x.u+'" style="background:hsl('+hue+',68%,'+Math.round(38+r*8)+'%)"><div class="hm-q">'+x.q+'<span>'+x.u+'</span></div><div class="hm-n">'+esc(x.n)+'</div></div>';}).join('');
-    var heatmap=hmAll.length?'<div class="card" style="padding:14px;margin-bottom:18px"><div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px"><b style="font-family:var(--serif)">Tout le stock en un coup d’œil</b><span class="muted" style="font-size:11.5px">rouge = vide · vert = plus grosse quantité ('+hmMaxG+' g / '+hmMaxU+' u)</span></div><div class="hm-grid">'+hmTiles+'</div></div>':'';
+    var famOrder=['Fleurs','King','Résine','Résines'];
+    var gByCat={};
+    fleurs.forEach(function(p){var c=p.cat||'Autres';(gByCat[c]=gByCat[c]||[]).push({id:p.id,n:p.name,q:totalStockG(p)});});
+    var catKeys=Object.keys(gByCat);
+    catKeys.sort(function(a,b){var ia=famOrder.indexOf(a),ib=famOrder.indexOf(b);ia=ia<0?99:ia;ib=ib<0?99:ib;return (ia-ib)||(a<b?-1:1);});
+    var hmFams=catKeys.map(function(c){return {nom:c,unite:'g',items:gByCat[c]};});
+    if(acc.length)hmFams.push({nom:'Accessoires & collectors',unite:'u',items:acc.map(function(p){return {id:p.id,n:p.name,q:(p.stockU||0)};})});
+    var heatmap=hmFams.length?'<div class="card" style="padding:14px;margin-bottom:18px"><div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:4px"><b style="font-family:var(--serif)">Tout le stock en un coup d’œil</b><span class="muted" style="font-size:11.5px">rouge = vide · vert = grammes · bleu = unités · touche un carré : détail + ajustement</span></div>'+hmFams.map(function(f){
+      var mx=Math.max.apply(null,[1].concat(f.items.map(function(x){return x.q;})));
+      var tiles=f.items.map(function(x){
+        var r=Math.max(0,Math.min(1,x.q/mx));
+        var bg;
+        if(x.q<=0)bg='hsl(0,66%,37%)';
+        else if(f.unite==='g')bg='hsl('+Math.round(r*120)+',68%,'+Math.round(38+r*8)+'%)';
+        else bg='hsl(210,'+Math.round(35+r*45)+'%,'+Math.round(58-r*22)+'%)';
+        return '<div class="hm-tile" data-act="hmopen" data-id="'+x.id+'" title="'+esc(x.n)+' : '+x.q+' '+f.unite+'" style="background:'+bg+'"><div class="hm-q">'+x.q+'<span>'+f.unite+'</span></div><div class="hm-n">'+esc(x.n)+'</div></div>';
+      }).join('');
+      return '<div class="hm-fam">'+esc(f.nom)+' <span class="muted" style="font-weight:400;font-size:11px">· max '+mx+' '+f.unite+'</span></div><div class="hm-grid">'+tiles+'</div>';
+    }).join('')+'</div>':'';
     var cards=fleurs.map(function(p){
       var tot=totalStockG(p);var low=tot<30;
       var lots=(p.lots||[]).map(function(l){return '<tr><td><b>'+l.lot+'</b></td><td>'+l.g+' g</td><td>'+l.exp+'</td><td class="muted">'+l.coa+'</td></tr>';}).join('');
@@ -887,8 +920,7 @@ table.tbl tr:hover td{background:#faf9f5;}
     }).join('');
     var accRows=acc.map(function(p){var low=p.stockU<15;return '<tr><td><b>'+p.name+'</b></td><td>'+p.cat+'</td><td>'+p.stockU+' u</td><td>'+(low?'<span class="tag tag-low">à réappro</span>':'<span class="tag tag-ok">OK</span>')+'</td></tr>';}).join('');
     return '<div class="vhead"><div><h1>Stock — '+(BQNAME[st.boutiqueId]||st.boutique)+'</h1><p>Stock de la boutique sélectionnée (change la ville en haut à droite). Fleurs au gramme, par lot, avec péremption et COA.</p></div><div style="display:flex;gap:8px"><button class="btn" data-act="restockall">Réappro. tout</button><button class="btn btn-gold" data-act="recept">+ Réceptionner un lot</button></div></div>'+
-    heatmap+'<div class="stock-grid">'+cards+'</div>'+
-    '<h3 style="font-family:var(--serif);margin:22px 0 10px">Accessoires & collectors</h3><div class="card"><table class="tbl"><thead><tr><th>Produit</th><th>Catégorie</th><th>Stock</th><th>Statut</th></tr></thead><tbody>'+accRows+'</tbody></table></div>'+
+    heatmap+
     '<h3 style="font-family:var(--serif);margin:26px 0 10px">Comparatif multi‑boutiques</h3>'+compareSection();
   }
 
@@ -2044,6 +2076,25 @@ table.tbl tr:hover td{background:#faf9f5;}
     if(a==='refund'){var fnum=el.getAttribute('data-num');var f=invoices.filter(function(x){return x.num===fnum;})[0];if(!f||f.refunded||f.total<0){return;}(f.lines||[]).forEach(function(l){var p=pById(l.productId);if(!p)return;if(l.grams){p.lots=p.lots||[];p.lots.push({lot:'RETOUR-'+f.num,g:l.grams,exp:'12/2099',coa:'—'});}else if(l.qty){p.stockU=(p.stockU||0)+l.qty;}});f.refunded=true;var anum='KING-2026-'+String(nextInvoice++).padStart(4,'0');invoices.push({num:anum,date:new Date().toLocaleDateString('fr-FR')+' '+new Date().toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'}),client:f.client,total:-f.total,pay:'Avoir',avoirDe:f.num,refunded:true});render();toast('Avoir '+anum+' créé · stock réapprovisionné');return;}
     if(a==='price'){var pp=pById(el.getAttribute('data-id'));pp.price=Math.max(0.5,Math.round((pp.price+(+el.getAttribute('data-d'))*0.5)*100)/100);render();return;}
     if(a==='recept'){receptModal();return;}
+    if(a==='hmopen'){hmModal(el.getAttribute('data-id'));return;}
+    if(a==='hmsens'){document.querySelectorAll('.hm-sens').forEach(function(b){b.classList.remove('btn-gold');});el.classList.add('btn-gold');return;}
+    if(a==='hmadjust'){
+      if(!API.on){toast('Connecte-toi au serveur pour ajuster le stock');return;}
+      var hpid=el.getAttribute('data-id');
+      var hq=parseFloat((document.getElementById('hm-qty')||{}).value);
+      var hmotif=(((document.getElementById('hm-motif')||{}).value)||'').trim();
+      var hsEl=document.querySelector('.hm-sens.btn-gold');
+      var hsens=hsEl?hsEl.getAttribute('data-hm-sens'):'ajout';
+      var herr=document.getElementById('hm-err');
+      if(!hq||hq<=0){if(herr)herr.textContent='Indique une quantité valide.';return;}
+      if(hmotif.length<3){if(herr)herr.textContent='Le motif est obligatoire (3 caractères minimum).';return;}
+      el.disabled=true;
+      apiPost('/api/stock/adjust',{productId:hpid,qty:hq,sens:hsens,motif:hmotif,boutiqueId:st.boutiqueId}).then(function(){
+        closeModal();toast('Stock ajusté ('+(hsens==='ajout'?'+':'−')+hq+') — mouvement tracé');
+        reloadProducts(function(){render();});
+      }).catch(function(e){el.disabled=false;if(herr)herr.textContent=(e&&e.message)||'Erreur serveur';});
+      return;
+    }
     if(a==='restockall'){if(!API.on){toast('Connecte-toi au serveur pour réapprovisionner');return;}apiPost('/api/stock/restock-all',{}).then(function(d){toast((d.restocked||0)+' produits réapprovisionnés');reloadProducts(function(){render();});}).catch(function(e){toast('Échec : '+(e.message||e));});return;}
     if(a==='cloture'){doCloture(el.getAttribute('data-t'));return;}
     if(a==='fiscverify'){fiscalData.loading=false;loadFiscal();toast('Vérification de l’intégrité…');return;}

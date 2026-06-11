@@ -206,6 +206,7 @@ const IMG_DIR = process.env.COMPTOIR_IMG_DIR || pathmod.join(__dirname, 'img');
 
 // ---- Réassort pro (B2B) : les franchisés commandent leur stock au réseau. Prix de gros = prix public x proRate ----
 let proRate = Number(process.env.COMPTOIR_PRO_RATE || 0.5);   // 0.5 = -50% du prix public (réglable par l'admin)
+let stockMoves = [];        // mouvements de stock manuels (ajout/retrait) : motif OBLIGATOIRE, trace persistante
 let supplyOrders = [];      // commandes de réassort (B2B)
 let supplySeq = 1;
 
@@ -482,7 +483,7 @@ function persist() {
       // Écriture ATOMIQUE : fichier temporaire puis renommage -> jamais de fichier tronqué en cas de coupure.
       // NB : fiscalKey n'est PLUS écrite ici (stockée à part, fichier protégé).
       const tmp = DATA_FILE + '.tmp';
-      fs.writeFileSync(tmp, JSON.stringify({ v: 1, savedAt: new Date().toISOString(), pointsPerEuro: POINTS_PER_EURO, hideBaseCatalog, customProducts, stock, boutiques, invoiceSeq, lastHash, invoices, orderSeq, orders, fiscalEvents, fiscalSeq, lastFiscalSig, clotureSeq, gtPerpetuel, gtPerpetuelAvoirs, seqByB, gtByB, gtAvoirsByB, clotureSeqByB, supplyOrders, supplySeq, proRate, pontDevices, sessions, proProducts, lastProSync, proLots, entreprise }), 'utf8');
+      fs.writeFileSync(tmp, JSON.stringify({ v: 1, savedAt: new Date().toISOString(), pointsPerEuro: POINTS_PER_EURO, hideBaseCatalog, customProducts, stock, boutiques, invoiceSeq, lastHash, invoices, orderSeq, orders, fiscalEvents, fiscalSeq, lastFiscalSig, clotureSeq, gtPerpetuel, gtPerpetuelAvoirs, seqByB, gtByB, gtAvoirsByB, clotureSeqByB, supplyOrders, supplySeq, stockMoves, proRate, pontDevices, sessions, proProducts, lastProSync, proLots, entreprise }), 'utf8');
       fs.renameSync(tmp, DATA_FILE);
     } catch (e) { console.error('Persistance impossible :', e.message); }
   }, 200);
@@ -516,6 +517,7 @@ function loadPersisted() {
     if (d.gtByB && typeof d.gtByB === 'object') gtByB = d.gtByB;
     if (d.gtAvoirsByB && typeof d.gtAvoirsByB === 'object') gtAvoirsByB = d.gtAvoirsByB;
     if (d.clotureSeqByB && typeof d.clotureSeqByB === 'object') clotureSeqByB = d.clotureSeqByB;
+    if (Array.isArray(d.stockMoves)) stockMoves = d.stockMoves;
     if (Array.isArray(d.supplyOrders)) supplyOrders = d.supplyOrders;
     if (d.pontDevices && typeof d.pontDevices === 'object') Object.assign(pontDevices, d.pontDevices);
     if (d.sessions && typeof d.sessions === 'object') { const _now = Date.now(); for (const t in d.sessions) { const s = d.sessions[t]; if (s && s.exp > _now) sessions[t] = s; } } // garde les connexions actives apres un redemarrage
@@ -1867,6 +1869,63 @@ const server = http.createServer(async (req, res) => {
     }
 
     // Entrée de stock avec un NUMÉRO DE LOT choisi (produit entrant / arrivage). Admin ou manager (sa boutique).
+    // ---- Ajustement manuel du stock : motif OBLIGATOIRE, mouvement trace (persiste + JET) ----
+    if (req.method === 'POST' && path === '/api/stock/adjust') {
+      if (user.role !== 'admin' && user.role !== 'manager') return send(res, 403, { error: 'Reserve au personnel' });
+      const b = await readJson(req);
+      const bId = user.role === 'admin' ? (b.boutiqueId || 'aix') : user.boutiqueId;
+      const p = findProduct(b.productId); if (!p) return send(res, 404, { error: 'Produit introuvable' });
+      const motif = String((b && b.motif) || '').trim();
+      if (motif.length < 3) return send(res, 400, { error: 'Motif obligatoire (3 caracteres minimum)' });
+      const qty = Math.round((Number(b.qty) || 0) * 100) / 100;
+      if (!qty || qty <= 0) return send(res, 400, { error: 'Quantite invalide' });
+      const sens = b.sens === 'retrait' ? 'retrait' : 'ajout';
+      if (!stock[bId]) stock[bId] = {};
+      const sk = stock[bId];
+      try {
+        if (p.unit === 'g') {
+          if (!sk[p.id] || !Array.isArray(sk[p.id].lots)) sk[p.id] = { lots: [] };
+          if (sens === 'ajout') {
+            const lot = (b.lot && String(b.lot).trim()) || ('AJUST-' + new Date().toISOString().slice(2, 16).replace(/[-:T]/g, ''));
+            const exp = (b.exp && String(b.exp).trim()) || (function () { const d2 = new Date(); d2.setMonth(d2.getMonth() + 18); return d2.toISOString().slice(0, 7); })();
+            sk[p.id].lots.push({ lot: lot, g: qty, exp: exp, coa: (b.coa || '—') });
+          } else {
+            decrementFEFO(bId, p.id, qty);
+          }
+        } else {
+          if (!sk[p.id] || typeof sk[p.id].units !== 'number') sk[p.id] = { units: 0 };
+          if (sens === 'ajout') sk[p.id].units += Math.round(qty);
+          else decrementUnits(bId, p.id, Math.round(qty));
+        }
+      } catch (e) { return send(res, 400, { error: e.message }); }
+      const apres = p.unit === 'g' ? totalGrams(sk[p.id]) : sk[p.id].units;
+      const move = {
+        id: stockMoves.length + 1,
+        date: new Date().toISOString(),
+        par: user.name || user.role,
+        role: user.role,
+        boutiqueId: bId,
+        productId: p.id, produit: p.name,
+        sens: sens, quantite: qty, unite: p.unit === 'g' ? 'g' : 'u',
+        motif: motif,
+        stockApres: Math.round(apres * 100) / 100,
+      };
+      stockMoves.push(move);
+      try { logFiscalEvent('AJUSTEMENT_STOCK', bId, { produit: p.name, sens: sens, quantite: qty, motif: motif }); } catch (e) {}
+      persist();
+      return send(res, 201, { ok: true, mouvement: move });
+    }
+
+    // ---- Historique des mouvements de stock manuels ----
+    if (req.method === 'GET' && path === '/api/stock/moves') {
+      const bId = user.role === 'admin' ? (u.searchParams.get('boutique') || null) : user.boutiqueId;
+      const pid = u.searchParams.get('productId') || null;
+      const list = stockMoves
+        .filter(function (m) { return (!bId || m.boutiqueId === bId) && (!pid || m.productId === pid); })
+        .slice(-200).reverse();
+      return send(res, 200, { count: list.length, mouvements: list });
+    }
+
     if (req.method === 'POST' && path === '/api/stock/lot') {
       if (user.role !== 'admin' && user.role !== 'manager') return send(res, 403, { error: 'Réservé au personnel' });
       const b = await readJson(req);
