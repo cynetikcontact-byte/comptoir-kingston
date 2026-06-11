@@ -204,9 +204,9 @@ table.tbl tr:hover td{background:#faf9f5;}
 
 /* Modal */
 .modal-backdrop{position:fixed;inset:0;background:rgba(15,11,6,.55);display:flex;align-items:center;justify-content:center;z-index:50;padding:20px;}
-.modal{background:#fff;border-radius:16px;max-width:440px;width:100%;overflow:hidden;box-shadow:0 24px 60px rgba(0,0,0,.3);}
+.modal{background:#fff;border-radius:16px;max-width:440px;width:100%;overflow:hidden;max-height:88vh;display:flex;flex-direction:column;box-shadow:0 24px 60px rgba(0,0,0,.3);}
 .modal-h{padding:18px 20px;border-bottom:1px solid var(--line);font-family:var(--serif);font-size:18px;font-weight:700;}
-.modal-b{padding:20px;}
+.modal-b{padding:20px;overflow-y:auto;-webkit-overflow-scrolling:touch;min-height:0;}
 .modal-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
 .gbtn{border:1px solid var(--line);border-radius:12px;padding:16px;cursor:pointer;text-align:center;background:#fff;}
 .gbtn:hover{border-color:var(--gold);}
@@ -1698,7 +1698,7 @@ table.tbl tr:hover td{background:#faf9f5;}
 
   // ---------- Modales ----------
   function openModal(html){modalRoot.innerHTML='<div class="modal-backdrop" data-act="closemodal"><div class="modal">'+html+'</div></div>';}
-  function closeModal(){modalRoot.innerHTML='';}
+  function closeModal(){cmStopScan();modalRoot.innerHTML='';}
 
   function gramModal(p){
     openModal('<div class="modal-h">'+p.name+' — choisis le poids</div><div class="modal-b"><div class="modal-grid">'+
@@ -1762,11 +1762,19 @@ table.tbl tr:hover td{background:#faf9f5;}
     if(file){if(file.size>4*1024*1024){if(msg)msg.textContent='Photo trop lourde (max 4 Mo).';return;}var rd=new FileReader();rd.onload=function(){apiPost('/api/products/image',{dataUrl:rd.result}).then(function(d){payload.img=d.url;send();}).catch(function(){payload.img=f.img||'';send();});};rd.readAsDataURL(file);}
     else{payload.img=f.img||'';send();}
   }
+  // ---- Scan QR client (caisse) : caméra + jsQR auto-hébergé, identification via /api/borne/identify ----
+  var cmStream=null,cmScanTimer=null,cmBusy=false;
+  function cmLoadJsQR(cb){ if(typeof jsQR!=='undefined')return cb(true); var sc=document.createElement('script'); sc.src='/jsqr.js'; sc.onload=function(){cb(typeof jsQR!=='undefined');}; sc.onerror=function(){cb(false);}; document.head.appendChild(sc); }
+  function cmQrMsg(txt,err){ var m=document.getElementById('cm-qrmsg'); if(m){m.textContent=txt;m.style.color=err?'#b4452f':'#3f7d4f';} }
+  function cmStopScan(){ cmBusy=false; if(cmScanTimer){cancelAnimationFrame(cmScanTimer);cmScanTimer=null;} if(cmStream){cmStream.getTracks().forEach(function(tr){tr.stop();});cmStream=null;} var c=document.getElementById('cm-cam'); if(c)c.style.display='none'; }
+  function cmTick(){ if(!cmStream)return; var video=document.getElementById('cm-video'),canvas=document.getElementById('cm-canvas'); if(!video||!canvas){cmStopScan();return;} if(!cmBusy&&video.readyState===video.HAVE_ENOUGH_DATA){ canvas.width=video.videoWidth;canvas.height=video.videoHeight; var ctx=canvas.getContext('2d'); ctx.drawImage(video,0,0,canvas.width,canvas.height); var img=ctx.getImageData(0,0,canvas.width,canvas.height); var q=(typeof jsQR!=='undefined')?jsQR(img.data,img.width,img.height):null; if(q&&q.data){cmIdentify(q.data);} } cmScanTimer=requestAnimationFrame(cmTick); }
+  function cmIdentify(code){ cmBusy=true; cmQrMsg('Recherche du compte…',false); apiPost('/api/borne/identify',{code:String(code||'')}).then(function(d){ if(d&&d.found){ st.client={name:d.name||d.email,email:d.email||d.ref,phone:'',points:Math.round(d.points||0),tier:tierOf(d.points)}; st.redeemPts=0; cmStopScan(); closeModal(); render(); toast('Membre '+(d.name||d.email)+' associé · '+Math.round(d.points||0)+' pts'); } else { cmQrMsg('Client introuvable — vérifie le QR (compte kingston-cbd.fr).',true); setTimeout(function(){cmBusy=false;},1200); } }).catch(function(){ cmQrMsg('Erreur serveur — réessaie.',true); setTimeout(function(){cmBusy=false;},1200); }); }
+  function cmStartScan(){ var cam=document.getElementById('cm-cam'); if(!cam)return; cam.style.display='block'; cmQrMsg('Chargement du lecteur QR…',false); cmLoadJsQR(function(ok){ if(!ok){cmQrMsg('Lecteur QR indisponible (jsqr.js).',true);return;} if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){cmQrMsg('Caméra non supportée sur cet appareil.',true);return;} if(cmStream)return; navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}}).then(function(stream){ cmStream=stream; var video=document.getElementById('cm-video'); if(!video){cmStopScan();return;} video.srcObject=stream; video.setAttribute('playsinline',true); video.play(); cmQrMsg('Présente le QR du client devant la caméra…',false); cmScanTimer=requestAnimationFrame(cmTick); }).catch(function(){ cmQrMsg('Accès caméra refusé — autorise la caméra pour kingtools.fr.',true); }); }); }
   function clientModal(){
     if(API.on){
       openModal('<div class="modal-h">Associer un membre Kingston Club</div><div class="modal-b">'+
         '<div style="position:sticky;top:0;background:#fff;padding:2px 0 10px;z-index:3"><input id="cm-search" placeholder="Nom, e-mail ou téléphone…" autocomplete="off" style="width:100%;background:var(--ink);border:1px solid var(--line);border-radius:10px;padding:12px 13px;color:var(--cream);font-size:16px"/></div>'+
-        '<div id="cm-list"><div class="muted" style="padding:8px">Chargement…</div></div></div>');
+        '<div style="margin:0 0 10px"><button class="btn" style="width:100%" data-act="cmscan">📷 Scanner le QR du client</button><div id="cm-cam" style="display:none;margin-top:10px;text-align:center"><video id="cm-video" style="width:100%;max-width:340px;border-radius:12px;background:#000" muted playsinline></video><canvas id="cm-canvas" style="display:none"></canvas><div id="cm-qrmsg" class="muted" style="font-size:12.5px;margin-top:6px"></div></div></div>'+'<div id="cm-list"><div class="muted" style="padding:8px">Chargement…</div></div></div>');
       setTimeout(function(){loadClientSearch('');var i=document.getElementById('cm-search');if(i)i.focus();},0);
       return;
     }
@@ -1996,6 +2004,7 @@ table.tbl tr:hover td{background:#faf9f5;}
     if(a==='addpack'){var ppk=pById(el.getAttribute('data-id'));var pq=+el.getAttribute('data-q'),ppr=+el.getAttribute('data-pr');st.cart.push({name:ppk.name,detail:'Pack de '+pq,price:ppr,productId:ppk.id,packQty:pq,qty:1});closeModal();render();return;}
     if(a==='rmline'){st.cart.splice(+el.getAttribute('data-i'),1);render();return;}
     if(a==='pickclient'){clientModal();return;}
+    if(a==='cmscan'){cmStartScan();return;}
     if(a==='setclient'){st.client=customers.find(function(c){return c.id===el.getAttribute('data-id');});st.redeemPts=0;closeModal();render();return;}
     if(a==='setclientremote'){var rc=remoteCustomers[+el.getAttribute('data-i')];if(rc){st.client={name:rc.name||rc.email,email:rc.email,phone:rc.phone||'',points:Math.round(rc.points||0),tier:tierOf(rc.points)};st.redeemPts=0;}closeModal();render();return;}
     if(a==='ostatus'){var oid=parseInt(el.getAttribute('data-id'),10);var nx=el.getAttribute('data-next');el.disabled=true;apiPost('/api/orders/'+oid+'/status',{status:nx}).then(function(o){if(o&&o.id){ordersData[o.id]=o;refreshCmd();}}).catch(function(){el.disabled=false;toast('Erreur : statut commande');});return;}
