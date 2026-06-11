@@ -1619,6 +1619,103 @@ const server = http.createServer(async (req, res) => {
       return send(res, 200, archive);
     }
 
+    // ---- Analyse globale : snapshot JSON complet et structure (lecture seule). ----
+    // GET /api/analytics — admin : tout le reseau ; manager : sa boutique uniquement.
+    if (req.method === 'GET' && path === '/api/analytics') {
+      if (PG) return send(res, 501, { error: 'Analytics indisponible en mode PostgreSQL pour le moment' });
+      const r2a = (n) => Math.round(n * 100) / 100;
+      const nowA = new Date();
+      const todayA = nowA.toISOString().slice(0, 10);
+      const monthA = nowA.toISOString().slice(0, 7);
+      const scopeA = user.role === 'admin' ? boutiqueIds() : [user.boutiqueId];
+      const invsA = invoices.filter((i) => scopeA.indexOf(i.boutiqueId) >= 0);
+      let caJourA = 0, caMoisA = 0, tJourA = 0, tMoisA = 0, caTotalA = 0, nbAvoirsA = 0;
+      const byDayA = {}, byPayA = {}, byBtqA = {}, byProdA = {}, byHourA = {};
+      invsA.forEach((i) => {
+        const d = (i.date || '').slice(0, 10);
+        const h = (i.date || '').slice(11, 13);
+        caTotalA += i.total; if (i.total < 0) nbAvoirsA++;
+        if (d === todayA) { caJourA += i.total; if (i.total >= 0) tJourA++; }
+        if ((i.date || '').slice(0, 7) === monthA) { caMoisA += i.total; if (i.total >= 0) tMoisA++; }
+        if (d) byDayA[d] = (byDayA[d] || 0) + i.total;
+        if (h) byHourA[h] = (byHourA[h] || 0) + i.total;
+        const pmA = String(i.payment || 'Autre'); byPayA[pmA] = (byPayA[pmA] || 0) + i.total;
+        const bA = byBtqA[i.boutiqueId] = byBtqA[i.boutiqueId] || { ca: 0, tickets: 0 };
+        bA.ca += i.total; if (i.total >= 0) bA.tickets++;
+        (Array.isArray(i.lines) ? i.lines : []).forEach((l) => {
+          const kA = l.produit || l.productId || 'inconnu';
+          const eA = byProdA[kA] = byProdA[kA] || { ca: 0, qte: 0 };
+          eA.ca += Number(l.prix) || 0; eA.qte++;
+        });
+      });
+      const topProduitsA = Object.keys(byProdA)
+        .map((k) => ({ produit: k, ca: r2a(byProdA[k].ca), ventes: byProdA[k].qte }))
+        .sort((a, b) => b.ca - a.ca).slice(0, 20);
+      const catAn = (() => { try { return allCatalog(); } catch (e) { return []; } })();
+      const stockParBoutiqueA = scopeA.map((bid) => {
+        const sb = stock[bid] || {};
+        const produits = Object.keys(sb).map((pid) => {
+          const p = catAn.find((c) => c.id === pid) || { name: pid, unit: 'u' };
+          const e = sb[pid] || {};
+          const lots = Array.isArray(e.lots) ? e.lots : [];
+          const grammes = lots.reduce((s, l) => s + (Number(l.g) || 0), 0);
+          return {
+            id: pid, nom: p.name, unite: p.unit === 'g' ? 'g' : 'unite',
+            grammes: p.unit === 'g' ? r2a(grammes) : null,
+            unites: p.unit === 'g' ? null : (Number(e.units) || 0),
+            nbLots: lots.length,
+            lots: lots.map((l) => ({ lot: l.lot, g: l.g, exp: l.exp })),
+          };
+        });
+        return { boutique: bid, produits: produits };
+      });
+      const alertesStockA = [];
+      stockParBoutiqueA.forEach((sb) => sb.produits.forEach((p) => {
+        const niveau = p.unite === 'g' ? p.grammes : p.unites;
+        const seuil = p.unite === 'g' ? 50 : 10;
+        if (niveau !== null && niveau <= seuil) alertesStockA.push({ type: 'stock_bas', boutique: sb.boutique, produit: p.nom, niveau: niveau, unite: p.unite, seuil: seuil });
+        p.lots.forEach((l) => { if (l.exp && String(l.exp).slice(0, 7) <= monthA) alertesStockA.push({ type: 'lot_perime', boutique: sb.boutique, produit: p.nom, lot: l.lot, exp: l.exp }); });
+      }));
+      let chaineFacturesA = null, chaineEvenementsA = null;
+      try { chaineFacturesA = verifyChain(); } catch (e) { chaineFacturesA = { erreur: e.message }; }
+      try { chaineEvenementsA = fiscal.verifyEventChain(fiscalEvents, fiscalKey); } catch (e) { chaineEvenementsA = { erreur: e.message }; }
+      const alertesConfigA = [];
+      if (user.role === 'admin') {
+        if (usingDefaultPass) alertesConfigA.push('Mots de passe PAR DEFAUT actifs — definir COMPTOIR_PASS_* avant ouverture publique.');
+        if (String(LOYALTY_MODE).indexOf('demo') === 0) alertesConfigA.push('Fidelite en mode DEMO (myCred non branche).');
+        if (!(entreprise && entreprise.siret)) alertesConfigA.push('SIRET/identite legale non renseignes dans Reglages — factures non valables.');
+        if (!PG) alertesConfigA.push('Persistance memoire+fichier (PostgreSQL non active) — normal en phase actuelle.');
+      }
+      return send(res, 200, {
+        version: 'analytics-v1',
+        genereLe: nowA.toISOString(),
+        perimetre: { role: user.role, boutiques: scopeA },
+        systeme: { mode: PG ? 'postgresql' : 'memoire+fichier', uptimeSec: Math.round(process.uptime()), fidelite: LOYALTY_MODE, node: process.version },
+        fiscal: {
+          grandTotalPerpetuel: r2a(gtPerpetuel),
+          grandTotalAvoirs: r2a(gtPerpetuelAvoirs),
+          nbFactures: invoices.length,
+          nbEvenements: fiscalEvents.length,
+          clotures: clotureSeq,
+          chaineFactures: chaineFacturesA,
+          chaineEvenements: chaineEvenementsA,
+        },
+        ventes: {
+          caJour: r2a(caJourA), ticketsJour: tJourA, panierMoyenJour: tJourA ? r2a(caJourA / tJourA) : 0,
+          caMois: r2a(caMoisA), ticketsMois: tMoisA, panierMoyenMois: tMoisA ? r2a(caMoisA / tMoisA) : 0,
+          caTotal: r2a(caTotalA), nbAvoirs: nbAvoirsA,
+          parJour: Object.keys(byDayA).sort().map((d) => ({ date: d, ttc: r2a(byDayA[d]) })),
+          parHeure: Object.keys(byHourA).sort().map((h) => ({ heure: h + 'h', ttc: r2a(byHourA[h]) })),
+          parPaiement: Object.keys(byPayA).sort().map((m) => ({ moyen: m, ttc: r2a(byPayA[m]) })),
+          parBoutique: Object.keys(byBtqA).map((b) => ({ boutique: b, ca: r2a(byBtqA[b].ca), tickets: byBtqA[b].tickets })),
+          topProduits: topProduitsA,
+        },
+        stock: { parBoutique: stockParBoutiqueA, alertes: alertesStockA },
+        commandes: { total: orders.length },
+        alertesConfig: alertesConfigA,
+      });
+    }
+
     if (req.method === 'GET' && path === '/api/dashboard') {
       if (PG) return send(res, 200, await PG.dashboard(user));
       const r2 = (n) => Math.round(n * 100) / 100;
