@@ -393,6 +393,13 @@ table.tbl tr:hover td{background:#faf9f5;}
   input,select,textarea,.pos-search,.login-card .fld input,.login-card .fld select{font-size:16px;}
 }
 
+/* ----- Heatmap stock : carrés du rouge (vide) au vert (max) ----- */
+.hm-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(92px,1fr));gap:8px;}
+.hm-tile{aspect-ratio:1/1;border-radius:12px;padding:8px;display:flex;flex-direction:column;justify-content:space-between;color:#fff;overflow:hidden;box-shadow:inset 0 0 0 1px rgba(255,255,255,.12);}
+.hm-q{font-family:var(--serif);font-size:18px;font-weight:700;line-height:1;}
+.hm-q span{font-size:11px;font-weight:400;opacity:.85;margin-left:2px;}
+.hm-n{font-size:10.5px;line-height:1.25;opacity:.95;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;}
+@media(max-width:520px){.hm-grid{grid-template-columns:repeat(auto-fill,minmax(76px,1fr));}}
 /* ----- Caisse mobile : barre total fixe + ticket coulissant ----- */
 .tk-close{display:none;background:none;border:none;font-size:26px;line-height:1;color:#a59c88;cursor:pointer;padding:0 2px;}
 .tkbar{display:none;}
@@ -866,6 +873,11 @@ table.tbl tr:hover td{background:#faf9f5;}
   function viewStock(){
     var fleurs=products.filter(function(p){return p.unit==='g';});
     var acc=products.filter(function(p){return p.unit==='u';});
+    var hmAll=fleurs.map(function(p){return {n:p.name,q:totalStockG(p),u:'g'};}).concat(acc.map(function(p){return {n:p.name,q:(p.stockU||0),u:'u'};}));
+    var hmMaxG=Math.max.apply(null,[1].concat(hmAll.filter(function(x){return x.u==='g';}).map(function(x){return x.q;})));
+    var hmMaxU=Math.max.apply(null,[1].concat(hmAll.filter(function(x){return x.u==='u';}).map(function(x){return x.q;})));
+    var hmTiles=hmAll.map(function(x){var mx=x.u==='g'?hmMaxG:hmMaxU;var r=Math.max(0,Math.min(1,x.q/mx));var hue=Math.round(r*120);return '<div class="hm-tile" title="'+esc(x.n)+' : '+x.q+' '+x.u+'" style="background:hsl('+hue+',68%,'+Math.round(38+r*8)+'%)"><div class="hm-q">'+x.q+'<span>'+x.u+'</span></div><div class="hm-n">'+esc(x.n)+'</div></div>';}).join('');
+    var heatmap=hmAll.length?'<div class="card" style="padding:14px;margin-bottom:18px"><div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px"><b style="font-family:var(--serif)">Tout le stock en un coup d’œil</b><span class="muted" style="font-size:11.5px">rouge = vide · vert = plus grosse quantité ('+hmMaxG+' g / '+hmMaxU+' u)</span></div><div class="hm-grid">'+hmTiles+'</div></div>':'';
     var cards=fleurs.map(function(p){
       var tot=totalStockG(p);var low=tot<30;
       var lots=(p.lots||[]).map(function(l){return '<tr><td><b>'+l.lot+'</b></td><td>'+l.g+' g</td><td>'+l.exp+'</td><td class="muted">'+l.coa+'</td></tr>';}).join('');
@@ -875,7 +887,7 @@ table.tbl tr:hover td{background:#faf9f5;}
     }).join('');
     var accRows=acc.map(function(p){var low=p.stockU<15;return '<tr><td><b>'+p.name+'</b></td><td>'+p.cat+'</td><td>'+p.stockU+' u</td><td>'+(low?'<span class="tag tag-low">à réappro</span>':'<span class="tag tag-ok">OK</span>')+'</td></tr>';}).join('');
     return '<div class="vhead"><div><h1>Stock — '+(BQNAME[st.boutiqueId]||st.boutique)+'</h1><p>Stock de la boutique sélectionnée (change la ville en haut à droite). Fleurs au gramme, par lot, avec péremption et COA.</p></div><div style="display:flex;gap:8px"><button class="btn" data-act="restockall">Réappro. tout</button><button class="btn btn-gold" data-act="recept">+ Réceptionner un lot</button></div></div>'+
-    '<div class="stock-grid">'+cards+'</div>'+
+    heatmap+'<div class="stock-grid">'+cards+'</div>'+
     '<h3 style="font-family:var(--serif);margin:22px 0 10px">Accessoires & collectors</h3><div class="card"><table class="tbl"><thead><tr><th>Produit</th><th>Catégorie</th><th>Stock</th><th>Statut</th></tr></thead><tbody>'+accRows+'</tbody></table></div>'+
     '<h3 style="font-family:var(--serif);margin:26px 0 10px">Comparatif multi‑boutiques</h3>'+compareSection();
   }
