@@ -727,6 +727,63 @@ function send(res, status, obj) {
   res.writeHead(status, Object.assign({ 'content-type': 'application/json; charset=utf-8' }, res._cors || COMMON_CORS));
   res.end(JSON.stringify(obj, null, 2));
 }
+/* --------------------------- Securite HTTP ---------------------------- */
+// En-tetes de securite poses sur TOUTES les reponses.
+const SEC_HEADERS = {
+  'X-Content-Type-Options': 'nosniff',
+  'X-Frame-Options': 'SAMEORIGIN',
+  'Referrer-Policy': 'strict-origin-when-cross-origin',
+  'Content-Security-Policy': [
+    "default-src 'self'",
+    "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdnjs.cloudflare.com",
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdnjs.cloudflare.com",
+    "font-src 'self' data: https://fonts.gstatic.com https://cdnjs.cloudflare.com",
+    "img-src 'self' data: blob: https:",
+    "connect-src 'self' https:",
+    "object-src 'none'",
+    "base-uri 'self'",
+    "frame-ancestors 'self'",
+  ].join('; '),
+};
+function applySecurityHeaders(req, res) {
+  for (const k in SEC_HEADERS) res.setHeader(k, SEC_HEADERS[k]);
+  // HSTS seulement derriere HTTPS (Coolify/Traefik pose x-forwarded-proto=https)
+  if (req.headers['x-forwarded-proto'] === 'https') {
+    res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+  }
+}
+
+// --- Anti-bruteforce sur /api/login (en memoire, par IP) ---
+const loginAttempts = new Map();
+const LOGIN_MAX = 8;
+const LOGIN_WINDOW = 15 * 60 * 1000;
+const LOGIN_BLOCK = 15 * 60 * 1000;
+function clientIp(req) {
+  const xff = (req.headers['x-forwarded-for'] || '').split(',')[0].trim();
+  return xff || (req.socket && req.socket.remoteAddress) || 'unknown';
+}
+function loginThrottle(req) {
+  const ip = clientIp(req), now = Date.now();
+  const e = loginAttempts.get(ip);
+  if (e && e.blockedUntil > now) return { blocked: true, ip, retry: Math.ceil((e.blockedUntil - now) / 1000) };
+  return { blocked: false, ip };
+}
+function loginFail(ip) {
+  const now = Date.now();
+  let e = loginAttempts.get(ip);
+  if (!e || (now - e.first) > LOGIN_WINDOW) e = { count: 0, first: now, blockedUntil: 0 };
+  e.count++;
+  if (e.count >= LOGIN_MAX) e.blockedUntil = now + LOGIN_BLOCK;
+  loginAttempts.set(ip, e);
+}
+function loginOk(ip) { loginAttempts.delete(ip); }
+setInterval(() => {
+  const now = Date.now();
+  for (const [ip, e] of loginAttempts) {
+    if (e.blockedUntil < now && (now - e.first) > LOGIN_WINDOW) loginAttempts.delete(ip);
+  }
+}, 10 * 60 * 1000).unref();
+
 function readJson(req) {
   return new Promise((resolve) => {
     let d = '';
@@ -752,6 +809,7 @@ function computeTva(lines, brut, remise) {
 
 const server = http.createServer(async (req, res) => {
   res._cors = corsFor(req);
+  applySecurityHeaders(req, res);
   const u = new URL(req.url, 'http://localhost');
   const path = u.pathname;
 
@@ -961,14 +1019,21 @@ const server = http.createServer(async (req, res) => {
 
   // Connexion : renvoie un jeton selon les identifiants (route publique)
   if (req.method === 'POST' && path === '/api/login') {
+    const gate = loginThrottle(req);
+    if (gate.blocked) {
+      res.setHeader('Retry-After', String(gate.retry));
+      return send(res, 429, { error: 'Trop de tentatives de connexion. Reessaie dans ' + Math.ceil(gate.retry / 60) + ' min.' });
+    }
     const body = await readJson(req);
     if (PG) {
       const r = await PG.authenticate(body && body.user, body && body.password);
-      if (!r) return send(res, 401, { error: 'Identifiants invalides' });
+      if (!r) { loginFail(gate.ip); return send(res, 401, { error: 'Identifiants invalides' }); }
+      loginOk(gate.ip);
       return send(res, 200, r);
     }
     const uname = body && body.user;
-    if (!accounts[uname] || !checkPass(uname, body && body.password)) return send(res, 401, { error: 'Identifiants invalides' });
+    if (!accounts[uname] || !checkPass(uname, body && body.password)) { loginFail(gate.ip); return send(res, 401, { error: 'Identifiants invalides' }); }
+    loginOk(gate.ip);
     const token = newSession(uname);
     const a = accounts[uname];
     return send(res, 200, { token: token, name: a.name, role: a.role, boutiqueId: a.boutiqueId });
