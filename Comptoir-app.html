@@ -393,8 +393,36 @@ table.tbl tr:hover td{background:#faf9f5;}
   input,select,textarea,.pos-search,.login-card .fld input,.login-card .fld select{font-size:16px;}
 }
 
+/* ----- Caisse mobile : barre total fixe + ticket coulissant ----- */
+.tk-close{display:none;background:none;border:none;font-size:26px;line-height:1;color:#a59c88;cursor:pointer;padding:0 2px;}
+.tkbar{display:none;}
+.tk-backdrop{display:none;}
+@media(max-width:860px){
+  .pos{display:flex;flex-direction:column;height:auto;padding-bottom:84px;}
+  .cats{flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;padding-bottom:6px;margin-bottom:10px;scrollbar-width:none;}
+  .cats::-webkit-scrollbar{display:none;}
+  .cat{flex:0 0 auto;padding:10px 16px;font-size:13.5px;}
+  .pos-search{padding:13px 14px;font-size:16px;}
+  .pcard{padding:16px 14px;}
+  .tk-x{width:34px;height:34px;font-size:18px;}
+  .tk-close{display:inline-flex;align-items:center;}
+  .pos .ticket{position:fixed;left:0;right:0;bottom:0;top:auto;z-index:46;max-height:86vh;border-radius:18px 18px 0 0;box-shadow:0 -12px 40px rgba(20,16,9,.28);transform:translateY(105%);transition:transform .28s cubic-bezier(.4,0,.2,1);}
+  body.tk-open .pos .ticket{transform:translateY(0);}
+  .pos .tk-lines{overflow-y:auto;-webkit-overflow-scrolling:touch;max-height:30vh;}
+  .pos .tk-pay .btn{min-height:52px;font-size:15.5px;}
+  .tk-backdrop{display:block;position:fixed;inset:0;background:rgba(20,16,9,.45);z-index:45;opacity:0;pointer-events:none;transition:opacity .25s;}
+  body.tk-open .tk-backdrop{opacity:1;pointer-events:auto;}
+  .tkbar{display:flex;position:fixed;left:10px;right:10px;bottom:10px;z-index:44;align-items:center;gap:11px;background:#191512;color:#f4ecd9;border-radius:14px;padding:13px 15px;box-shadow:0 8px 28px rgba(20,16,9,.38);cursor:pointer;}
+  body.tk-open .tkbar{display:none;}
+  .tkbar .n{background:#d8b252;color:#191512;font-weight:700;border-radius:999px;min-width:26px;height:26px;display:inline-flex;align-items:center;justify-content:center;padding:0 7px;font-size:13px;}
+  .tkbar .lbl{font-size:13.5px;opacity:.85;}
+  .tkbar .tot{margin-left:auto;font-family:var(--serif);font-weight:700;font-size:17px;}
+  .tkbar .go{background:#d8b252;color:#191512;border-radius:10px;padding:9px 13px;font-weight:700;font-size:13.5px;}
+  .tkbar.bump{animation:tkBump .35s ease;}
+}
+@keyframes tkBump{0%{transform:scale(1)}35%{transform:scale(1.04)}100%{transform:scale(1)}}
 @media(max-width:520px){
-  .pgrid{grid-template-columns:repeat(auto-fill,minmax(118px,1fr));}
+  .pgrid{grid-template-columns:repeat(auto-fill,minmax(140px,1fr));}
   .b-grid{grid-template-columns:1fr 1fr;}
   .vhead h1{font-size:19px;}
 }
@@ -783,6 +811,9 @@ table.tbl tr:hover td{background:#faf9f5;}
     var cats=['Tout','Fleurs','King','Accessoire','Collector'];
     products.forEach(function(p){if(p.cat&&cats.indexOf(p.cat)<0)cats.push(p.cat);});
     var grid=posGrid();
+    var nArt=st.cart.length;
+    var tkBump=(typeof st._tkN==='number'&&st._tkN!==nArt&&nArt>0);st._tkN=nArt;
+    var tkbar='<div class="tkbar'+(tkBump?' bump':'')+'" data-act="tkopen"><span class="n">'+nArt+'</span><span class="lbl">'+(nArt?('article'+(nArt>1?'s':'')):'ticket vide')+'</span><span class="tot">'+eur(cartTotal())+'</span><span class="go">'+(nArt?'Encaisser':'Voir')+'</span></div>'+'<div class="tk-backdrop" data-act="tkclose"></div>';
     var lines=st.cart.length?st.cart.map(function(l,i){return '<div class="tk-line"><div><div class="tl-name">'+l.name+'</div><div class="tl-det">'+l.detail+'</div></div><div class="tl-r"><b>'+eur(l.price)+'</b><button class="tk-x" data-act="rmline" data-i="'+i+'">×</button></div></div>';}).join(''):'<div class="tk-empty">Touche un produit pour commencer le ticket.</div>';
     var clientBox=st.client?'<div class="mem"><div><div style="font-weight:600">'+st.client.name+'</div><div style="font-size:11px;color:#a59c88">'+st.client.tier+' · solde myCred</div></div><div class="pts">'+st.client.points+' pts</div></div>':'<button class="btn" style="width:100%" data-act="pickclient">+ Associer un membre fidélité</button>';
     var rewardBox='';
@@ -803,13 +834,13 @@ table.tbl tr:hover td{background:#faf9f5;}
     return '<div class="pos"><div class="pos-left">'+
       '<div class="cats">'+cats.map(function(c){return '<button class="cat '+(c===st.cat?'on':'')+'" data-act="poscat" data-c="'+c+'">'+c+'</button>';}).join('')+'</div>'+
       '<input id="pos-search" class="pos-search" placeholder="Rechercher un produit…" value="'+esc(st.posSearch||'')+'"/>'+'<div class="pgrid">'+grid+'</div></div>'+
-      '<div class="ticket"><div class="tk-head"><h3>Ticket</h3><span class="muted" style="font-size:12px">'+st.boutique+'</span></div>'+
+      '<div class="ticket"><div class="tk-head"><h3>Ticket</h3><span class="muted" style="font-size:12px">'+st.boutique+'</span><button class="tk-close" data-act="tkclose" title="Fermer">×</button></div>'+
       '<div class="tk-client">'+clientBox+rewardBox+'</div>'+
       '<div class="tk-lines">'+lines+'</div>'+
       '<div class="tk-foot"><div class="tk-tot"><span class="t1">Total TTC</span><span class="t2">'+eur(cartTotal())+'</span></div>'+
       '<div class="tk-tva">dont TVA 20% : '+eur(Math.round((cartTotal()-cartTotal()/1.2)*100)/100)+' · HT : '+eur(Math.round(cartTotal()/1.2*100)/100)+'</div>'+
       '<div class="tk-pts">'+(st.client?'Le membre gagnera '+Math.round(cartTotal()*ptsRate())+' points':'+ '+Math.round(cartTotal()*ptsRate())+' points avec un compte membre')+'</div>'+
-      '<div class="tk-pay"><button class="btn btn-gold" data-act="pay" data-m="Carte bancaire">Carte bancaire</button><button class="btn" data-act="pay" data-m="Espèces">Espèces</button></div></div></div></div>';
+      '<div class="tk-pay"><button class="btn btn-gold" data-act="pay" data-m="Carte bancaire">Carte bancaire</button><button class="btn" data-act="pay" data-m="Espèces">Espèces</button></div></div></div>'+tkbar+'</div>';
   }
 
   function viewProduits(){
@@ -1931,7 +1962,7 @@ table.tbl tr:hover td{background:#faf9f5;}
   // ---------- Événements ----------
   document.body.addEventListener('click',function(ev){
     var n=ev.target.closest('[data-view]');
-    if(n){st.view=n.getAttribute('data-view');document.body.classList.remove('nav-open');render();return;}
+    if(n){st.view=n.getAttribute('data-view');document.body.classList.remove('nav-open');document.body.classList.remove('tk-open');render();return;}
     var b=ev.target.closest('[data-b]');
     if(b){handleBorne(b,ev);return;}
     var el=ev.target.closest('[data-act]');
@@ -1939,6 +1970,8 @@ table.tbl tr:hover td{background:#faf9f5;}
     var a=el.getAttribute('data-act');
     if(a==='navtoggle'){document.body.classList.toggle('nav-open');return;}
     if(a==='navclose'){document.body.classList.remove('nav-open');return;}
+    if(a==='tkopen'){document.body.classList.add('tk-open');return;}
+    if(a==='tkclose'){document.body.classList.remove('tk-open');return;}
     if(a==='fc-mode'){fcSync();comptaData.mode=el.getAttribute('data-m');render();return;}
     if(a==='fc-quick'){var fq=el.getAttribute('data-q');var dq=new Date();if(fq==='last')dq.setMonth(dq.getMonth()-1);comptaData.monthValue=dq.getFullYear()+'-'+('0'+(dq.getMonth()+1)).slice(-2);comptaData.mode='mois';render();loadComptable();return;}
     if(a==='fc-load'){loadComptable();return;}
