@@ -900,16 +900,18 @@ table.tbl tr:hover td{background:#faf9f5;}
     var hmFams=catKeys.map(function(c){return {nom:c,unite:'g',items:gByCat[c]};});
     if(acc.length)hmFams.push({nom:'Accessoires & collectors',unite:'u',items:acc.map(function(p){return {id:p.id,n:p.name,q:(p.stockU||0)};})});
     var heatmap=hmFams.length?'<div class="card" style="padding:14px;margin-bottom:18px"><div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:4px"><b style="font-family:var(--serif)">Tout le stock en un coup d’œil</b><span class="muted" style="font-size:11.5px">rouge = vide · vert = grammes · bleu = unités · touche un carré : détail + ajustement</span></div>'+hmFams.map(function(f){
-      var mx=Math.max.apply(null,[1].concat(f.items.map(function(x){return x.q;})));
+      var qs=f.items.map(function(x){return x.q;}).filter(function(q){return q>0;});
+      var mx=qs.length?Math.max.apply(null,qs):1;
+      var mn=qs.length?Math.min.apply(null,qs):0;
       var tiles=f.items.map(function(x){
-        var r=Math.max(0,Math.min(1,x.q/mx));
+        var r=(mx>mn)?Math.max(0,Math.min(1,(x.q-mn)/(mx-mn))):1;
         var bg;
         if(x.q<=0)bg='hsl(0,66%,37%)';
         else if(f.unite==='g')bg='hsl('+Math.round(r*120)+',68%,'+Math.round(38+r*8)+'%)';
         else bg='hsl(210,'+Math.round(35+r*45)+'%,'+Math.round(58-r*22)+'%)';
         return '<div class="hm-tile" data-act="hmopen" data-id="'+x.id+'" title="'+esc(x.n)+' : '+x.q+' '+f.unite+'" style="background:'+bg+'"><div class="hm-q">'+x.q+'<span>'+f.unite+'</span></div><div class="hm-n">'+esc(x.n)+'</div></div>';
       }).join('');
-      return '<div class="hm-fam">'+esc(f.nom)+' <span class="muted" style="font-weight:400;font-size:11px">· max '+mx+' '+f.unite+'</span></div><div class="hm-grid">'+tiles+'</div>';
+      return '<div class="hm-fam">'+esc(f.nom)+'</div><div class="hm-grid">'+tiles+'</div>';
     }).join('')+'</div>':'';
     var cards=fleurs.map(function(p){
       var tot=totalStockG(p);var low=tot<30;
