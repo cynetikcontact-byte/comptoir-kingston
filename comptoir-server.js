@@ -959,7 +959,7 @@ const server = http.createServer(async (req, res) => {
     const body = await readJson(req);
     const order = orders.find((o) => o.id === parseInt(mOStatus[1], 10));
     if (!order) return send(res, 404, { error: 'Commande introuvable' });
-    const allowed = ['nouveau', 'preparation', 'prete', 'servie'];
+    const allowed = ['nouveau', 'preparation', 'prete', 'servie', 'annulee'];
     if (allowed.indexOf(body.status) < 0) return send(res, 400, { error: 'Statut invalide' });
     order.status = body.status;
     order.updatedAt = Date.now();
