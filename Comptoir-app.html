@@ -824,7 +824,7 @@ table.tbl tr:hover td{background:#faf9f5;}
     var tkBump=(typeof st._tkN==='number'&&st._tkN!==nArt&&nArt>0);st._tkN=nArt;
     var tkbar='<div class="tkbar'+(tkBump?' bump':'')+'" data-act="tkopen"><span class="n">'+nArt+'</span><span class="lbl">'+(nArt?('article'+(nArt>1?'s':'')):'ticket vide')+'</span><span class="tot">'+eur(cartTotal())+'</span><span class="go">'+(nArt?'Encaisser':'Voir')+'</span></div>'+'<div class="tk-backdrop" data-act="tkclose"></div>';
     var lines=st.cart.length?st.cart.map(function(l,i){return '<div class="tk-line"><div><div class="tl-name">'+l.name+'</div><div class="tl-det">'+l.detail+'</div></div><div class="tl-r"><b>'+eur(l.price)+'</b><button class="tk-x" data-act="rmline" data-i="'+i+'">×</button></div></div>';}).join(''):'<div class="tk-empty">Touche un produit pour commencer le ticket.</div>';
-    var clientBox=st.client?'<div class="mem"><div><div style="font-weight:600">'+st.client.name+'</div><div style="font-size:11px;color:#a59c88">'+st.client.tier+' · solde myCred</div></div><div class="pts">'+st.client.points+' pts</div></div>':'<button class="btn" style="width:100%" data-act="pickclient">+ Associer un membre fidélité</button>';
+    var clientBox=st.client?'<div class="mem"><div><div style="font-weight:600">'+st.client.name+'</div><div style="font-size:11px;color:#a59c88">'+st.client.tier+' · solde myCred</div></div><div class="pts">'+st.client.points+' pts</div><button class="tk-x" data-act="rmclient" title="Détacher le client">×</button></div>':'<button class="btn" style="width:100%" data-act="pickclient">+ Associer un membre fidélité</button>';
     var rewardBox='';
     if(st.client&&cartBrut()>0){
       if(st.coupon){
@@ -2051,6 +2051,7 @@ table.tbl tr:hover td{background:#faf9f5;}
     if(a==='rmline'){st.cart.splice(+el.getAttribute('data-i'),1);render();return;}
     if(a==='pickclient'){clientModal();return;}
     if(a==='cmscan'){cmStartScan();return;}
+    if(a==='rmclient'){st.client=null;st.redeemPts=0;st.coupon=null;render();return;}
     if(a==='setclient'){st.client=customers.find(function(c){return c.id===el.getAttribute('data-id');});st.redeemPts=0;closeModal();render();return;}
     if(a==='setclientremote'){var rc=remoteCustomers[+el.getAttribute('data-i')];if(rc){st.client={name:rc.name||rc.email,email:rc.email,phone:rc.phone||'',points:Math.round(rc.points||0),tier:tierOf(rc.points)};st.redeemPts=0;}closeModal();render();return;}
     if(a==='ostatus'){var oid=parseInt(el.getAttribute('data-id'),10);var nx=el.getAttribute('data-next');el.disabled=true;apiPost('/api/orders/'+oid+'/status',{status:nx}).then(function(o){if(o&&o.id){ordersData[o.id]=o;refreshCmd();}}).catch(function(){el.disabled=false;toast('Erreur : statut commande');});return;}
