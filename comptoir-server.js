@@ -436,7 +436,9 @@ let fiscalKey = '';                  // clé secrète de scellement HMAC, propre
 // Numerotation, Grand Total perpetuel et clotures sont INDEPENDANTS par boutique.
 // La chaine d'empreintes (lastHash) reste UNIQUE pour l'installation -> inalterabilite globale prouvable.
 let seqByB = {};            // { boutiqueId: dernier numero de facture de CETTE boutique }
-let gtByB = {};             // { boutiqueId: Grand Total perpetuel TTC de CETTE boutique }
+let gtByB = {};
+let royaltiesRates = {};
+let royaltiesStatus = {};             // { boutiqueId: Grand Total perpetuel TTC de CETTE boutique }
 let gtAvoirsByB = {};       // { boutiqueId: cumul des avoirs de CETTE boutique }
 let clotureSeqByB = {};     // { boutiqueId: { Z, M, A } }
 function fb(id) { if (seqByB[id] == null) seqByB[id] = 0; if (gtByB[id] == null) gtByB[id] = 0; if (gtAvoirsByB[id] == null) gtAvoirsByB[id] = 0; if (!clotureSeqByB[id]) clotureSeqByB[id] = { Z: 0, M: 0, A: 0 }; return id; }
@@ -483,7 +485,7 @@ function persist() {
       // Écriture ATOMIQUE : fichier temporaire puis renommage -> jamais de fichier tronqué en cas de coupure.
       // NB : fiscalKey n'est PLUS écrite ici (stockée à part, fichier protégé).
       const tmp = DATA_FILE + '.tmp';
-      fs.writeFileSync(tmp, JSON.stringify({ v: 1, savedAt: new Date().toISOString(), pointsPerEuro: POINTS_PER_EURO, hideBaseCatalog, customProducts, stock, boutiques, invoiceSeq, lastHash, invoices, orderSeq, orders, fiscalEvents, fiscalSeq, lastFiscalSig, clotureSeq, gtPerpetuel, gtPerpetuelAvoirs, seqByB, gtByB, gtAvoirsByB, clotureSeqByB, supplyOrders, supplySeq, stockMoves, proRate, pontDevices, sessions, proProducts, lastProSync, proLots, entreprise }), 'utf8');
+      fs.writeFileSync(tmp, JSON.stringify({ v: 1, savedAt: new Date().toISOString(), pointsPerEuro: POINTS_PER_EURO, hideBaseCatalog, customProducts, stock, boutiques, invoiceSeq, lastHash, invoices, orderSeq, orders, fiscalEvents, fiscalSeq, lastFiscalSig, clotureSeq, gtPerpetuel, gtPerpetuelAvoirs, seqByB, gtByB, gtAvoirsByB, royaltiesRates, royaltiesStatus, clotureSeqByB, supplyOrders, supplySeq, stockMoves, proRate, pontDevices, sessions, proProducts, lastProSync, proLots, entreprise }), 'utf8');
       fs.renameSync(tmp, DATA_FILE);
     } catch (e) { console.error('Persistance impossible :', e.message); }
   }, 200);
@@ -516,6 +518,8 @@ function loadPersisted() {
     if (d.seqByB && typeof d.seqByB === 'object') seqByB = d.seqByB;
     if (d.gtByB && typeof d.gtByB === 'object') gtByB = d.gtByB;
     if (d.gtAvoirsByB && typeof d.gtAvoirsByB === 'object') gtAvoirsByB = d.gtAvoirsByB;
+    if (d.royaltiesRates && typeof d.royaltiesRates === 'object') royaltiesRates = d.royaltiesRates;
+    if (d.royaltiesStatus && typeof d.royaltiesStatus === 'object') royaltiesStatus = d.royaltiesStatus;
     if (d.clotureSeqByB && typeof d.clotureSeqByB === 'object') clotureSeqByB = d.clotureSeqByB;
     if (Array.isArray(d.stockMoves)) stockMoves = d.stockMoves;
     if (Array.isArray(d.supplyOrders)) supplyOrders = d.supplyOrders;
@@ -848,6 +852,11 @@ function sendInvoiceEmail(toEmail, inv) {
     rq.write(payload); rq.end();
   });
 }
+
+function royaltiesRateFor(boutiqueId){ var r=royaltiesRates[boutiqueId]; return (typeof r==='number')?r:6; }
+function royaltiesRec(ym, boutiqueId){ var m=royaltiesStatus[ym]||{}; return m[boutiqueId]||{status:'a_payer',declaredAt:null,validatedAt:null}; }
+function royaltiesSetStatus(ym, boutiqueId, patch){ if(!royaltiesStatus[ym]) royaltiesStatus[ym]={}; var cur=royaltiesStatus[ym][boutiqueId]||{status:'a_payer',declaredAt:null,validatedAt:null}; royaltiesStatus[ym][boutiqueId]=Object.assign({},cur,patch); persist(); }
+function royaltiesCaHT(boutiqueId, ym){ var sum=0; invoices.forEach(function(inv){ if(inv.boutiqueId!==boutiqueId) return; if((inv.total||0)<0 || inv.avoirDe) return; var d=new Date(inv.date); var k=d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2); if(k!==ym) return; var ht=(inv.tva && typeof inv.tva.totalHT==='number')?inv.tva.totalHT:((inv.total||0)/1.2); sum+=ht; }); return Math.round(sum*100)/100; }
 
 const server = http.createServer(async (req, res) => {
   res._cors = corsFor(req);
@@ -1203,6 +1212,35 @@ const server = http.createServer(async (req, res) => {
       var erMail = await sendInvoiceEmail(emailMail, invMail);
       if (!erMail.ok) return send(res, (erMail.code === 'NO_KEY' || erMail.code === 'NO_FROM') ? 503 : 502, { error: erMail.error });
       return send(res, 200, { ok: true, sentTo: emailMail });
+    }
+    if (req.method === 'GET' && path === '/api/royalties') {
+      var rym = (u.searchParams.get('ym') || '').trim(); if(!rym){ var dN=new Date(); rym=dN.getFullYear()+'-'+('0'+(dN.getMonth()+1)).slice(-2); }
+      var rids = boutiqueIds(); if (user.role !== 'admin') rids = rids.filter(function(id){ return id===user.boutiqueId; });
+      var rlist = rids.map(function(id){ var b=boutiques[id]||{}; var rate=royaltiesRateFor(id); var caHT=royaltiesCaHT(id, rym); var rec=royaltiesRec(rym,id); return { id:id, label:(b.label||id), rate:rate, caHT:caHT, royalty: Math.round(caHT*rate)/100, status:rec.status, declaredAt:rec.declaredAt||null, validatedAt:rec.validatedAt||null }; });
+      var rtot = rlist.reduce(function(a,x){ a.caHT+=x.caHT; a.royalties+=x.royalty; if(x.status==='valide')a.encaisse+=x.royalty; else a.attente+=x.royalty; return a; }, {caHT:0,royalties:0,encaisse:0,attente:0});
+      Object.keys(rtot).forEach(function(k){ rtot[k]=Math.round(rtot[k]*100)/100; });
+      return send(res, 200, { role:user.role, ym:rym, boutiques:rlist, totals:rtot });
+    }
+    if (req.method === 'POST' && path === '/api/royalties/rate') {
+      if (user.role !== 'admin') return send(res, 403, { error: 'Action reservee a l administrateur.' });
+      var rrb = await readJson(req); var rrid=String((rrb&&rrb.boutiqueId)||''); var rrate=Math.max(0,Math.min(100,Number(rrb&&rrb.rate)||0));
+      if(!boutiques[rrid]) return send(res, 404, { error: 'Boutique inconnue.' });
+      royaltiesRates[rrid]=rrate; persist();
+      return send(res, 200, { ok:true });
+    }
+    if (req.method === 'POST' && path === '/api/royalties/declare') {
+      var rdb = await readJson(req); var rdym=String((rdb&&rdb.ym)||''); var rdid=String((rdb&&rdb.boutiqueId)||'');
+      if (user.role !== 'admin' && rdid !== user.boutiqueId) return send(res, 403, { error: 'Non autorise.' });
+      if(!boutiques[rdid]) return send(res, 404, { error: 'Boutique inconnue.' });
+      royaltiesSetStatus(rdym, rdid, { status:'declare', declaredAt:new Date().toISOString() });
+      return send(res, 200, { ok:true });
+    }
+    if (req.method === 'POST' && path === '/api/royalties/status') {
+      if (user.role !== 'admin') return send(res, 403, { error: 'Action reservee a l administrateur.' });
+      var rsb = await readJson(req); var rsst=String((rsb&&rsb.status)||'a_payer'); if(['a_payer','declare','valide'].indexOf(rsst)<0) rsst='a_payer';
+      var rpatch={status:rsst}; if(rsst==='a_payer'){rpatch.declaredAt=null;rpatch.validatedAt=null;} if(rsst==='valide'){rpatch.validatedAt=new Date().toISOString();} if(rsst==='declare'){rpatch.validatedAt=null;}
+      royaltiesSetStatus(String((rsb&&rsb.ym)||''), String((rsb&&rsb.boutiqueId)||''), rpatch);
+      return send(res, 200, { ok:true });
     }
     // ---- Terminal de paiement via le relais (caisse -> serveur -> pont -> TPE) ----
     if (req.method === 'POST' && path === '/api/terminal/pay') {
