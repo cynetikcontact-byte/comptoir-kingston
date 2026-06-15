@@ -624,7 +624,7 @@ body{font-family:var(--sans);background:var(--bg);color:var(--ink);overflow:hidd
       '<div style="font-family:var(--serif);font-size:25px">'+hello+'</div>'+
       '<div style="font-size:17px;font-weight:700;margin:12px 0 4px">Ta commande est en préparation</div>'+
       '<div style="color:var(--muted);font-size:14.5px;line-height:1.5">'+appel+' Installe-toi, c\'est prêt dans <b>~3 min</b>.</div>'+
-      fid+prog+lvl+'</div></div><div class="sheet-f">'+(facture?'<button class="btn-light" data-a="ticket" data-f="'+escAttr(facture)+'">🧾 Mon ticket</button>':'')+'<button class="btn-primary" data-a="newOrder">Nouvelle commande</button></div></div></div>';
+      fid+prog+lvl+'</div></div><div class="sheet-f">'+(facture?'<button class="btn-light" data-a="ticket" data-f="'+escAttr(facture)+'">🧾 Mon ticket</button><button class="btn-light" data-a="kt-mailborne" data-f="'+escAttr(facture)+'">📧 Email</button>':'')+'<button class="btn-primary" data-a="newOrder">Nouvelle commande</button></div></div></div>';
     if(s.member && earned>0) animateCount('ptcount', earned);
   }
 
@@ -687,5 +687,33 @@ body{font-family:var(--sans);background:var(--bg);color:var(--ink);overflow:hidd
   armIdle();
 })();
 </script>
+<script>(function(){
+  if(window.__ktBorneMail) return; window.__ktBorneMail=1;
+  function vEmail(e){ e=String(e||''); var at=e.indexOf('@'); var dot=e.lastIndexOf('.'); return at>0 && dot>at+1 && dot<e.length-1 && e.indexOf(' ')<0; }
+  function esc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;'); }
+  function closeM(){ var m=document.getElementById('ktbm-bd'); if(m&&m.parentNode) m.parentNode.removeChild(m); }
+  function openP(fac){
+    closeM();
+    var d=document.createElement('div'); d.id='ktbm-bd';
+    d.setAttribute('style','position:fixed;inset:0;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;z-index:99999;padding:24px');
+    d.innerHTML='<div style="background:#fff;border-radius:22px;max-width:520px;width:100%;padding:30px;box-shadow:0 24px 70px rgba(0,0,0,.35);font-family:Arial,Helvetica,sans-serif;text-align:center"><div style="font-size:26px;font-weight:800;color:#1a1a1a;margin-bottom:6px">Recevoir ma facture par email</div><div style="color:#777;font-size:15px;margin-bottom:20px">Saisis ton adresse, on t’envoie la facture.</div><input id="ktbm-input" type="email" inputmode="email" placeholder="email@exemple.com" style="width:100%;padding:18px;border:2px solid #e6e0d6;border-radius:14px;font-size:20px;text-align:center;box-sizing:border-box"/><div id="ktbm-msg" style="font-size:15px;margin:14px 0 4px;min-height:20px"></div><div style="display:flex;gap:12px;margin-top:8px"><button id="ktbm-cancel" style="flex:1;padding:18px;border-radius:14px;border:2px solid #e6e0d6;background:#fff;font-weight:800;font-size:17px;cursor:pointer;color:#3a342c">Annuler</button><button id="ktbm-send" style="flex:1;padding:18px;border-radius:14px;border:none;background:#161310;color:#e6c884;font-weight:800;font-size:17px;cursor:pointer">Envoyer</button></div></div>';
+    document.body.appendChild(d);
+    d.addEventListener('click',function(e){ if(e.target===d) closeM(); });
+    document.getElementById('ktbm-cancel').onclick=closeM;
+    document.getElementById('ktbm-send').onclick=function(){ doSend(fac); };
+    setTimeout(function(){ var i=document.getElementById('ktbm-input'); if(i) i.focus(); },60);
+  }
+  function doSend(fac){
+    var inp=document.getElementById('ktbm-input'), btn=document.getElementById('ktbm-send'), msg=document.getElementById('ktbm-msg');
+    var email=(inp.value||'').trim();
+    if(!vEmail(email)){ msg.style.color='#b4452f'; msg.textContent='Adresse email invalide.'; return; }
+    btn.disabled=true; btn.textContent='Envoi…'; msg.style.color='#777'; msg.textContent='';
+    fetch('/api/borne/receipt-email',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({facture:fac,email:email})})
+      .then(function(r){ return r.json().then(function(j){ return {s:r.status,j:j}; }).catch(function(){ return {s:r.status,j:{}}; }); })
+      .then(function(o){ if(o.s===200 && o.j && o.j.ok){ msg.style.color='#1a7f37'; msg.textContent='✓ Facture envoyée !'; setTimeout(closeM,1600); } else { btn.disabled=false; btn.textContent='Envoyer'; msg.style.color='#b4452f'; msg.textContent=(o.j&&o.j.error)||'Échec de l’envoi.'; } })
+      .catch(function(){ btn.disabled=false; btn.textContent='Envoyer'; msg.style.color='#b4452f'; msg.textContent='Erreur réseau.'; });
+  }
+  document.body.addEventListener('click',function(e){ var x=e.target.closest && e.target.closest('[data-a="kt-mailborne"]'); if(x){ e.preventDefault(); e.stopPropagation(); openP(x.getAttribute('data-f')||''); } },true);
+})();</script>
 </body>
 </html>

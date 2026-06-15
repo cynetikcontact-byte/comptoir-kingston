@@ -1171,6 +1171,22 @@ const server = http.createServer(async (req, res) => {
     return send(res, 200, { id: found.id, status: found.status, approved: !!found.approved, codeReponse: found.codeReponse || null, echec: found.echec || null });
   }
 
+  if (req.method === 'POST' && path === '/api/borne/receipt-email') {
+    var bb = await readJson(req);
+    var fnum = (bb && bb.facture ? String(bb.facture) : '').trim();
+    var bemail = (bb && bb.email ? String(bb.email) : '').trim();
+    if (!ktValidEmail(bemail)) return send(res, 400, { error: 'Adresse email invalide.' });
+    var binv = invoices.find(function (i) { return i.num === fnum; });
+    if (!binv) return send(res, 404, { error: 'Facture introuvable.' });
+    if (binv.source !== 'borne') return send(res, 403, { error: 'Non autorise.' });
+    if (Date.now() - new Date(binv.date).getTime() > 30 * 60 * 1000) return send(res, 410, { error: 'Facture trop ancienne.' });
+    if ((binv._mailCount || 0) >= 3) return send(res, 429, { error: 'Limite atteinte.' });
+    binv._mailCount = (binv._mailCount || 0) + 1;
+    var ber = await sendInvoiceEmail(bemail, binv);
+    if (!ber.ok) return send(res, (ber.code === 'NO_KEY' || ber.code === 'NO_FROM') ? 503 : 502, { error: ber.error });
+    return send(res, 200, { ok: true });
+  }
+
   // Authentification (prototype : un jeton -> un utilisateur avec role + boutique)
   const user = PG ? await PG.contextFromToken(req.headers['x-comptoir-token']) : sessionUser(req.headers['x-comptoir-token']);
   if (!user) return send(res, 401, { error: 'Session expirée ou invalide — reconnecte-toi.' });
