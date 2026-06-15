@@ -617,7 +617,7 @@ table.tbl tr:hover td{background:#faf9f5;}
       var rcLines=(r.lignes||[]).map(function(l){return {name:l.produit,detail:l.detail,price:l.prix};});
       var lines=rcLines.map(function(l){return '<div style="display:flex;justify-content:space-between;padding:5px 0;font-size:13px"><span>'+esc(l.name)+' <span class="muted">'+esc(l.detail||'')+'</span></span><b>'+eur(l.price)+'</b></div>';}).join('');
       var ht=(m.totalHT!=null?m.totalHT:Math.round(f.total/1.2*100)/100), tva=(m.totalTVA!=null?m.totalTVA:Math.round((f.total-ht)*100)/100);
-      st.lastReceipt={num:f.numero,date:new Date().toLocaleString('fr-FR'),boutique:st.boutique,lines:rcLines,total:f.total,ht:ht,tva:tva,method:method,client:(fid&&fid.membre)?fid.membre:null,earned:(fid&&fid.pointsGagnes)||0,newBal:(fid&&fid.nouveauSolde!=null)?fid.nouveauSolde:null,disc:(m.remise||0),usedPts:(fid&&fid.pointsUtilises)||0};
+      st.lastReceipt={mail:(st.client&&st.client.email)||'',num:f.numero,date:new Date().toLocaleString('fr-FR'),boutique:st.boutique,lines:rcLines,total:f.total,ht:ht,tva:tva,method:method,client:(fid&&fid.membre)?fid.membre:null,earned:(fid&&fid.pointsGagnes)||0,newBal:(fid&&fid.nouveauSolde!=null)?fid.nouveauSolde:null,disc:(m.remise||0),usedPts:(fid&&fid.pointsUtilises)||0};
       st.cart=[];st.client=null;st.redeemPts=0;st.coupon=null;
       var fidHtml;
       if(fid&&fid.membre){
@@ -625,7 +625,7 @@ table.tbl tr:hover td{background:#faf9f5;}
         else if(fid.erreur){ fidHtml='<div style="background:#fbeae6;border:1px solid #e7c4bb;border-radius:10px;padding:10px;margin-top:12px;color:#b4452f;font-size:12.5px;text-align:center">&#9888; Points NON appliqués : '+esc(fid.erreur)+'</div>'; }
         else { fidHtml='<div class="muted" style="text-align:center;margin-top:12px;font-size:12.5px">Membre : '+esc(fid.membre)+'</div>'; }
       } else { fidHtml='<div class="muted" style="text-align:center;margin-top:12px;font-size:12.5px">Client au comptoir</div>'; }
-      openModal('<div class="modal-h">Paiement accepté (serveur)</div><div class="modal-b"><div style="text-align:center;margin-bottom:14px"><div style="width:54px;height:54px;border-radius:50%;background:var(--green);color:#fff;display:flex;align-items:center;justify-content:center;font-size:28px;margin:0 auto 10px">✓</div><div class="muted" style="font-size:12px">Facture '+f.numero+' · '+method+' · empreinte '+(f.empreinte||'')+'</div></div>'+lines+((m.remise>0)?'<div style="display:flex;justify-content:space-between;font-size:13px;color:#7a5f1e;padding:4px 0"><span>Remise points</span><b>−'+eur(m.remise)+'</b></div>':'')+'<div style="display:flex;justify-content:space-between;border-top:1px solid var(--line);margin-top:8px;padding-top:10px;font-family:var(--serif);font-size:19px;font-weight:700"><span>Total</span><span>'+eur(f.total)+'</span></div>'+fidHtml+'<div style="display:flex;gap:8px;margin-top:16px;flex-wrap:wrap"><button class="btn" style="flex:1;min-width:110px" data-act="printticket">🧾 Ticket</button><button class="btn" style="flex:1;min-width:110px" data-act="facture" data-num="'+f.numero+'">📄 Facture</button><button class="btn btn-gold" style="flex:1;min-width:110px" data-act="closemodal">Nouveau</button></div></div>');
+      openModal('<div class="modal-h">Paiement accepté (serveur)</div><div class="modal-b"><div style="text-align:center;margin-bottom:14px"><div style="width:54px;height:54px;border-radius:50%;background:var(--green);color:#fff;display:flex;align-items:center;justify-content:center;font-size:28px;margin:0 auto 10px">✓</div><div class="muted" style="font-size:12px">Facture '+f.numero+' · '+method+' · empreinte '+(f.empreinte||'')+'</div></div>'+lines+((m.remise>0)?'<div style="display:flex;justify-content:space-between;font-size:13px;color:#7a5f1e;padding:4px 0"><span>Remise points</span><b>−'+eur(m.remise)+'</b></div>':'')+'<div style="display:flex;justify-content:space-between;border-top:1px solid var(--line);margin-top:8px;padding-top:10px;font-family:var(--serif);font-size:19px;font-weight:700"><span>Total</span><span>'+eur(f.total)+'</span></div>'+fidHtml+'<div style="display:flex;gap:8px;margin-top:16px;flex-wrap:wrap"><button class="btn" style="flex:1;min-width:110px" data-act="printticket">🧾 Ticket</button><button class="btn" style="flex:1;min-width:110px" data-act="facture" data-num="'+f.numero+'">📄 Facture</button><button class="btn" style="flex:1;min-width:110px" data-act="kt-emailfac" data-num="'+f.numero+'" data-email="'+((st.lastReceipt&&st.lastReceipt.mail)||'')+'">✉️ Email</button><button class="btn btn-gold" style="flex:1;min-width:110px" data-act="closemodal">Nouveau</button></div></div>');
       render();
       if(companyInfo.factureAuto){setTimeout(function(){openFacture(f.numero);},350);}
     }).catch(function(e){toast('Erreur serveur : '+(e.message||e));});
@@ -2279,6 +2279,35 @@ function setPayMode(m){ PAY_MODE=(m==='auto')?'auto':'manuel'; try{ localStorage
   function ensureNav(){var nav=document.querySelector('#side nav.nav');if(!nav)return;if(document.getElementById('kt-act-nav'))return;var dash=[].slice.call(nav.querySelectorAll('.nav-item')).filter(function(n){return n.getAttribute('data-view')==='dash';})[0];var item=document.createElement('div');item.className='nav-item';item.id='kt-act-nav';item.innerHTML='<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 12h4l2 6 4-14 2 8h6"/></svg> Activité';item.addEventListener('click',function(ev){ev.stopPropagation();openView();});if(dash&&dash.nextSibling){nav.insertBefore(item,dash.nextSibling);}else{nav.appendChild(item);}}
   document.addEventListener('click',function(e){var n=e.target.closest('.nav-item[data-view]');if(n){ST.active=false;}},true);
   window.__ktActTimer=setInterval(ensureNav,1000);ensureNav();
+})();</script>
+<script>(function(){
+  if(window.__ktMailInit) return; window.__ktMailInit=1;
+  function tok(){ var t=localStorage.getItem('kt_session')||''; try{ var o=JSON.parse(t); return o.token||t; }catch(e){ return t; } }
+  function esc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;'); }
+  function vEmail(e){ e=String(e||''); var at=e.indexOf('@'); var dot=e.lastIndexOf('.'); return at>0 && dot>at+1 && dot<e.length-1 && e.indexOf(' ')<0; }
+  function closeM(){ var m=document.getElementById('ktmail-bd'); if(m&&m.parentNode) m.parentNode.removeChild(m); }
+  function openP(num,email){
+    closeM();
+    var d=document.createElement('div'); d.id='ktmail-bd';
+    d.setAttribute('style','position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;z-index:6000;padding:20px');
+    d.innerHTML='<div style="background:#fff;border-radius:18px;max-width:440px;width:100%;padding:24px;box-shadow:0 20px 60px rgba(0,0,0,.3);font-family:Arial,Helvetica,sans-serif"><div style="font-size:20px;font-weight:800;margin-bottom:4px;color:#1a1a1a">Envoyer la facture par email</div><div style="color:#777;font-size:13px;margin-bottom:16px">Facture '+esc(num)+'</div><input id="ktmail-input" type="email" value="'+esc(email)+'" placeholder="email@client.com" style="width:100%;padding:13px 14px;border:1.5px solid #e6e0d6;border-radius:12px;font-size:16px;box-sizing:border-box"/><div id="ktmail-msg" style="font-size:13px;margin-top:10px;min-height:18px"></div><div style="display:flex;gap:10px;margin-top:8px"><button id="ktmail-cancel" style="flex:1;padding:13px;border-radius:12px;border:1.5px solid #e6e0d6;background:#fff;font-weight:700;cursor:pointer;color:#3a342c">Annuler</button><button id="ktmail-send" style="flex:1;padding:13px;border-radius:12px;border:none;background:#161310;color:#e6c884;font-weight:700;cursor:pointer">Envoyer</button></div></div>';
+    document.body.appendChild(d);
+    d.addEventListener('click',function(e){ if(e.target===d) closeM(); });
+    document.getElementById('ktmail-cancel').onclick=closeM;
+    document.getElementById('ktmail-send').onclick=function(){ doSend(num); };
+    setTimeout(function(){ var i=document.getElementById('ktmail-input'); if(i) i.focus(); },60);
+  }
+  function doSend(num){
+    var inp=document.getElementById('ktmail-input'), btn=document.getElementById('ktmail-send'), msg=document.getElementById('ktmail-msg');
+    var email=(inp.value||'').trim();
+    if(!vEmail(email)){ msg.style.color='#b4452f'; msg.textContent='Adresse email invalide.'; return; }
+    btn.disabled=true; btn.textContent='Envoi…'; msg.style.color='#777'; msg.textContent='';
+    fetch('/api/facture/email',{method:'POST',headers:{'Content-Type':'application/json','x-comptoir-token':tok()},body:JSON.stringify({num:num,email:email})})
+      .then(function(r){ return r.json().then(function(j){ return {s:r.status,j:j}; }).catch(function(){ return {s:r.status,j:{}}; }); })
+      .then(function(o){ if(o.s===200 && o.j && o.j.ok){ msg.style.color='#1a7f37'; msg.textContent='✓ Facture envoyée à '+email; setTimeout(closeM,1500); } else { btn.disabled=false; btn.textContent='Envoyer'; msg.style.color='#b4452f'; msg.textContent=(o.j&&o.j.error)||'Échec de l’envoi.'; } })
+      .catch(function(){ btn.disabled=false; btn.textContent='Envoyer'; msg.style.color='#b4452f'; msg.textContent='Erreur réseau.'; });
+  }
+  document.addEventListener('click',function(e){ var b=e.target.closest && e.target.closest('[data-act="kt-emailfac"]'); if(b){ e.preventDefault(); e.stopPropagation(); openP(b.getAttribute('data-num')||'', b.getAttribute('data-email')||''); } },true);
 })();</script>
 </body>
 </html>

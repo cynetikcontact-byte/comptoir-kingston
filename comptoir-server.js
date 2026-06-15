@@ -810,6 +810,45 @@ function computeTva(lines, brut, remise) {
   return { ventilation: ventilation, totalHT: totalHT, totalTVA: totalTVA };
 }
 
+/* --------------------------- Email facture (Brevo) ---------------------------- */
+const MAIL_KEY = process.env.BREVO_API_KEY || '';
+const MAIL_FROM = process.env.COMPTOIR_MAIL_FROM || '';
+const MAIL_FROM_NAME = process.env.COMPTOIR_MAIL_FROM_NAME || 'KINGSTON';
+function ktValidEmail(e){ e = String(e||''); var at=e.indexOf('@'); var dot=e.lastIndexOf('.'); return at>0 && dot>at+1 && dot<e.length-1 && e.indexOf(' ')<0; }
+function invoiceEmailHtml(inv) {
+  var sl = inv.seller || sellerFor(inv.boutiqueId);
+  var E = function(x){ return String(x == null ? '' : x).replace(/&/g, '&amp;').replace(/</g, '&lt;'); };
+  var M = function(n){ return (Math.round((Number(n) || 0) * 100) / 100).toFixed(2).replace('.', ',') + ' €'; };
+  var dt = new Date(inv.date);
+  var rows = (inv.lines || []).map(function(l){ return '<tr><td style="padding:6px 0;border-bottom:1px solid #eee">' + E(l.produit || l.name || 'Article') + (l.detail ? '<br><span style="color:#888;font-size:12px">' + E(l.detail) + '</span>' : '') + '</td><td style="padding:6px 0;border-bottom:1px solid #eee;text-align:center;color:#555">' + (l.grams ? E(l.grams) + ' g' : (l.qty || 1)) + '</td><td style="padding:6px 0;border-bottom:1px solid #eee;text-align:right;white-space:nowrap">' + M(l.prix != null ? l.prix : l.price) + '</td></tr>'; }).join('');
+  return '<div style="font-family:Arial,Helvetica,sans-serif;max-width:520px;margin:0 auto;color:#1a1a1a">'
+    + '<div style="background:#161310;color:#e6c884;padding:20px 24px;border-radius:14px 14px 0 0"><div style="font-size:22px;font-weight:800;letter-spacing:.12em">KINGSTON</div><div style="color:#cdbf9f;font-size:12px;margin-top:2px">' + E(sl.name || 'KINGSTON') + (sl.city ? ' · ' + E(sl.city) : '') + '</div></div>'
+    + '<div style="border:1px solid #ece7df;border-top:none;border-radius:0 0 14px 14px;padding:22px 24px">'
+    + '<p style="margin:0 0 4px;font-size:15px">Bonjour,</p><p style="margin:0 0 16px;color:#555;font-size:14px">Voici votre facture pour votre achat chez KINGSTON. Merci de votre visite !</p>'
+    + '<div style="font-size:13px;color:#777;margin-bottom:6px">Facture <b style="color:#1a1a1a">' + E(inv.num) + '</b> · ' + dt.toLocaleDateString('fr-FR') + ' ' + dt.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }) + '</div>'
+    + '<table style="width:100%;border-collapse:collapse;font-size:14px;margin:8px 0 4px">' + rows + '</table>'
+    + (inv.remise ? '<div style="display:flex;justify-content:space-between;font-size:13px;color:#555;margin:6px 0"><span>Remise fidélité</span><span>-' + M(inv.remise) + '</span></div>' : '')
+    + '<div style="display:flex;justify-content:space-between;font-weight:800;font-size:18px;margin-top:10px;padding-top:10px;border-top:2px solid #161310"><span>Total</span><span>' + M(inv.total) + '</span></div>'
+    + '<div style="display:flex;justify-content:space-between;font-size:13px;color:#555;margin-top:4px"><span>Règlement</span><span>' + E(inv.payment || 'Carte') + '</span></div>'
+    + '<div style="margin-top:18px;font-size:11px;color:#999">'
+    + (sl.siren && sl.siren !== '000000000' ? 'SIREN ' + E(sl.siren) : '') + (sl.vat && sl.vat !== 'FR00000000000' ? ' · TVA ' + E(sl.vat) : '')
+    + '<br>Caisse certifiée NF525 — données inaltérables.' + (inv.seal ? '<br>Sceau : ' + E(String(inv.seal).slice(0, 24)) + '…' : '') + '</div>'
+    + '</div></div>';
+}
+function sendInvoiceEmail(toEmail, inv) {
+  return new Promise(function (resolve) {
+    if (!MAIL_KEY) return resolve({ ok: false, code: 'NO_KEY', error: 'Service email non configuré (BREVO_API_KEY manquante dans Coolify).' });
+    if (!MAIL_FROM) return resolve({ ok: false, code: 'NO_FROM', error: 'Expediteur non configuré (COMPTOIR_MAIL_FROM manquant dans Coolify).' });
+    var https = require('https');
+    var payload = JSON.stringify({ sender: { name: MAIL_FROM_NAME, email: MAIL_FROM }, to: [{ email: toEmail }], subject: 'Votre facture KINGSTON ' + (inv.num || ''), htmlContent: invoiceEmailHtml(inv) });
+    var rq = https.request({ hostname: 'api.brevo.com', path: '/v3/smtp/email', method: 'POST', headers: { 'api-key': MAIL_KEY, 'content-type': 'application/json', 'accept': 'application/json', 'content-length': Buffer.byteLength(payload) } }, function (r) {
+      var d = ''; r.on('data', function(c){ d += c; }); r.on('end', function () { if (r.statusCode >= 200 && r.statusCode < 300) resolve({ ok: true }); else { var msg = ''; try { msg = JSON.parse(d).message || d; } catch (e) { msg = d; } resolve({ ok: false, code: 'PROVIDER', status: r.statusCode, error: 'Brevo: ' + String(msg).slice(0, 160) }); } });
+    });
+    rq.on('error', function (e) { resolve({ ok: false, code: 'NET', error: 'Erreur reseau email: ' + e.message }); });
+    rq.write(payload); rq.end();
+  });
+}
+
 const server = http.createServer(async (req, res) => {
   res._cors = corsFor(req);
   applySecurityHeaders(req, res);
@@ -1137,6 +1176,18 @@ const server = http.createServer(async (req, res) => {
   if (!user) return send(res, 401, { error: 'Session expirée ou invalide — reconnecte-toi.' });
 
   try {
+    if (req.method === 'POST' && path === '/api/facture/email') {
+      var bMail = await readJson(req);
+      var numMail = (bMail && bMail.num ? String(bMail.num) : '').trim();
+      var emailMail = (bMail && bMail.email ? String(bMail.email) : '').trim();
+      if (!ktValidEmail(emailMail)) return send(res, 400, { error: 'Adresse email invalide.' });
+      var invMail = invoices.find(function (i) { return i.num === numMail; });
+      if (!invMail) return send(res, 404, { error: 'Facture introuvable.' });
+      if (user.role !== 'admin' && invMail.boutiqueId !== user.boutiqueId) return send(res, 403, { error: 'Non autorisé.' });
+      var erMail = await sendInvoiceEmail(emailMail, invMail);
+      if (!erMail.ok) return send(res, (erMail.code === 'NO_KEY' || erMail.code === 'NO_FROM') ? 503 : 502, { error: erMail.error });
+      return send(res, 200, { ok: true, sentTo: emailMail });
+    }
     // ---- Terminal de paiement via le relais (caisse -> serveur -> pont -> TPE) ----
     if (req.method === 'POST' && path === '/api/terminal/pay') {
       if (user.role !== 'admin' && user.role !== 'manager') return send(res, 403, { error: 'Non autorise' });
