@@ -128,7 +128,7 @@ function payViaIp(amount, ref, cb) {
   const finish = (err, result) => { if (done) return; done = true; clearTimeout(to); try { sock.destroy(); } catch (e) {} cb(err, result); };
   const to = setTimeout(() => finish(new Error('Timeout terminal (IP)')), TPE_TIMEOUT);
   sock.on('data', (d) => { buf = Buffer.concat([buf, d]); finish(null, Object.assign({ mode: 'ip', montant: amount, ref: ref || null }, parseResponse(buf))); });
-  sock.on('error', (e) => finish(e));
+  sock.on('error', (e) => { ipHealthy = false; finish(e); });
 }
 function payViaSerial(amount, ref, cb) {
   let SerialPort;
@@ -295,8 +295,11 @@ function probeHost(ip, port, timeoutMs) {
   });
 }
 let discovering = false;
-async function discoverTerminal() {
-  if (cfg.ip || cfg.mode === 'serial' || !cfg.autoDiscover || discovering) return cfg.ip || '';
+let ipHealthy = false;
+let ipFails = 0;
+var IP_FAIL_LIMIT = 2;
+async function discoverTerminal(force) {
+  if ((cfg.ip && !force) || cfg.mode === 'serial' || !cfg.autoDiscover || discovering) return cfg.ip || '';
   discovering = true;
   const port = cfg.tcpPort || 8888;
   try {
@@ -305,7 +308,7 @@ async function discoverTerminal() {
         const batch = [];
         for (let i = start; i < start + 32 && i <= 254; i++) { const ip = n.base + i; if (ip === n.self) continue; batch.push(probeHost(ip, port, 350).then(function (ok) { return ok ? ip : null; })); }
         const found = (await Promise.all(batch)).find(function (x) { return x; });
-        if (found) { cfg.ip = found; cfg.mode = 'ip'; saveCfg(); console.log('Terminal detecte automatiquement sur le reseau : ' + found + ':' + port); return found; }
+        if (found) { cfg.ip = found; cfg.mode = 'ip'; ipHealthy = true; ipFails = 0; saveCfg(); console.log('Terminal detecte automatiquement sur le reseau : ' + found + ':' + port); return found; }
       }
     }
     console.log('Aucun terminal detecte sur le reseau (port ' + port + '). Branche-le en reseau, ou saisis l\'IP manuellement dans Reglages.');
@@ -313,6 +316,15 @@ async function discoverTerminal() {
   return '';
 }
 
+function healthCheck() {
+  if (cfg.mode !== 'ip' || !cfg.autoDiscover) return;
+  if (!cfg.ip) { ipHealthy = false; if (!discovering) discoverTerminal().catch(function () {}); return; }
+  probeHost(cfg.ip, cfg.tcpPort || 8888, 1500).then(function (ok) {
+    if (ok) { ipHealthy = true; ipFails = 0; return; }
+    ipHealthy = false; ipFails++;
+    if (ipFails >= IP_FAIL_LIMIT) { ipFails = 0; console.log('Terminal injoignable -> redetection automatique...'); discoverTerminal(true).catch(function () {}); }
+  });
+}
 function cloudLoop() {
   const base = String(cfg.server || '').replace(/\/$/, '');
   if (!base) return;
@@ -323,7 +335,7 @@ function cloudLoop() {
       const r = await httpJson('POST', base + '/api/pont/hello', {}, { deviceId: cfg.deviceId, setupToken: cfg.setupToken || '', terminalIp: cfg.ip || '', terminalPort: cfg.tcpPort || 8888 });
       const d = r.json || {};
       PAIR.claimed = !!d.claimed; PAIR.code = d.code || ''; PAIR.boutique = d.boutique || null;
-      if (d.claimed) { if (d.terminalIp) cfg.ip = d.terminalIp; if (d.terminalPort) cfg.tcpPort = d.terminalPort; cfg.mode = 'ip'; }
+      if (d.claimed) { if (d.terminalIp && !ipHealthy && d.terminalIp !== cfg.ip) { cfg.ip = d.terminalIp; ipFails = 0; saveCfg(); } if (d.terminalPort) cfg.tcpPort = d.terminalPort; cfg.mode = 'ip'; }
       else { console.log('>>> PONT NON CONNECTE. Sur ' + base + ' (Reglages > Paiement par carte > Connecter un pont), entre le CODE : ' + PAIR.code); }
       warned = false;
     } catch (e) { if (!warned) { console.error('Mode cloud : serveur injoignable (' + (e.message || e) + ')...'); warned = true; } }
@@ -349,8 +361,9 @@ function cloudLoop() {
   }
   if (!cfg.ip) discoverTerminal().catch(function () {});   // detecte le terminal des le demarrage (zero IP a saisir)
   hello();
+  setTimeout(function () { healthCheck(); }, 6000);
   // hello frequent (~4.5s) meme une fois connecte : recupere vite l'IP/appairage et se
   // reconnecte tout seul en quelques secondes apres un redemarrage du serveur.
-  setInterval(function () { n++; if (!PAIR.claimed || n % 3 === 0) hello(); poll(); if (!cfg.ip && n % 40 === 0) discoverTerminal().catch(function () {}); }, 1500);
+  setInterval(function () { n++; if (!PAIR.claimed || n % 3 === 0) hello(); poll(); if (!cfg.ip && n % 40 === 0) discoverTerminal().catch(function () {}); if (cfg.ip && n % 7 === 0) healthCheck(); }, 1500);
 }
 cloudLoop();
