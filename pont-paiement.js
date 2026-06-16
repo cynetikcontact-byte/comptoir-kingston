@@ -353,6 +353,7 @@ function cloudLoop() {
         runPayment(Number(cmd.amount), cmd.ref || ('KT-' + cmd.id), function (err, result) {
           const out = err ? { id: cmd.id, approved: false, echec: '08' } : { id: cmd.id, approved: !!(result && result.approved), codeReponse: (result && result.codeReponse) || null, echec: (result && result.echec) || null };
           httpJson('POST', base + '/api/pont/result', { 'x-pont-device': cfg.deviceId }, out).catch(function () {});
+          console.log('<-- DIAG: ' + JSON.stringify({ err: err?String(err.message||err):null, raw: result?String(result.raw||''):null, fields: result?result.fields:null }));
           console.log('<-- Resultat : ' + (out.approved ? 'ACCEPTE' : 'refuse/echec'));
           busy = false;
         });
