@@ -134,7 +134,7 @@ function connectAndPay(ip, amount, ref, cb) {
     buf = Buffer.concat([buf, d]);
     const r = parseResponse(buf); const ae = (r.fields && r.fields.AE) || '';
     if (ae === '10' || ae === '01' || (r.fields && r.fields.AF)) return settle();
-    if (quiet) clearTimeout(quiet); quiet = setTimeout(settle, 3000);
+    // on attend la reponse FINALE du terminal (AE/AF) ou fermeture socket ; jamais de fermeture prematuree
   });
   sock.on('end', () => { if (!done && buf.length) settle(); });
   sock.on('close', () => { if (!done && buf.length) settle(); });
@@ -435,7 +435,7 @@ function cloudLoop() {
         runPayment(Number(cmd.amount), cmd.ref || ('KT-' + cmd.id), function (err, result) {
           const out = err ? { id: cmd.id, approved: false, echec: '08' } : { id: cmd.id, approved: !!(result && result.approved), codeReponse: (result && result.codeReponse) || null, echec: (result && result.echec) || null };
           httpJson('POST', base + '/api/pont/result', { 'x-pont-device': cfg.deviceId }, out).catch(function () {});
-          console.log('<-- DIAG: ' + JSON.stringify({ err: err?String(err.message||err):null, raw: result?String(result.raw||''):null, fields: result?result.fields:null }));
+          console.log('<-- DIAG: ' + JSON.stringify({ t: new Date().toISOString().slice(11,19), ipEnd: (cfg.ip||'').split('.').pop(), err: err?String(err.message||err):null, raw: result?String(result.raw||''):null, fields: result?result.fields:null }));
           console.log('<-- Resultat : ' + (out.approved ? 'ACCEPTE' : 'refuse/echec'));
           busy = false;
         });
