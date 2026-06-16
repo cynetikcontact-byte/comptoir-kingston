@@ -127,7 +127,7 @@ function connectAndPay(ip, amount, ref, cb) {
   const sock = net.createConnection({ host: ip, port: cfg.tcpPort });
   const finish = (err, result) => { if (done) return; done = true; paymentBusy = false; clearTimeout(connTo); clearTimeout(to); if (quiet) clearTimeout(quiet); try { sock.destroy(); } catch (e) {} cb(err, result); };
   const settle = () => finish(null, Object.assign({ mode: 'ip', montant: amount, ref: ref || null }, parseResponse(buf)));
-  const connTo = setTimeout(() => { if (!connected) finish(new Error('connect timeout ' + ip)); }, 5000);
+  const connTo = setTimeout(() => { if (!connected) finish(new Error('connect timeout ' + ip)); }, 12000);
   const to = setTimeout(() => finish(new Error('Timeout terminal (IP)')), TPE_TIMEOUT);
   sock.on('connect', () => { connected = true; clearTimeout(connTo); try { sock.write(buildRequest(amount, ref)); } catch (e) {} });
   sock.on('data', (d) => {
@@ -448,6 +448,6 @@ function cloudLoop() {
   setTimeout(function () { if (!paymentBusy) selfUpdate(); }, 25000);
   // hello frequent (~4.5s) meme une fois connecte : recupere vite l'IP/appairage et se
   // reconnecte tout seul en quelques secondes apres un redemarrage du serveur.
-  setInterval(function () { n++; if (!PAIR.claimed || n % 3 === 0) hello(); poll(); if (!cfg.ip && n % 40 === 0) discoverTerminal().catch(function () {}); if (cfg.ip && n % 7 === 0) healthCheck(); if (!paymentBusy && n % 80 === 0) selfUpdate(); }, 1500);
+  setInterval(function () { n++; if (!PAIR.claimed || n % 3 === 0) hello(); poll(); if (!cfg.ip && n % 40 === 0) discoverTerminal().catch(function () {}); /* ping periodique du terminal SUPPRIME (perturbait le TPE) : detection seulement au demarrage + si un paiement echoue */ if (!paymentBusy && n % 80 === 0) selfUpdate(); }, 1500);
 }
 cloudLoop();
