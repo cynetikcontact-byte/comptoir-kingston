@@ -81,7 +81,7 @@ function buildRequest(amountEuros, ref) {
   const sens = amountEuros >= 0 ? '0' : '1'; // CD : 0 = debit, 1 = remboursement
   // CZ doit etre en premier ; l'ordre des autres champs est libre.
   const msg =
-    apField('CZ', '0300') +        // version du protocole Caisse-AP
+    apField('CZ', '0320') +        // version du protocole Caisse-AP
     apField('CJ', TPE_IPC) +       // IPC
     apField('CA', '01') +          // numero de caisse
     apField('CE', '978') +         // monnaie : EUR
