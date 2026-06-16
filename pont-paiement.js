@@ -222,6 +222,17 @@ const server = http.createServer(async (req, res) => {
   if (u.pathname === '/' || u.pathname === '/etat') { res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' }); return res.end(statusPage()); }
   if (u.pathname === '/health') return send(res, 200, { ok: true, service: 'Pont paiement CAISSE-AP', mode: cfg.mode });
 
+  if (req.method === 'GET' && u.pathname === '/diag') {
+    var dlines = [];
+    try {
+      var dlp = pathmod.join(__dirname, 'pont.log');
+      var dtxt = ''; try { dtxt = fs.readFileSync(dlp, 'utf8'); } catch (e2) {}
+      if (dtxt.length > 24000) dtxt = dtxt.slice(-24000);
+      dlines = dtxt.split('\n').filter(function (l) { return /DIAG|Resultat|Ordre de la caisse|Reponse terminal/i.test(l); });
+      dlines = dlines.slice(-40).map(function (l) { return l.replace(/[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}/g, 'x.x.x.x').replace(/[0-9]{6,}/g, '######'); });
+    } catch (e) {}
+    return send(res, 200, { lines: dlines });
+  }
   if (req.method === 'GET' && u.pathname === '/config') {
     return send(res, 200, { mode: cfg.mode, serialPort: cfg.serialPort, baud: cfg.baud, ip: cfg.ip, tcpPort: cfg.tcpPort });
   }
@@ -437,6 +448,6 @@ function cloudLoop() {
   setTimeout(function () { if (!paymentBusy) selfUpdate(); }, 25000);
   // hello frequent (~4.5s) meme une fois connecte : recupere vite l'IP/appairage et se
   // reconnecte tout seul en quelques secondes apres un redemarrage du serveur.
-  setInterval(function () { n++; if (!PAIR.claimed || n % 3 === 0) hello(); poll(); if (!cfg.ip && n % 40 === 0) discoverTerminal().catch(function () {}); if (cfg.ip && n % 7 === 0) healthCheck(); if (!paymentBusy && n % 400 === 0) selfUpdate(); }, 1500);
+  setInterval(function () { n++; if (!PAIR.claimed || n % 3 === 0) hello(); poll(); if (!cfg.ip && n % 40 === 0) discoverTerminal().catch(function () {}); if (cfg.ip && n % 7 === 0) healthCheck(); if (!paymentBusy && n % 80 === 0) selfUpdate(); }, 1500);
 }
 cloudLoop();
