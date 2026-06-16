@@ -121,14 +121,52 @@ function parseResponse(buf) {
 function payViaSimulation(amount, ref, cb) {
   setTimeout(() => cb(null, { approved: true, mode: 'simulation', montant: amount, ref: ref || null, codeReponse: '00' }), 1600);
 }
-function payViaIp(amount, ref, cb) {
-  if (!cfg.ip) return cb(new Error('Adresse IP du terminal non definie'));
-  let buf = Buffer.alloc(0); let done = false;
-  const sock = net.createConnection({ host: cfg.ip, port: cfg.tcpPort }, () => sock.write(buildRequest(amount, ref)));
-  const finish = (err, result) => { if (done) return; done = true; clearTimeout(to); try { sock.destroy(); } catch (e) {} cb(err, result); };
+function connectAndPay(ip, amount, ref, cb) {
+  paymentBusy = true;
+  let buf = Buffer.alloc(0); let done = false; let quiet = null; let connected = false;
+  const sock = net.createConnection({ host: ip, port: cfg.tcpPort });
+  const finish = (err, result) => { if (done) return; done = true; paymentBusy = false; clearTimeout(connTo); clearTimeout(to); if (quiet) clearTimeout(quiet); try { sock.destroy(); } catch (e) {} cb(err, result); };
+  const settle = () => finish(null, Object.assign({ mode: 'ip', montant: amount, ref: ref || null }, parseResponse(buf)));
+  const connTo = setTimeout(() => { if (!connected) finish(new Error('connect timeout ' + ip)); }, 5000);
   const to = setTimeout(() => finish(new Error('Timeout terminal (IP)')), TPE_TIMEOUT);
-  sock.on('data', (d) => { buf = Buffer.concat([buf, d]); finish(null, Object.assign({ mode: 'ip', montant: amount, ref: ref || null }, parseResponse(buf))); });
-  sock.on('error', (e) => { ipHealthy = false; finish(e); });
+  sock.on('connect', () => { connected = true; clearTimeout(connTo); try { sock.write(buildRequest(amount, ref)); } catch (e) {} });
+  sock.on('data', (d) => {
+    buf = Buffer.concat([buf, d]);
+    const r = parseResponse(buf); const ae = (r.fields && r.fields.AE) || '';
+    if (ae === '10' || ae === '01' || (r.fields && r.fields.AF)) return settle();
+    if (quiet) clearTimeout(quiet); quiet = setTimeout(settle, 3000);
+  });
+  sock.on('end', () => { if (!done && buf.length) settle(); });
+  sock.on('close', () => { if (!done && buf.length) settle(); });
+  sock.on('error', (e) => finish(e));
+}
+function payViaIp(amount, ref, cb) {
+  const attempted = {};
+  const tryIp = (ip) => {
+    if (!ip) return cb(new Error('Terminal introuvable sur le reseau'));
+    attempted[ip] = 1;
+    connectAndPay(ip, amount, ref, (err, result) => {
+      if (!err) { ipHealthy = true; cfg.ip = ip; return cb(null, result); }
+      ipHealthy = false;
+      const msg = String((err && err.message) || err);
+      const connErr = /timeout|ETIMEDOUT|EHOSTUNREACH|EHOSTDOWN|ECONNREFUSED|ENETUNREACH|ECONNRESET/i.test(msg);
+      if (connErr && cfg.autoDiscover && !discovering) {
+        console.log('Paiement: terminal injoignable sur ' + ip + ' -> recherche de la nouvelle adresse...');
+        cfg.ip = '';
+        discoverTerminal(true).then((found) => {
+          if (found && !attempted[found]) { console.log('Paiement: terminal retrouve sur ' + found + ', nouvelle tentative.'); return tryIp(found); }
+          return cb(err);
+        }).catch(() => cb(err));
+      } else { cb(err); }
+    });
+  };
+  if (!cfg.ip && cfg.autoDiscover && !discovering) {
+    discoverTerminal(true).then((found) => tryIp(found || '')).catch(() => cb(new Error('Adresse IP du terminal non definie')));
+  } else if (!cfg.ip) {
+    cb(new Error('Adresse IP du terminal non definie'));
+  } else {
+    tryIp(cfg.ip);
+  }
 }
 function payViaSerial(amount, ref, cb) {
   let SerialPort;
@@ -277,6 +315,38 @@ function httpJson(method, urlStr, headers, bodyObj) {
     rq.end();
   });
 }
+// Telecharge un texte (le code du pont) depuis le serveur.
+function httpGetText(urlStr) {
+  return new Promise(function (resolve, reject) {
+    let u; try { u = new URL(urlStr); } catch (e) { return reject(e); }
+    const lib = u.protocol === 'https:' ? https : http;
+    const rq = lib.request({ method: 'GET', hostname: u.hostname, port: u.port || (u.protocol === 'https:' ? 443 : 80), path: u.pathname + u.search, headers: {}, agent: false }, function (rs) {
+      let d = ''; rs.setEncoding('utf8'); rs.on('data', function (c) { d += c; }); rs.on('end', function () { resolve({ status: rs.statusCode, body: d }); });
+    });
+    rq.setTimeout(15000, function () { rq.destroy(new Error('timeout')); });
+    rq.on('error', reject);
+    rq.end();
+  });
+}
+let selfUpdating = false;
+function selfUpdate() {
+  if (selfUpdating || paymentBusy) return; selfUpdating = true;
+  const base = String(cfg.server || '').replace(/[/]+$/, '');
+  if (!base) { selfUpdating = false; return; }
+  httpGetText(base + '/pont-paiement.js').then(function (r) {
+    selfUpdating = false;
+    if (!r || r.status !== 200) return;
+    const remote = r.body || '';
+    if (remote.length < 8000) return;
+    if (remote.indexOf('CAISSE-AP') < 0 || remote.indexOf('function payViaIp') < 0 || remote.indexOf('function connectAndPay') < 0) return;
+    try { new Function(remote); } catch (e) { console.log('Pont: maj ignoree (syntaxe invalide).'); return; }
+    let current = ''; try { current = fs.readFileSync(__filename, 'utf8'); } catch (e) {}
+    if (remote === current) return;
+    try { fs.writeFileSync(__filename, remote, 'utf8'); } catch (e) { return; }
+    console.log('Pont: nouvelle version installee, redemarrage automatique...');
+    setTimeout(function () { process.exit(0); }, 1000);
+  }).catch(function () { selfUpdating = false; });
+}
 /* ----- Auto-detection du terminal sur le reseau local (zero IP a saisir) ----- */
 function localSubnets() {
   const out = []; const ifs = os.networkInterfaces();
@@ -295,6 +365,7 @@ function probeHost(ip, port, timeoutMs) {
   });
 }
 let discovering = false;
+let paymentBusy = false;
 let ipHealthy = false;
 let ipFails = 0;
 var IP_FAIL_LIMIT = 2;
@@ -363,8 +434,9 @@ function cloudLoop() {
   if (!cfg.ip) discoverTerminal().catch(function () {});   // detecte le terminal des le demarrage (zero IP a saisir)
   hello();
   setTimeout(function () { healthCheck(); }, 6000);
+  setTimeout(function () { if (!paymentBusy) selfUpdate(); }, 25000);
   // hello frequent (~4.5s) meme une fois connecte : recupere vite l'IP/appairage et se
   // reconnecte tout seul en quelques secondes apres un redemarrage du serveur.
-  setInterval(function () { n++; if (!PAIR.claimed || n % 3 === 0) hello(); poll(); if (!cfg.ip && n % 40 === 0) discoverTerminal().catch(function () {}); if (cfg.ip && n % 7 === 0) healthCheck(); }, 1500);
+  setInterval(function () { n++; if (!PAIR.claimed || n % 3 === 0) hello(); poll(); if (!cfg.ip && n % 40 === 0) discoverTerminal().catch(function () {}); if (cfg.ip && n % 7 === 0) healthCheck(); if (!paymentBusy && n % 400 === 0) selfUpdate(); }, 1500);
 }
 cloudLoop();
