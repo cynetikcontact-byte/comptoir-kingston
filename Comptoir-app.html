@@ -2442,5 +2442,168 @@ function setPayMode(m){ PAY_MODE=(m==='auto')?'auto':'manuel'; try{ localStorage
   }
   window.__ktLogoutTimer=setInterval(ensure,1000); ensure();
 })();</script>
+
+<script>
+/* KINGSTON - Filtre par villes (admin) : pilote Activite + graphiques + tableau de bord.
+   100% client. Intercepte /api/journal et /api/dashboard, filtre par villes cochees.
+   No-op quand toutes les villes sont selectionnees (comportement par defaut inchange). */
+(function(){
+  if (window.__ktCityFilter) return; window.__ktCityFilter = true;
+  var LS = 'kt_cities';
+  var _fetch = window.fetch.bind(window);
+
+  /* ---------- helpers purs (testables) ---------- */
+  function filterJournal(j, S){
+    var v = (j.ventes || []).filter(function(x){ return S[x.boutique]; });
+    return { count: v.length, ventes: v };
+  }
+  function sumKpisFromBoutiques(boutiques, S){
+    var caJ=0, caM=0, tkJ=0;
+    boutiques.forEach(function(b){ if(S[b.boutique]){ caJ+=(+b.caJour||0); caM+=(+b.caMois||0); tkJ+=(+b.ticketsJour||0); } });
+    return { caJour:caJ, caMois:caM, ticketsJour:tkJ, panierMoyen: tkJ ? (caJ/tkJ) : 0 };
+  }
+  function recomputeFromVentes(ventes, S, now){
+    now = now || Date.now();
+    var v = ventes.filter(function(x){ return S[x.boutique]; });
+    var days = {}, order = [];
+    for (var i=29; i>=0; i--){ var d = new Date(now - i*86400000).toISOString().slice(0,10); days[d]=0; order.push(d); }
+    var nowM = new Date(now).toISOString().slice(0,7), tkMois = 0, pay = {};
+    v.forEach(function(x){
+      var ds = String(x.date).slice(0,10);
+      if (ds in days){ days[ds] += (+x.totalTTC||0); var p = x.paiement || 'Autre'; pay[p] = (pay[p]||0) + (+x.totalTTC||0); }
+      if (String(x.date).slice(0,7) === nowM) tkMois++;
+    });
+    return {
+      parJour: order.map(function(d){ return { date:d, ttc: Math.round(days[d]*100)/100 }; }),
+      parPaiement: Object.keys(pay).map(function(k){ return { moyen:k, montant: Math.round(pay[k]*100)/100 }; }),
+      ticketsMois: tkMois
+    };
+  }
+  function isSubset(allIds, sel){ return !!sel && sel.length > 0 && sel.length < allIds.length; }
+
+  if (typeof module !== 'undefined' && module.exports){
+    module.exports = { filterJournal:filterJournal, sumKpisFromBoutiques:sumKpisFromBoutiques, recomputeFromVentes:recomputeFromVentes, isSubset:isSubset };
+    return;
+  }
+
+  /* ---------- etat / token ---------- */
+  function tok(){ try{ var t=localStorage.getItem('kt_session'); var o=JSON.parse(t); return (o&&o.token)?o.token:t; }catch(e){ return localStorage.getItem('kt_session')||''; } }
+  function getSel(){ try{ var a=JSON.parse(localStorage.getItem(LS)); return (Array.isArray(a)&&a.length)?a:null; }catch(e){ return null; } }
+  function setSel(a){ try{ localStorage.setItem(LS, JSON.stringify(a)); }catch(e){} }
+  function clearSel(){ try{ localStorage.removeItem(LS); }catch(e){} }
+  var ALL = null, ROLE = null;
+
+  function mkResp(obj, resp){ return new Response(JSON.stringify(obj), { status:resp.status, statusText:resp.statusText, headers:{'content-type':'application/json; charset=utf-8'} }); }
+  function setOf(sel){ var S={}; sel.forEach(function(x){ S[x]=1; }); return S; }
+
+  function recomputeCharts(sel){
+    var from = new Date(Date.now()-31*86400000).toISOString().slice(0,10);
+    var to = new Date().toISOString().slice(0,10);
+    return _fetch('/api/journal?from='+from+'&to='+to, { headers:{'x-comptoir-token':tok()} })
+      .then(function(r){ return r.json(); })
+      .then(function(j){ return recomputeFromVentes(j.ventes||[], setOf(sel)); })
+      .catch(function(){ return null; });
+  }
+
+  /* ---------- intercepteur fetch ---------- */
+  window.fetch = function(input, init){
+    var url = (typeof input==='string') ? input : (input && input.url) || '';
+    var method = ((init && init.method) || (input && input.method) || 'GET').toUpperCase();
+    var isJournal = url.indexOf('/api/journal') >= 0;
+    var isDash = url.indexOf('/api/dashboard') >= 0;
+    if (method !== 'GET' || (!isJournal && !isDash)) return _fetch(input, init);
+    var sel = getSel();
+    return _fetch(input, init).then(function(resp){
+      if (!ALL || !sel) return resp;
+      var allIds = ALL.map(function(b){ return b.id; });
+      if (!isSubset(allIds, sel)) return resp;
+      var S = setOf(sel);
+      return resp.clone().json().then(function(j){
+        try{
+          if (isJournal){ var f=filterJournal(j, S); j.ventes=f.ventes; j.count=f.count; return mkResp(j, resp); }
+          j.boutiques = (j.boutiques||[]).filter(function(b){ return S[b.boutique]; });
+          var k = sumKpisFromBoutiques(j.boutiques, S);
+          j.kpis = j.kpis || {};
+          j.kpis.caJour=k.caJour; j.kpis.caMois=k.caMois; j.kpis.ticketsJour=k.ticketsJour; j.kpis.panierMoyen=k.panierMoyen;
+          if (Array.isArray(j.scope)) j.scope = sel.slice();
+          return recomputeCharts(sel).then(function(rc){
+            if (rc){ if(rc.parJour) j.parJour=rc.parJour; if(rc.parPaiement) j.parPaiement=rc.parPaiement; if(rc.ticketsMois!=null) j.kpis.ticketsMois=rc.ticketsMois; }
+            return mkResp(j, resp);
+          });
+        }catch(e){ return resp; }
+      }).catch(function(){ return resp; });
+    });
+  };
+
+  /* ---------- UI cases a cocher (admin) ---------- */
+  function selectedIds(){ var s=getSel(); if(!s) return ALL.map(function(b){return b.id;}); return s; }
+  function label(){ var s=getSel(); if(!s) return 'Toutes les villes'; if(s.length===ALL.length) return 'Toutes les villes'; if(s.length===1){ var b=ALL.filter(function(x){return x.id===s[0];})[0]; return b?b.label:s[0]; } return s.length + ' villes'; }
+
+  function buildPanel(){
+    var wrap = document.createElement('div');
+    wrap.id = 'kt-city-wrap';
+    wrap.style.cssText = 'position:relative;display:inline-block;margin-right:8px;';
+    var btn = document.createElement('button');
+    btn.type='button'; btn.id='kt-city-btn';
+    btn.style.cssText = 'appearance:none;border:1px solid #e6e0d4;background:#fff;border-radius:9px;padding:8px 12px;font-size:13px;color:#2a2722;cursor:pointer;white-space:nowrap;';
+    btn.innerHTML = '🏙️ ' + label();
+    var pop = document.createElement('div');
+    pop.style.cssText = 'position:absolute;top:110%;right:0;z-index:9999;background:#fff;border:1px solid #e6e0d4;border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.12);padding:10px;min-width:210px;display:none;';
+    var sel = selectedIds();
+    var rows = '<div style="font-size:11px;letter-spacing:.08em;color:#8a8478;text-transform:uppercase;margin:2px 4px 8px;">Villes affichées</div>';
+    rows += '<label style="display:flex;align-items:center;gap:8px;padding:6px 4px;font-size:13px;cursor:pointer;border-bottom:1px solid #f0ece3;"><input type="checkbox" data-all="1" '+ (getSel()?'':'checked') +'> Toutes les villes</label>';
+    ALL.forEach(function(b){
+      var ck = (sel.indexOf(b.id)>=0) ? 'checked' : '';
+      rows += '<label style="display:flex;align-items:center;gap:8px;padding:6px 4px;font-size:13px;cursor:pointer;"><input type="checkbox" data-id="'+b.id+'" '+ck+'> '+ (b.label||b.id) +'</label>';
+    });
+    rows += '<button type="button" id="kt-city-apply" style="margin-top:10px;width:100%;border:none;background:#161310;color:#e6c884;border-radius:9px;padding:9px;font-size:13px;font-weight:700;cursor:pointer;">Appliquer</button>';
+    pop.innerHTML = rows;
+    wrap.appendChild(btn); wrap.appendChild(pop);
+
+    btn.addEventListener('click', function(e){ e.stopPropagation(); pop.style.display = pop.style.display==='none' ? 'block' : 'none'; });
+    document.addEventListener('click', function(){ pop.style.display='none'; });
+    pop.addEventListener('click', function(e){ e.stopPropagation(); });
+    var allCk = pop.querySelector('input[data-all]');
+    var cityCks = Array.prototype.slice.call(pop.querySelectorAll('input[data-id]'));
+    allCk.addEventListener('change', function(){ if(allCk.checked){ cityCks.forEach(function(c){ c.checked=true; }); } });
+    cityCks.forEach(function(c){ c.addEventListener('change', function(){ var all = cityCks.every(function(x){return x.checked;}); allCk.checked = all; }); });
+    pop.querySelector('#kt-city-apply').addEventListener('click', function(){
+      var chosen = cityCks.filter(function(c){return c.checked;}).map(function(c){return c.getAttribute('data-id');});
+      if(chosen.length===0){ chosen = ALL.map(function(b){return b.id;}); }
+      if(chosen.length===ALL.length){ clearSel(); } else { setSel(chosen); }
+      location.reload();
+    });
+    return wrap;
+  }
+
+  function ensureUI(){
+    if (!(ROLE==='admin' && ALL && ALL.length>1)) return;
+    // masque l'ancien selecteur unique
+    var old = document.getElementById('boutiqueSel'); if(old){ old.style.display='none'; }
+    if (document.getElementById('kt-city-wrap')) { return; }
+    var host = document.querySelector('.top-r') || (old && old.parentNode) || document.querySelector('header .top-r') || document.querySelector('header');
+    if (!host) return;
+    host.insertBefore(buildPanel(), host.firstChild);
+  }
+
+  /* ---------- bootstrap (retente apres connexion SPA) ---------- */
+  var initDone = false;
+  function init(){
+    if (initDone || !tok()) return;
+    _fetch('/api/dashboard', { headers:{'x-comptoir-token':tok()} })
+      .then(function(r){ return r.json(); })
+      .then(function(d){
+        if (!d || !d.role) return;
+        ROLE = d.role;
+        ALL = (d.boutiques||[]).map(function(b){ return { id:b.boutique, label:b.label||b.boutique }; });
+        initDone = true;
+      })
+      .catch(function(){});
+  }
+  init();
+  setInterval(function(){ if (!initDone) init(); else if (ROLE==='admin' && ALL && ALL.length>1) ensureUI(); }, 1500);
+})();
+
+</script>
 </body>
 </html>
