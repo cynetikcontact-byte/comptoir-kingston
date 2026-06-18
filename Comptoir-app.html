@@ -843,7 +843,7 @@ table.tbl tr:hover td{background:#faf9f5;}
     }
     return '<div class="pos"><div class="pos-left">'+
       '<div class="cats">'+cats.map(function(c){return '<button class="cat '+(c===st.cat?'on':'')+'" data-act="poscat" data-c="'+c+'">'+c+'</button>';}).join('')+'</div>'+
-      '<input id="pos-search" class="pos-search" placeholder="Rechercher un produit…" value="'+esc(st.posSearch||'')+'"/>'+'<div class="pgrid">'+grid+'</div></div>'+
+      '<input id="pos-search" class="pos-search" placeholder="Rechercher un produit…" value="'+esc(st.posSearch||'')+'"/>'+'<button data-act="prixlibre" style="width:100%;margin:-2px 0 12px;padding:11px 14px;border-radius:10px;border:1px solid var(--gold);background:var(--gold-soft);color:var(--gold);font-size:14px;font-weight:600;cursor:pointer">+ Prix libre</button>'+'<div class="pgrid">'+grid+'</div></div>'+
       '<div class="ticket"><div class="tk-head"><h3>Ticket</h3><span class="muted" style="font-size:12px">'+st.boutique+'</span><button class="tk-close" data-act="tkclose" title="Fermer">×</button></div>'+
       '<div class="tk-client">'+clientBox+rewardBox+'</div>'+
       '<div class="tk-lines">'+lines+'</div>'+
@@ -1749,6 +1749,7 @@ function setPayMode(m){ PAY_MODE=(m==='auto')?'auto':'manuel'; try{ localStorage
   // ---------- Modales ----------
   function openModal(html){modalRoot.innerHTML='<div class="modal-backdrop" data-act="closemodal"><div class="modal">'+html+'</div></div>';}
   function closeModal(){cmStopScan();modalRoot.innerHTML='';}
+  function prixLibreModal(){openModal('<div class="modal-h">Prix libre</div><div class="modal-b"><label style="display:block;font-size:13px;color:#8a8475;margin:0 0 6px">Montant (€)</label><input id="pl-amount" type="text" inputmode="decimal" placeholder="0,00" style="width:100%;font-size:24px;font-weight:700;padding:12px;border-radius:10px;border:1px solid var(--line);background:#fff;color:var(--ink2);text-align:center;box-sizing:border-box"/><label style="display:block;font-size:13px;color:#8a8475;margin:16px 0 6px">Libellé (optionnel)</label><input id="pl-label" type="text" placeholder="Article divers" style="width:100%;font-size:15px;padding:10px 12px;border-radius:10px;border:1px solid var(--line);background:#fff;color:var(--ink2);box-sizing:border-box"/><button data-act="addlibre" style="margin-top:20px;width:100%;padding:14px;font-size:16px;font-weight:700;border-radius:10px;border:none;background:var(--gold);color:#fff;cursor:pointer">Ajouter au panier</button></div>');setTimeout(function(){var e=document.getElementById('pl-amount');if(e){e.focus();e.addEventListener('keydown',function(ev){if(ev.key==='Enter'){var b=document.querySelector('[data-act=addlibre]');if(b)b.click();}});}},60);}
 
   function gramModal(p){
     openModal('<div class="modal-h">'+p.name+' — choisis le poids</div><div class="modal-b"><div class="modal-grid">'+
@@ -2048,6 +2049,8 @@ function setPayMode(m){ PAY_MODE=(m==='auto')?'auto':'manuel'; try{ localStorage
     if(a==='logout'){clearSession();st.user=null;st.client=null;st.cart=[];API.on=false;API.token='';render();return;}
     if(a==='closemodal'){if(ev.target.classList.contains('modal-backdrop')){closeModal();}else if(!el.classList.contains('modal-backdrop')){closeModal();}return;}
     if(a==='poscat'){st.cat=el.getAttribute('data-c');st.posSearch='';render();return;}
+    if(a==='prixlibre'){prixLibreModal();return;}
+    if(a==='addlibre'){var _am=document.getElementById('pl-amount'),_lb=document.getElementById('pl-label');var _v=parseFloat(((_am&&_am.value)||'').replace(',','.'));if(!(_v>0)){toast('Montant invalide');if(_am)_am.focus();return;}_v=Math.round(_v*100)/100;var _n=((_lb&&_lb.value)||'').trim()||'Article divers';st.cart.push({name:_n,detail:'Prix libre',price:_v,productId:'libre',qty:1});closeModal();render();return;}
     if(a==='pick'){var p=pById(el.getAttribute('data-id'));if(p.unit==='g')gramModal(p);else if(p.packs&&p.packs.length)packModal(p);else{st.cart.push({name:p.name,detail:'Unité',price:p.price,productId:p.id,qty:1});render();}return;}
     if(a==='addgram'){var pg=pById(el.getAttribute('data-id'));var g=+el.getAttribute('data-g');var pr=+el.getAttribute('data-pr');st.cart.push({name:pg.name,detail:g+' g',price:pr,productId:pg.id,grams:g});closeModal();render();return;}
     if(a==='addunit'){var puu=pById(el.getAttribute('data-id'));st.cart.push({name:puu.name,detail:'Unité',price:puu.price,productId:puu.id,qty:1});closeModal();render();return;}
