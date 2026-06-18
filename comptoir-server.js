@@ -1489,6 +1489,7 @@ const server = http.createServer(async (req, res) => {
       const lines = [];
       let brut = 0;
       for (const it of items) {
+        if (it.productId === 'libre') { const _p = Math.round(Number(it.price)*100)/100; if(!(_p>0)) throw new Error('Montant prix libre invalide'); brut += _p; lines.push({ produit: (it.name||'Article divers'), detail: 'Prix libre', prix: _p, productId: 'libre', qty: 1, vat: 0.20 }); continue; }
         const p = findProduct(it.productId);
         if (!p) throw new Error('Produit inconnu : ' + it.productId);
         const rate = vatRate(p);

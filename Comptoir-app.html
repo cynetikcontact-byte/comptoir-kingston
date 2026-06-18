@@ -607,7 +607,7 @@ table.tbl tr:hover td{background:#faf9f5;}
     }).catch(function(){API.on=false;});
   }
   function finalizeSaleApi(method){
-    var items=st.cart.map(function(l){return l.grams?{productId:l.productId,grams:l.grams}:(l.packQty?{productId:l.productId,packQty:l.packQty,count:l.qty||1}:{productId:l.productId,qty:l.qty||1});});
+    var items=st.cart.map(function(l){return l.productId==='libre'?{productId:'libre',price:l.price,name:l.name}:l.grams?{productId:l.productId,grams:l.grams}:(l.packQty?{productId:l.productId,packQty:l.packQty,count:l.qty||1}:{productId:l.productId,qty:l.qty||1});});
     var payload={items:items,payment:method};
     if(st.client&&st.client.email)payload.customerRef=st.client.email;
     if(st.coupon){payload.couponEur=st.coupon.e;payload.couponPoints=st.coupon.p;}
