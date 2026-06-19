@@ -1285,6 +1285,17 @@ const server = http.createServer(async (req, res) => {
       ids.forEach((id) => { stt[id] = { online: pontOnline(id), paired: pontPaired(id) }; });
       return send(res, 200, { terminals: stt });
     }
+    if (req.method === 'GET' && path === '/api/terminal/diag') {
+      if (user.role !== 'admin') return send(res, 403, { error: 'Reserve admin' });
+      const dids = boutiqueIds();
+      const dout = {};
+      dids.forEach((id) => {
+        const dd = pontDeviceForBoutique(id);
+        const cc = (pontCmds[id] || []).slice(-8).map((c) => ({ amount: c.amount, status: c.status, approved: !!c.approved, echec: c.echec || null, codeReponse: c.codeReponse || null, ageSec: Math.round((Date.now() - (c.ts||0)) / 1000), latencyMs: (c.doneAt && c.sentAt) ? (c.doneAt - c.sentAt) : null }));
+        dout[id] = { paired: !!dd, online: !!dd && (Date.now() - (dd.lastSeen || 0)) < 12000, lastSeenSecAgo: dd ? Math.round((Date.now() - (dd.lastSeen || 0)) / 1000) : null, terminalIp: dd ? (dd.ip || '') : '', terminalPort: dd ? (dd.tcpPort || 8888) : null, recentCommands: cc };
+      });
+      return send(res, 200, { diag: dout });
+    }
     // Jeton + lien d'installateur PRE-REMPLI pour une boutique (installation libre-service du pont).
     if (req.method === 'GET' && path === '/api/pont/setup-token') {
       if (user.role !== 'admin') return send(res, 403, { error: 'Reserve a l administrateur reseau' });
