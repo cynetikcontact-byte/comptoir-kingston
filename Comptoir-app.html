@@ -738,7 +738,7 @@ table.tbl tr:hover td{background:#faf9f5;}
     }).join('');
     return '<svg viewBox="0 0 '+size+' '+size+'" width="150" height="150"><circle cx="'+cx+'" cy="'+cy+'" r="'+r+'" fill="none" stroke="#ece7dd" stroke-width="'+sw+'"/>'+arcs+'</svg>';
   }
-  function payColor(m){return m==='Espèces'?'#5bbd7a':(m==='Carte'?'#b8902f':'#9a8d72');}
+  function payColor(m){if(m==='Espèces')return '#5bbd7a';if(/carte/i.test(m))return '#b8902f';if(/avoir|rembours/i.test(m))return '#b4452f';return '#9a8d72';}
 
   // ---------- Tableau de bord : vraies données + graphiques ----------
   var dashData={loaded:false,loading:false,data:null};
