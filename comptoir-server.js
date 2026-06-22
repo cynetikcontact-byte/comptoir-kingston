@@ -1069,6 +1069,14 @@ const server = http.createServer(async (req, res) => {
   }
 
   // Connexion : renvoie un jeton selon les identifiants (route publique)
+  if (req.method === 'GET' && path === '/api/login-accounts') {
+    const list = Object.keys(accounts).map((k) => {
+      const a = accounts[k];
+      const label = a.role === 'admin' ? (a.name + ' \u2014 Admin r\u00e9seau') : ('Manager \u2014 ' + ((boutiques[a.boutiqueId] && boutiques[a.boutiqueId].label) || a.boutiqueId));
+      return { key: k, label: label };
+    });
+    return send(res, 200, { accounts: list });
+  }
   if (req.method === 'POST' && path === '/api/login') {
     const gate = loginThrottle(req);
     if (gate.blocked) {
