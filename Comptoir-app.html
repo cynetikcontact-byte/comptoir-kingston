@@ -2610,5 +2610,90 @@ function setPayMode(m){ PAY_MODE=(m==='auto')?'auto':'manuel'; try{ localStorage
 })();
 
 </script>
+<script>
+(function(){
+  if (window.__ktMyFiche) return; window.__ktMyFiche = true;
+  function ses(){ try { return JSON.parse(localStorage.getItem('kt_session') || '{}'); } catch(e){ return {}; } }
+  function H(){ var u = ses(); return { 'content-type':'application/json', 'x-comptoir-token': (u.token || '') }; }
+  function esc(s){ return ('' + (s == null ? '' : s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+  function val(id){ var e = document.getElementById(id); return e ? e.value : ''; }
+  function cardWith(txt){
+    var cards = document.querySelectorAll('.card');
+    for (var i = 0; i < cards.length; i++){ if ((cards[i].textContent || '').indexOf(txt) >= 0) return cards[i]; }
+    return null;
+  }
+  function fld(id, label, v, type){
+    return '<div style="margin-bottom:10px"><label style="display:block;font-size:12px;color:#8a8475;margin-bottom:4px">' + esc(label) + '</label>' +
+      '<input id="' + id + '" type="' + (type || 'text') + '" value="' + esc(v || '') + '" autocomplete="off" style="width:100%;padding:9px 12px;border:1px solid var(--line,#e7e3d8);border-radius:9px;background:#fff;box-sizing:border-box"/></div>';
+  }
+  function row(a, b){ return '<div style="display:flex;gap:12px;flex-wrap:wrap"><div style="flex:1;min-width:150px">' + a + '</div><div style="flex:1;min-width:150px">' + b + '</div></div>'; }
+  function build(s){
+    s = s || {};
+    var card = document.createElement('div');
+    card.className = 'card';
+    card.id = 'kt-myfiche';
+    card.style.cssText = 'margin-bottom:18px';
+    card.innerHTML =
+      '<div style="font-family:var(--serif,Georgia,serif);font-size:18px;font-weight:800;margin:0 0 4px">Ma fiche</div>' +
+      '<div style="font-size:12.5px;color:#8a8475;margin-bottom:14px">Ces informations apparaissent sur tes factures. Tu peux les modifier toi-meme.</div>' +
+      fld('mf-name','Denomination sociale', s.name) +
+      row(fld('mf-siren','SIREN / SIRET', s.siren), fld('mf-vat','N TVA', s.vat)) +
+      fld('mf-address','Adresse', s.address) +
+      row(fld('mf-zip','Code postal', s.zip), fld('mf-city','Ville', s.city)) +
+      row(fld('mf-phone','Telephone', s.phone), fld('mf-contact','Contact / gerant', s.contact)) +
+      '<button id="mf-save" style="margin-top:8px;padding:11px 16px;border:none;border-radius:10px;background:var(--gold,#b8902f);color:#fff;font-weight:700;cursor:pointer">Enregistrer ma fiche</button>' +
+      '<div id="mf-msg" style="font-size:12.5px;margin-top:8px"></div>' +
+      '<hr style="border:none;border-top:1px solid var(--line,#e7e3d8);margin:18px 0"/>' +
+      '<div style="font-weight:700;margin-bottom:10px">Changer mon mot de passe</div>' +
+      fld('mf-cur','Mot de passe actuel', '', 'password') +
+      row(fld('mf-new','Nouveau mot de passe', '', 'password'), fld('mf-new2','Confirmer', '', 'password')) +
+      '<button id="mf-pass" style="margin-top:4px;padding:11px 16px;border:1px solid var(--gold,#b8902f);border-radius:10px;background:transparent;color:var(--gold,#b8902f);font-weight:700;cursor:pointer">Changer le mot de passe</button>' +
+      '<div id="mf-pmsg" style="font-size:12.5px;margin-top:8px"></div>';
+    return card;
+  }
+  function wire(){
+    var save = document.getElementById('mf-save');
+    if (save) save.addEventListener('click', function(){
+      var msg = document.getElementById('mf-msg'); msg.style.color = '#8a8475'; msg.textContent = 'Enregistrement...';
+      fetch('/api/my-boutique', { method:'POST', headers:H(), body: JSON.stringify({ name:val('mf-name'), siren:val('mf-siren'), vat:val('mf-vat'), address:val('mf-address'), zip:val('mf-zip'), city:val('mf-city'), phone:val('mf-phone'), contact:val('mf-contact') }) })
+        .then(function(r){ return r.json().then(function(d){ return { ok:r.ok, d:d }; }); })
+        .then(function(x){ msg.style.color = x.ok ? '#3f7d4f' : '#b4452f'; msg.textContent = x.ok ? 'Fiche enregistree.' : ((x.d && x.d.error) || 'Erreur'); })
+        .catch(function(){ msg.style.color = '#b4452f'; msg.textContent = 'Erreur reseau'; });
+    });
+    var pass = document.getElementById('mf-pass');
+    if (pass) pass.addEventListener('click', function(){
+      var pm = document.getElementById('mf-pmsg');
+      if (val('mf-new') !== val('mf-new2')) { pm.style.color = '#b4452f'; pm.textContent = 'Les deux mots de passe ne correspondent pas'; return; }
+      if ((val('mf-new') || '').length < 4) { pm.style.color = '#b4452f'; pm.textContent = 'Nouveau mot de passe trop court (4 minimum)'; return; }
+      pm.style.color = '#8a8475'; pm.textContent = 'Modification...';
+      fetch('/api/my-boutique', { method:'POST', headers:H(), body: JSON.stringify({ currentPassword:val('mf-cur'), newPassword:val('mf-new') }) })
+        .then(function(r){ return r.json().then(function(d){ return { ok:r.ok, d:d }; }); })
+        .then(function(x){ pm.style.color = x.ok ? '#3f7d4f' : '#b4452f'; pm.textContent = x.ok ? 'Mot de passe change.' : ((x.d && x.d.error) || 'Erreur');
+          if (x.ok) { ['mf-cur','mf-new','mf-new2'].forEach(function(i){ var e = document.getElementById(i); if (e) e.value = ''; }); } })
+        .catch(function(){ pm.style.color = '#b4452f'; pm.textContent = 'Erreur reseau'; });
+    });
+  }
+  function inject(){
+    var u = ses();
+    if (!u || !u.token || u.role !== 'manager') return;
+    if (document.getElementById('kt-myfiche')) return;
+    var anchor = cardWith('Connexion serveur') || cardWith('Paiement par carte');
+    if (!anchor || !anchor.parentNode) return;
+    fetch('/api/my-boutique', { headers:H() })
+      .then(function(r){ return r.ok ? r.json() : null; })
+      .then(function(d){
+        if (document.getElementById('kt-myfiche')) return;
+        var a2 = cardWith('Connexion serveur') || cardWith('Paiement par carte');
+        if (!a2 || !a2.parentNode) return;
+        var card = build(d && d.seller ? d.seller : {});
+        a2.parentNode.insertBefore(card, a2);
+        wire();
+      }).catch(function(){});
+  }
+  setInterval(inject, 1000);
+  document.addEventListener('click', function(){ setTimeout(inject, 350); });
+})();
+</script>
+
 </body>
 </html>

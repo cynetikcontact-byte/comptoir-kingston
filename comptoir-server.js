@@ -1659,6 +1659,32 @@ const server = http.createServer(async (req, res) => {
       persist();
       return send(res, 200, { ok: true, boutique: { id: id, label: rec.label, prefix: rec.prefix, seller: rec.seller, motDePasseDefini: !!(rec.cred || process.env['COMPTOIR_PASS_' + id.toUpperCase()]) } });
     }
+    if ((req.method === 'GET' || req.method === 'POST') && path === '/api/my-boutique') {
+      const bId = user.boutiqueId;
+      if (!bId || !boutiques[bId]) return send(res, 403, { error: 'Reserve aux managers de boutique' });
+      const b = boutiques[bId];
+      if (req.method === 'GET') {
+        const sg = b.seller || {};
+        return send(res, 200, { boutiqueId: bId, label: b.label || bId, seller: { name: sg.name || '', siren: sg.siren || '', vat: sg.vat || '', address: sg.address || '', zip: sg.zip || '', city: sg.city || '', phone: sg.phone || '', contact: sg.contact || '' } });
+      }
+      const body = await readJson(req);
+      if (body.newPassword) {
+        if (!checkPass(bId, body.currentPassword || '')) return send(res, 403, { error: 'Mot de passe actuel incorrect' });
+        if (String(body.newPassword).length < 4) return send(res, 400, { error: 'Nouveau mot de passe trop court (4 caracteres minimum)' });
+        b.cred = makeStoredPass(body.newPassword);
+      }
+      const s = b.seller || {};
+      const setIf = (k, val) => { if (val !== undefined && val !== null) s[k] = String(val).trim(); };
+      setIf('name', body.name); setIf('siren', body.siren); setIf('vat', body.vat);
+      setIf('address', body.address); setIf('zip', body.zip); setIf('city', body.city);
+      setIf('phone', body.phone); setIf('contact', body.contact);
+      s.country = s.country || 'FR';
+      b.seller = s;
+      rebuildAccounts();
+      persist();
+      return send(res, 200, { ok: true, seller: b.seller, passwordChanged: !!body.newPassword });
+    }
+
 
     if (req.method === 'GET' && path === '/api/fiscal/verify') {
       if (PG) return send(res, 200, await PG.verifyChain(user));
