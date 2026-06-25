@@ -138,7 +138,7 @@ table.tbl tr:hover td{background:#faf9f5;}
 .pgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px;overflow:auto;padding-right:4px;align-content:start;}
 .pcard{background:#fff;border:1px solid var(--line);border-radius:13px;padding:14px;cursor:pointer;display:flex;flex-direction:column;gap:6px;box-shadow:0 1px 2px rgba(20,16,9,.04);transition:transform .06s,border-color .12s;}
 .pcard:hover{border-color:var(--gold);transform:translateY(-1px);}
-.pcard.dis{opacity:.45;cursor:not-allowed;}
+.pcard.dis{opacity:.55;cursor:not-allowed}.pcard.dis .pc-stock{color:#b4452f;font-weight:700}.pc-rupture{color:#b4452f;font-weight:700;font-size:11px;margin-top:3px}.gbtn.dis{opacity:.4;cursor:not-allowed}
 .pcard .pc-cat{font-size:9.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--gold);font-weight:700;}
 .pcard .pc-name{font-weight:700;font-size:14.5px;}
 .pcard .pc-cbd{font-size:11px;color:var(--muted);}
@@ -628,7 +628,7 @@ table.tbl tr:hover td{background:#faf9f5;}
       openModal('<div class="modal-h">Paiement accepté (serveur)</div><div class="modal-b"><div style="text-align:center;margin-bottom:14px"><div style="width:54px;height:54px;border-radius:50%;background:var(--green);color:#fff;display:flex;align-items:center;justify-content:center;font-size:28px;margin:0 auto 10px">✓</div><div class="muted" style="font-size:12px">Facture '+f.numero+' · '+method+' · empreinte '+(f.empreinte||'')+'</div></div>'+lines+((m.remise>0)?'<div style="display:flex;justify-content:space-between;font-size:13px;color:#7a5f1e;padding:4px 0"><span>Remise points</span><b>−'+eur(m.remise)+'</b></div>':'')+'<div style="display:flex;justify-content:space-between;border-top:1px solid var(--line);margin-top:8px;padding-top:10px;font-family:var(--serif);font-size:19px;font-weight:700"><span>Total</span><span>'+eur(f.total)+'</span></div>'+fidHtml+'<div style="display:flex;gap:8px;margin-top:16px;flex-wrap:wrap"><button class="btn" style="flex:1;min-width:110px" data-act="printticket">🧾 Ticket</button><button class="btn" style="flex:1;min-width:110px" data-act="facture" data-num="'+f.numero+'">📄 Facture</button><button class="btn" style="flex:1;min-width:110px" data-act="kt-emailfac" data-num="'+f.numero+'" data-email="'+((st.lastReceipt&&st.lastReceipt.mail)||'')+'">✉️ Email</button><button class="btn btn-gold" style="flex:1;min-width:110px" data-act="closemodal">Nouveau</button></div></div>');
       render();
       if(companyInfo.factureAuto){setTimeout(function(){openFacture(f.numero);},350);}
-    }).catch(function(e){toast('Erreur serveur : '+(e.message||e));});
+    }).catch(function(e){toast(/insuffisant/i.test(e.message||'')?'⛔ Stock insuffisant — réapprovisionne le produit avant de vendre.':'Erreur serveur : '+(e.message||e));});
   }
   var addCat='Fleurs';
 
@@ -812,10 +812,10 @@ table.tbl tr:hover td{background:#faf9f5;}
     var html=products.filter(function(p){return (st.cat==='Tout'||p.cat===st.cat)&&(!q||p.name.toLowerCase().indexOf(q)>=0);}).map(function(p){
       var stock=p.unit==='g'?totalStockG(p)+' g':p.stockU+' u';
       var out=p.unit==='g'?totalStockG(p)<=0:p.stockU<=0;
-      return '<div class="pcard '+(out?'dis':'')+'" data-act="'+(out?'':'pick')+'" data-id="'+p.id+'">'+
+      return '<div class="pcard '+(out?'dis':'')+'" data-act="'+(out?'rupture':'pick')+'" data-id="'+p.id+'">'+
         '<div class="pc-img" style="background-image:url(\''+(p.img||PRODUCT_IMG[p.name]||'')+'\')"></div>'+
-        '<div class="pc-cat">'+p.cat+'</div><div class="pc-name">'+esc(p.name)+'</div><div class="pc-cbd">'+esc(p.cbd)+'</div>'+
-        '<div class="pc-foot"><span class="pc-price">'+(p.unit==='g'?'dès ':'')+eur(entryPrice(p))+'</span><span class="pc-stock">'+(out?'Épuisé':stock)+'</span></div></div>';
+        '<div class="pc-cat">'+p.cat+'</div><div class="pc-name">'+esc(p.name)+'</div><div class="pc-cbd">'+esc(p.cbd)+'</div>'+(out?'<div class="pc-rupture">Plus de stock — saisir du nouveau stock</div>':'')+
+        '<div class="pc-foot"><span class="pc-price">'+(p.unit==='g'?'dès ':'')+eur(entryPrice(p))+'</span><span class="pc-stock">'+(out?'⛔ Plus de stock':stock)+'</span></div></div>';
     }).join('');
     return html||'<div class="tk-empty" style="grid-column:1/-1">Aucun produit pour cette recherche.</div>';
   }
@@ -1754,8 +1754,8 @@ function setPayMode(m){ PAY_MODE=(m==='auto')?'auto':'manuel'; try{ localStorage
   function prixLibreModal(){openModal('<div class="modal-h">Prix libre</div><div class="modal-b"><label style="display:block;font-size:13px;color:#8a8475;margin:0 0 6px">Montant (€)</label><input id="pl-amount" type="text" inputmode="decimal" placeholder="0,00" style="width:100%;font-size:24px;font-weight:700;padding:12px;border-radius:10px;border:1px solid var(--line);background:#fff;color:var(--ink2);text-align:center;box-sizing:border-box"/><label style="display:block;font-size:13px;color:#8a8475;margin:16px 0 6px">Libellé (optionnel)</label><input id="pl-label" type="text" placeholder="Article divers" style="width:100%;font-size:15px;padding:10px 12px;border-radius:10px;border:1px solid var(--line);background:#fff;color:var(--ink2);box-sizing:border-box"/><button data-act="addlibre" style="margin-top:20px;width:100%;padding:14px;font-size:16px;font-weight:700;border-radius:10px;border:none;background:var(--gold);color:#fff;cursor:pointer">Ajouter au panier</button></div>');setTimeout(function(){var e=document.getElementById('pl-amount');if(e){e.focus();e.addEventListener('keydown',function(ev){if(ev.key==='Enter'){var b=document.querySelector('[data-act=addlibre]');if(b)b.click();}});}},60);}
 
   function gramModal(p){
-    openModal('<div class="modal-h">'+p.name+' — choisis le poids</div><div class="modal-b"><div class="modal-grid">'+
-      p.tiers.map(function(t){return '<button class="gbtn" data-act="addgram" data-id="'+p.id+'" data-g="'+t[0]+'" data-pr="'+t[1]+'"><div class="g1">'+t[0]+' g</div><div class="g2">'+eur(t[1])+'</div></button>';}).join('')+
+    openModal('<div class="modal-h">'+p.name+' — choisis le poids</div><div class="modal-b">'+(p.unit==='g'?'<div class="muted" style="margin-bottom:8px;font-size:12px">Stock restant : '+totalStockG(p)+' g</div>':'')+'<div class="modal-grid">'+
+      p.tiers.map(function(t){var _ko=(p.unit==='g'&&t[0]>totalStockG(p));return '<button class="gbtn'+(_ko?' dis':'')+'" data-act="'+(_ko?'rupturegram':'addgram')+'" data-id="'+p.id+'" data-g="'+t[0]+'" data-pr="'+t[1]+'"><div class="g1">'+t[0]+' g</div><div class="g2">'+(_ko?'indispo':eur(t[1]))+'</div></button>';}).join('')+
       '</div></div>');
   }
   // Choix unité / pack pour un produit à l'unité qui a des packs.
@@ -2054,7 +2054,9 @@ function setPayMode(m){ PAY_MODE=(m==='auto')?'auto':'manuel'; try{ localStorage
     if(a==='prixlibre'){prixLibreModal();return;}
     if(a==='addlibre'){var _am=document.getElementById('pl-amount'),_lb=document.getElementById('pl-label');var _v=parseFloat(((_am&&_am.value)||'').replace(',','.'));if(!(_v>0)){toast('Montant invalide');if(_am)_am.focus();return;}_v=Math.round(_v*100)/100;var _n=((_lb&&_lb.value)||'').trim()||'Article divers';st.cart.push({name:_n,detail:'Prix libre',price:_v,productId:'libre',qty:1});closeModal();render();return;}
     if(a==='pick'){var p=pById(el.getAttribute('data-id'));if(p.unit==='g')gramModal(p);else if(p.packs&&p.packs.length)packModal(p);else{st.cart.push({name:p.name,detail:'Unité',price:p.price,productId:p.id,qty:1});render();}return;}
-    if(a==='addgram'){var pg=pById(el.getAttribute('data-id'));var g=+el.getAttribute('data-g');var pr=+el.getAttribute('data-pr');st.cart.push({name:pg.name,detail:g+' g',price:pr,productId:pg.id,grams:g});closeModal();render();return;}
+    if(a==='rupture'){toast('⛔ Plus de stock — saisis du nouveau stock (page Stock grammes) avant de vendre ce produit.');return;}
+    if(a==='rupturegram'){toast('⛔ Stock insuffisant pour cette quantité — réapprovisionne le produit.');return;}
+    if(a==='addgram'){var pg=pById(el.getAttribute('data-id'));var g=+el.getAttribute('data-g');if(pg&&pg.unit==='g'&&g>totalStockG(pg)){toast('⛔ Stock insuffisant — réapprovisionne avant de vendre.');return;}var pr=+el.getAttribute('data-pr');st.cart.push({name:pg.name,detail:g+' g',price:pr,productId:pg.id,grams:g});closeModal();render();return;}
     if(a==='addunit'){var puu=pById(el.getAttribute('data-id'));st.cart.push({name:puu.name,detail:'Unité',price:puu.price,productId:puu.id,qty:1});closeModal();render();return;}
     if(a==='addpack'){var ppk=pById(el.getAttribute('data-id'));var pq=+el.getAttribute('data-q'),ppr=+el.getAttribute('data-pr');st.cart.push({name:ppk.name,detail:'Pack de '+pq,price:ppr,productId:ppk.id,packQty:pq,qty:1});closeModal();render();return;}
     if(a==='rmline'){st.cart.splice(+el.getAttribute('data-i'),1);render();return;}
