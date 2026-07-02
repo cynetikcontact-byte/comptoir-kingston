@@ -56,6 +56,10 @@ const STATIC = {
   '/commande': 'centre-commande.html', '/centre-commande.html': 'centre-commande.html',
   '/appel': 'appel-kingston.html', '/appel-kingston.html': 'appel-kingston.html',
   '/jsqr.js': 'jsqr.js',
+  '/manifest.json': 'manifest.json',
+  '/sw.js': 'sw.js',
+  '/kt-routeur.js': 'kt-routeur.js',
+  '/kt-a11y.js': 'kt-a11y.js',
 };
 function serveStatic(res, file) {
   fs.readFile(pathmod.join(__dirname, file), function (err, data) {
