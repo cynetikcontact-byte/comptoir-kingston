@@ -9,9 +9,5 @@
   "orientation": "any",
   "background_color": "#F3F1EA",
   "theme_color": "#1D1A14",
-  "categories": ["business", "productivity"],
-  "icons": [
-    { "src": "/kingston-icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
-    { "src": "/kingston-icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "maskable" }
-  ]
+  "categories": ["business", "productivity"]
 }
