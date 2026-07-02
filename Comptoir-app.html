@@ -440,6 +440,12 @@ table.tbl tr:hover td{background:#faf9f5;}
 }
 </style>
 <style id="kt-modal-css">.modal-grid .gbtn{padding:24px 18px;border:1.5px solid #ece7df;border-radius:16px;background:#fff;display:flex;flex-direction:column;align-items:center;gap:10px;transition:transform .12s ease,box-shadow .12s ease,border-color .12s ease;cursor:pointer}.modal-grid .gbtn:hover{border-color:#d9b873;box-shadow:0 8px 22px rgba(0,0,0,.10);transform:translateY(-2px)}.modal-grid .gbtn:active{transform:translateY(0)}.modal-grid .gbtn .g1{font-size:38px;font-weight:800;line-height:1;color:#191919;letter-spacing:-.5px}.modal-grid .gbtn .g2{font-size:22px;font-weight:700;color:#b5872f}</style>
+  <meta name="description" content="Comptoir KINGSTON — caisse, borne libre-service et back-office réseau.">
+  <meta name="theme-color" content="#1D1A14">
+  <link rel="manifest" href="/manifest.json">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="KINGSTON">
 </head>
 <body>
 <div id="app">
@@ -2697,5 +2703,14 @@ function setPayMode(m){ PAY_MODE=(m==='auto')?'auto':'manuel'; try{ localStorage
 })();
 </script>
 
+  <script src="/kt-routeur.js" defer></script>
+  <script src="/kt-a11y.js" defer></script>
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', function () {
+        navigator.serviceWorker.register('/sw.js').catch(function (e) { console.warn('SW non enregistre:', e); });
+      });
+    }
+  </script>
 </body>
 </html>

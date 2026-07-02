@@ -1,0 +1,13 @@
+{
+  "name": "Comptoir KINGSTON",
+  "short_name": "KINGSTON",
+  "description": "Caisse, borne libre-service et back-office reseau KINGSTON.",
+  "lang": "fr",
+  "start_url": "/#/dash",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#F3F1EA",
+  "theme_color": "#1D1A14",
+  "categories": ["business", "productivity"]
+}
