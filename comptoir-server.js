@@ -1106,6 +1106,14 @@ const server = http.createServer(async (req, res) => {
       return res.end(src);
     } catch (e) { return send(res, 404, { error: 'pont indisponible' }); }
   }
+  // Script de configuration d'un pont Raspberry clone pour une boutique (multi-boutique).
+  if (req.method === 'GET' && path === '/boutique-setup.sh') {
+    try {
+      const sh = fs.readFileSync(pathmod.join(__dirname, 'boutique-setup.sh'), 'utf8');
+      res.writeHead(200, Object.assign({ 'content-type': 'text/x-shellscript; charset=utf-8', 'cache-control': 'no-store' }, res._cors || COMMON_CORS));
+      return res.end(sh);
+    } catch (e) { return send(res, 404, { error: 'script indisponible' }); }
+  }
   if (req.method === 'GET' && path === '/pont/installer') {
     const tok = String(u.searchParams.get('token') || '').trim();
     if (!boutiqueByPontToken(tok)) return send(res, 404, { error: 'Jeton inconnu' });
