@@ -341,6 +341,28 @@ function genShortCode() { const a = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; let s = 
 // Jeton d'installation STABLE par boutique : permet au pont de s'appairer TOUT SEUL (libre-service) sans code saisi par l'admin.
 function pontTokenFor(id) { const b = boutiques[id]; if (!b) return null; if (!b.pontToken) { b.pontToken = crypto.randomBytes(18).toString('hex'); persist(); } return b.pontToken; }
 function boutiqueByPontToken(tok) { tok = String(tok || '').trim(); if (!tok) return null; for (const id of boutiqueIds()) { if (boutiques[id] && boutiques[id].pontToken === tok) return id; } return null; }
+// Code d'installation COURT et LISIBLE par boutique (ex: MARS-7K3). Stable (derive du jeton), sert a
+// enregistrer un nouveau Raspberry sans SSH : on le tape dans l'outil Installe-Pont, le Pi le resout au demarrage.
+function installCodeFor(id) {
+  const b = boutiques[id]; if (!b) return null;
+  const tok = pontTokenFor(id);
+  const alpha = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'; // sans 0/O/1/I/L (confusion)
+  // Prefixe = la VILLE (on saute KINGSTON/KING) pour un code parlant : MARS, AVIG, LAMB...
+  const mots = String(b.label || id).normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .split(/[^A-Za-z]+/).filter(function (w) { return w && !/^king(ston)?$/i.test(w) && !/^sarl$/i.test(w); });
+  let pre = (mots[0] || String(id).replace(/^kingston/i, '') || id).toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 4);
+  if (pre.length < 2) pre = String(id).toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 4) || 'PONT';
+  const hex = crypto.createHash('sha256').update('kt-install|' + tok).digest('hex');
+  let num = parseInt(hex.slice(0, 10), 16), suf = '';
+  for (let i = 0; i < 3; i++) { suf += alpha[num % alpha.length]; num = Math.floor(num / alpha.length); }
+  return pre + '-' + suf;
+}
+function boutiqueByInstallCode(code) {
+  code = String(code || '').trim().toUpperCase().replace(/\s+/g, '');
+  if (!code) return null;
+  for (const id of boutiqueIds()) { if (installCodeFor(id) === code) return id; }
+  return null;
+}
 // Generateur de ZIP minimal (pur Node) : sert a livrer le .command AVEC le droit "executable" (mode 0755),
 // pour que macOS l'execute au double-clic apres decompression (un fichier telecharge seul n'a pas ce droit).
 const CRC_TABLE = (function () { const t = []; for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1); t[n] = c >>> 0; } return t; })();
@@ -1114,6 +1136,22 @@ const server = http.createServer(async (req, res) => {
       return res.end(sh);
     } catch (e) { return send(res, 404, { error: 'script indisponible' }); }
   }
+  // Outil web "Installe-Pont" : page qui ecrit le code+wifi sur la cle USB d'un nouveau Raspberry.
+  if (req.method === 'GET' && (path === '/installe-pont' || path === '/installe-pont.html')) {
+    try {
+      const h = fs.readFileSync(pathmod.join(__dirname, 'installe-pont.html'), 'utf8');
+      res.writeHead(200, Object.assign({ 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' }, res._cors || COMMON_CORS));
+      return res.end(h);
+    } catch (e) { return send(res, 404, { error: 'outil indisponible' }); }
+  }
+  // Script d'onboarding a poser UNE FOIS sur le Raspberry maitre (lit kt-install.txt, resout le code, s'appaire).
+  if (req.method === 'GET' && path === '/kt-onboard-install.sh') {
+    try {
+      const sh = fs.readFileSync(pathmod.join(__dirname, 'kt-onboard-install.sh'), 'utf8');
+      res.writeHead(200, Object.assign({ 'content-type': 'text/x-shellscript; charset=utf-8', 'cache-control': 'no-store' }, res._cors || COMMON_CORS));
+      return res.end(sh);
+    } catch (e) { return send(res, 404, { error: 'script indisponible' }); }
+  }
   if (req.method === 'GET' && path === '/pont/installer') {
     const tok = String(u.searchParams.get('token') || '').trim();
     if (!boutiqueByPontToken(tok)) return send(res, 404, { error: 'Jeton inconnu' });
@@ -1127,6 +1165,14 @@ const server = http.createServer(async (req, res) => {
     }
     res.writeHead(200, Object.assign({ 'content-type': 'text/x-shellscript; charset=utf-8', 'content-disposition': 'attachment; filename="Installer-Pont-KINGSTON.command"' }, res._cors || COMMON_CORS));
     return res.end(sh);
+  }
+
+  // ---- Resolution d'un code d'installation (PUBLIC) : un nouveau Pi tape son code -> recoit le jeton de sa boutique.
+  if (req.method === 'GET' && path === '/api/pont/resolve') {
+    const code = String(u.searchParams.get('code') || '').trim().toUpperCase().replace(/\s+/g, '');
+    const bId = boutiqueByInstallCode(code);
+    if (!bId) return send(res, 404, { ok: false, error: 'Code inconnu' });
+    return send(res, 200, { ok: true, boutiqueId: bId, label: (boutiques[bId].label || bId), token: pontTokenFor(bId) });
   }
 
   // ---- Pont de paiement : appairage initie par le pont (routes publiques) ----
@@ -1235,7 +1281,7 @@ const server = http.createServer(async (req, res) => {
       var pList = pIds.map(function (id) {
         var pb = boutiques[id] || {};
         var pd = pontDeviceForBoutique(id);
-        return { id: id, label: (pb.label || id), paired: !!pd, online: pontOnline(id), lastSeenMs: (pd && pd.lastSeen) ? (Date.now() - pd.lastSeen) : null, terminalIp: (pd && pd.ip) || '', terminalPort: (pd && pd.tcpPort) || null, code: (pd && pd.code) || null };
+        return { id: id, label: (pb.label || id), paired: !!pd, online: pontOnline(id), lastSeenMs: (pd && pd.lastSeen) ? (Date.now() - pd.lastSeen) : null, terminalIp: (pd && pd.ip) || '', terminalPort: (pd && pd.tcpPort) || null, code: (pd && pd.code) || null, installCode: installCodeFor(id) };
       });
       pList.sort(function (a, b) { var ra = a.online ? 2 : (a.paired ? 0 : 1); var rb = b.online ? 2 : (b.paired ? 0 : 1); return ra - rb; });
       return send(res, 200, { role: user.role, count: pList.length, online: pList.filter(function (x) { return x.online; }).length, ponts: pList });

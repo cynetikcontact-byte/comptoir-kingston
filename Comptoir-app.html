@@ -1778,11 +1778,16 @@ function setPayMode(m){ PAY_MODE=(m==='auto')?'auto':'manuel'; try{ localStorage
         '</div>'):'';
       var aide=(!p.online&&p.paired)?'<div class="muted" style="font-size:12.5px;margin-top:8px;color:#b4452f">À vérifier en boutique : alimentation du boitier, puis Wi-Fi (câble Ethernet ou partage de connexion « KINGTOOLS-SOS » en secours).</div>':'';
       var codetxt=(!p.paired&&p.code)?'<div class="muted" style="font-size:12.5px;margin-top:8px">Un boitier attend l’appairage avec ce code.</div>':'';
+      var instBox=p.installCode?('<div style="margin-top:12px;padding:10px 12px;background:#eef2ff;border:1px solid #c7d2fe;border-radius:10px;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">'+
+        '<div><div style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:#4f46e5;font-weight:700">Code d’installation</div>'+
+        '<div style="font-family:var(--serif);font-size:22px;letter-spacing:1px;color:#312e81">'+esc(p.installCode)+'</div>'+
+        '<div class="muted" style="font-size:11.5px">Pour installer un nouveau Raspberry : outil Installe-Pont → ce code.</div></div>'+
+        '<button class="btn" data-act="copytxt" data-txt="'+esc(p.installCode)+'" style="padding:7px 12px;white-space:nowrap">Copier</button></div>'):'';
       return '<div class="card" style="padding:16px;margin-bottom:12px">'+
         '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap">'+
         '<div><div style="font-family:var(--serif);font-size:18px">'+esc(p.label||p.id)+'</div>'+
         '<div class="muted" style="font-size:12.5px;margin-top:2px">'+sub+'</div></div>'+
-        '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:flex-start">'+tag+'</div></div>'+infos+aide+codetxt+
+        '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:flex-start">'+tag+'</div></div>'+infos+instBox+aide+codetxt+
         '</div>';
     }).join('')||'<div class="muted" style="padding:14px">Aucune boutique pour le moment.</div>';
     el.innerHTML=cards;

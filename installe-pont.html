@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>KINGTOOLS — Installe-Pont</title>
+<style>
+  :root{--bleu:#1d4ed8;--bleu-fonce:#1e3a8a;--vert:#15803d;--rouge:#b91c1c;--orange:#c2410c;--gris:#6b7280;--fond:#f4f6fb;}
+  *{box-sizing:border-box}
+  body{margin:0;padding:24px 16px 64px;background:var(--fond);font-family:-apple-system,"Segoe UI",Roboto,Arial,sans-serif;color:#111827;line-height:1.5}
+  .page{max-width:680px;margin:0 auto}
+  header{text-align:center;margin-bottom:22px}
+  header h1{margin:0 0 4px;font-size:26px;color:var(--bleu-fonce)}
+  header p{margin:0;color:var(--gris)}
+  .carte{background:#fff;border-radius:14px;padding:22px 24px;box-shadow:0 2px 10px rgba(30,58,138,.08);margin-bottom:18px;border:1px solid #e5e7eb}
+  .etape-titre{display:flex;align-items:center;gap:10px;margin:0 0 10px;font-size:18px;font-weight:700}
+  .pastille{width:28px;height:28px;border-radius:50%;background:var(--bleu);color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:15px;flex:none}
+  .pastille.ok{background:var(--vert)}
+  button{font-size:17px;font-weight:600;padding:12px 22px;border-radius:10px;border:none;cursor:pointer;background:var(--bleu);color:#fff}
+  button:hover{background:var(--bleu-fonce)}
+  button:disabled{background:#cbd5e1;cursor:not-allowed}
+  button.grand{width:100%;padding:16px;font-size:19px}
+  label{display:block;font-weight:600;margin:14px 0 4px}
+  input[type=text],input[type=password]{width:100%;font-size:17px;padding:11px 12px;border:2px solid #d1d5db;border-radius:9px;font-family:"SF Mono",Menlo,Consolas,monospace}
+  input:focus{outline:none;border-color:var(--bleu)}
+  .code-input{text-transform:uppercase;letter-spacing:2px;font-size:22px !important;text-align:center;font-weight:700}
+  .aide{font-size:13.5px;color:var(--gris);margin-top:3px}
+  .msg{border-radius:10px;padding:12px 16px;margin-top:12px;font-size:15.5px;display:none}
+  .msg.erreur{display:block;background:#fef2f2;color:var(--rouge);border:1px solid #fecaca}
+  .msg.info{display:block;background:#eff6ff;color:var(--bleu-fonce);border:1px solid #bfdbfe}
+  .msg.ok{display:block;background:#f0fdf4;color:var(--vert);border:1px solid #86efac;font-weight:600}
+  .cache{display:none}
+  .voir-mdp{background:none;border:none;color:var(--bleu);font-size:13.5px;padding:4px 0;cursor:pointer;font-weight:600}
+  .check{display:flex;align-items:flex-start;gap:8px;margin:6px 0;font-size:15.5px}
+  .check .puce{color:var(--vert);font-weight:800}
+  .final{background:#f0fdf4;border:2px solid #86efac;border-radius:14px;padding:22px 24px;display:none}
+  .final h2{color:var(--vert);margin:0 0 8px}
+  .ejecter{background:#fff7ed;border:3px solid var(--orange);border-radius:12px;padding:16px 18px;margin-top:16px;font-size:17px}
+  .ejecter strong{color:var(--orange);font-size:19px}
+  ol.suite{font-size:16px;padding-left:22px}ol.suite li{margin:7px 0}
+  .navigateur-ko{display:none;background:#fef2f2;border:2px solid var(--rouge);color:var(--rouge);border-radius:12px;padding:16px 18px;font-size:16.5px;font-weight:600;margin-bottom:18px}
+  .pied{text-align:center;color:var(--gris);font-size:12.5px;margin-top:26px}
+</style>
+</head>
+<body>
+<div class="page">
+  <header>
+    <h1>🔌 Installe-Pont KINGTOOLS</h1>
+    <p>Configurer un nouveau Raspberry pour une boutique — sans SSH, sans commande</p>
+  </header>
+
+  <div class="navigateur-ko" id="navKo">⚠️ Ouvre cette page avec <u>Google Chrome</u> ou <u>Microsoft Edge</u>.</div>
+
+  <!-- ETAPE 1 : code -->
+  <div class="carte" id="carte1">
+    <div class="etape-titre"><span class="pastille" id="p1">1</span> Le code de la boutique</div>
+    <p style="margin:0 0 6px">Recopie le <b>code d'installation</b> affiché dans KINGTOOLS → <b>Ponts TPE</b>, à côté de la boutique.</p>
+    <input type="text" id="code" class="code-input" placeholder="MARS-B9H" autocomplete="off" spellcheck="false" maxlength="12">
+    <button id="btnVerif" style="margin-top:12px">Vérifier le code</button>
+    <div class="msg" id="msg1"></div>
+  </div>
+
+  <!-- ETAPE 2 : wifi -->
+  <div class="carte cache" id="carte2">
+    <div class="etape-titre"><span class="pastille" id="p2">2</span> Le Wi-Fi de la boutique</div>
+    <p style="margin:0">Le réseau Wi-Fi <b>de la boutique</b> (pas le tien), tel qu'écrit sur la box.</p>
+    <label for="ssid">Nom du réseau (SSID)</label>
+    <input type="text" id="ssid" placeholder="ex : Livebox-1234" autocomplete="off" spellcheck="false">
+    <label for="mdp">Mot de passe du Wi-Fi</label>
+    <input type="password" id="mdp" autocomplete="off" spellcheck="false">
+    <button class="voir-mdp" id="btnVoir" type="button">👁 afficher le mot de passe</button>
+    <label for="mdp2" id="lblMdp2">Retapez le mot de passe</label>
+    <input type="password" id="mdp2" autocomplete="off" spellcheck="false">
+  </div>
+
+  <!-- ETAPE 3 : cle -->
+  <div class="carte cache" id="carte3">
+    <div class="etape-titre"><span class="pastille" id="p3">3</span> Brancher la clé du Raspberry</div>
+    <p style="margin:0 0 12px">Branche la clé USB du nouveau Raspberry sur cet ordinateur (si le Mac dit « disque illisible » → <b>Ignorer</b>, jamais Initialiser). Puis :</p>
+    <button class="grand" id="btnEcrire">📂 Choisir la clé (bootfs) et configurer</button>
+    <div class="msg" id="msg3"></div>
+  </div>
+
+  <!-- FINAL -->
+  <div class="final" id="final">
+    <div class="etape-titre"><span class="pastille ok">✓</span> <h2 style="margin:0">Clé configurée</h2></div>
+    <div id="verifs"></div>
+    <div class="ejecter">
+      <strong>⚠️ ÉJECTE LA CLÉ PROPREMENT AVANT DE LA RETIRER</strong><br><br>
+      Clic droit sur l'icône « bootfs » → <b>Éjecter</b> (Windows : icône USB → Éjecter). Attends que l'icône disparaisse, puis débranche.
+    </div>
+    <ol class="suite">
+      <li>Mets la clé dans le Raspberry, branche l'alimentation.</li>
+      <li>Patiente <b>3 à 4 min</b> : il rejoint le Wi-Fi, contacte le serveur et s'appaire tout seul.</li>
+      <li>Branche le <b>TPE sur le même réseau</b>.</li>
+      <li>Vérifie dans KINGTOOLS → <b>Ponts TPE</b> : la boutique passe <b>EN LIGNE</b>. Fais un paiement test de 1 €.</li>
+    </ol>
+  </div>
+
+  <div class="pied">KINGTOOLS.fr — Installe-Pont v1.0 · fonctionne sur Chrome/Edge</div>
+</div>
+
+<script>
+"use strict";
+const $=id=>document.getElementById(id);
+let dossierCle=null, boutique=null;
+const SOS_SSID="KINGTOOLS-SOS", SOS_PSK_HEX="337bed2201b2d5366227e917428ee6efcbc6a4cb9e8d9b7e35ab891b622f842d";
+if(!window.showDirectoryPicker){$("navKo").style.display="block";}
+
+function erreur(z,t){const m=$(z);m.className="msg erreur";m.innerHTML=t;}
+function okmsg(z,t){const m=$(z);m.className="msg ok";m.innerHTML=t;}
+function info(z,t){const m=$(z);m.className="msg info";m.innerHTML=t;}
+function effacer(z){const m=$(z);m.className="msg";m.textContent="";}
+
+// PSK WPA2 (PBKDF2-HMAC-SHA1, 4096, 32o) — identique a wpa_passphrase.
+async function calculerPsk(mdp,ssid){
+  const enc=new TextEncoder();
+  const cle=await crypto.subtle.importKey("raw",enc.encode(mdp),"PBKDF2",false,["deriveBits"]);
+  const bits=await crypto.subtle.deriveBits({name:"PBKDF2",hash:"SHA-1",salt:enc.encode(ssid),iterations:4096},cle,256);
+  return [...new Uint8Array(bits)].map(b=>b.toString(16).padStart(2,"0")).join("");
+}
+function yq(s){return '"'+s.replace(/\\/g,"\\\\").replace(/"/g,'\\"')+'"';}
+function genNetworkConfig(aps){
+  let bloc="";
+  for(const ap of aps){ bloc+="        "+yq(ap.ssid)+":\n          password: \""+ap.pskHex+"\"\n"; }
+  return "network:\n  version: 2\n  ethernets:\n    eth0:\n      dhcp4: true\n      dhcp6: true\n      optional: true\n  wifis:\n    wlan0:\n      dhcp4: true\n      regulatory-domain: \"FR\"\n      access-points:\n"+bloc+"      optional: true\n";
+}
+function nouvelId(){const d=new Date();const p=n=>String(n).padStart(2,"0");return "kingston-install-"+d.getFullYear()+p(d.getMonth()+1)+p(d.getDate())+"-"+p(d.getHours())+p(d.getMinutes())+p(d.getSeconds());}
+
+async function lire(nom){const h=await dossierCle.getFileHandle(nom);return await (await h.getFile()).text();}
+async function ecrire(nom,contenu){const h=await dossierCle.getFileHandle(nom,{create:true});const w=await h.createWritable();await w.write(contenu);await w.close();}
+async function existe(nom){try{await dossierCle.getFileHandle(nom);return true;}catch{return false;}}
+
+// ETAPE 1 : verifier le code aupres du serveur (meme origine kingtools.fr)
+$("btnVerif").addEventListener("click",async()=>{
+  effacer("msg1");
+  const code=($("code").value||"").trim().toUpperCase().replace(/\s+/g,"");
+  if(!code){erreur("msg1","Entre le code affiché dans Ponts TPE.");return;}
+  info("msg1","Vérification…");
+  try{
+    const r=await fetch("/api/pont/resolve?code="+encodeURIComponent(code),{cache:"no-store"});
+    if(r.status===404){erreur("msg1","❌ Code inconnu. Recopie-le exactement depuis l'onglet Ponts TPE.");return;}
+    if(!r.ok)throw new Error("HTTP "+r.status);
+    const d=await r.json();
+    if(!d.ok||!d.token){erreur("msg1","❌ Code non reconnu.");return;}
+    boutique={code:code,id:d.boutiqueId,label:d.label,token:d.token};
+    $("p1").textContent="✓";$("p1").classList.add("ok");
+    okmsg("msg1","✅ Boutique reconnue : <b>"+esc(d.label)+"</b>");
+    $("carte2").classList.remove("cache");$("ssid").focus();
+  }catch(e){erreur("msg1","❌ Impossible de vérifier (connexion internet ?). "+esc(e.message||e));}
+});
+function esc(s){return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");}
+
+$("btnVoir").addEventListener("click",()=>{
+  const t=$("mdp").type==="password";
+  $("mdp").type=t?"text":"password";$("mdp2").type=t?"text":"password";
+  $("btnVoir").textContent=t?"🙈 masquer le mot de passe":"👁 afficher le mot de passe";
+  $("mdp2").style.display=t?"none":"";$("lblMdp2").style.display=t?"none":"";
+});
+
+// revele l'etape 3 quand le wifi est saisi
+["ssid","mdp"].forEach(id=>$(id).addEventListener("input",()=>{
+  if(($("ssid").value||"").trim() && ($("mdp").value||"").length>=8){$("carte3").classList.remove("cache");}
+}));
+
+// ETAPE 3 : ecrire sur la cle
+$("btnEcrire").addEventListener("click",async()=>{
+  effacer("msg3");
+  if(!boutique){erreur("msg3","Vérifie d'abord le code (étape 1).");return;}
+  const ssid=($("ssid").value||"").trim();
+  const mdp=$("mdp").value, mdpVisible=$("mdp").type==="text";
+  if(!ssid){erreur("msg3","Le nom du Wi-Fi est vide.");return;}
+  if(new TextEncoder().encode(ssid).length>32){erreur("msg3","Nom de Wi-Fi trop long (>32).");return;}
+  if(mdp.length<8||mdp.length>63){erreur("msg3","Le mot de passe Wi-Fi doit faire 8 à 63 caractères.");return;}
+  if(![...mdp].every(c=>c.charCodeAt(0)>=32&&c.charCodeAt(0)<=126)){erreur("msg3","Le mot de passe contient des caractères non autorisés (accents/symboles). Recopie celui de l'étiquette.");return;}
+  if(!mdpVisible && mdp!==$("mdp2").value){erreur("msg3","Les deux mots de passe ne sont pas identiques.");return;}
+
+  try{dossierCle=await window.showDirectoryPicker({mode:"readwrite"});}catch{return;}
+  try{
+    if(!(await existe("cmdline.txt"))||!(await existe("network-config"))||!(await existe("meta-data"))){
+      erreur("msg3","❌ Ce n'est pas la clé d'un pont KINGTOOLS. Choisis le disque nommé <b>bootfs</b>.");dossierCle=null;return;
+    }
+    info("msg3","⏳ Configuration en cours… ne débranche pas la clé.");
+    const id=nouvelId();
+    const cmd=await lire("cmdline.txt");
+    if(!/ds=nocloud;i=/.test(cmd)){erreur("msg3","❌ Format de démarrage inattendu. Contacte le support.");dossierCle=null;return;}
+    // PSK boutique + reseau de secours
+    const pskHex=await calculerPsk(mdp,ssid);
+    const aps=[{ssid:ssid,pskHex:pskHex},{ssid:SOS_SSID,pskHex:SOS_PSK_HEX}];
+    // sauvegardes
+    await ecrire("network-config.bak-"+id, await lire("network-config"));
+    await ecrire("meta-data.bak-"+id, await lire("meta-data"));
+    await ecrire("cmdline.txt.bak-"+id, cmd);
+    // ecritures
+    const newNet=genNetworkConfig(aps);
+    const newMeta="instance-id: "+id+"\n";
+    const newCmd=cmd.replace(/(ds=nocloud;i=)[^ ]+/,"$1"+id);
+    if(newCmd===cmd)throw new Error("remplacement instance-id impossible");
+    await ecrire("network-config",newNet);
+    await ecrire("meta-data",newMeta);
+    await ecrire("cmdline.txt",newCmd);
+    // LE fichier qui lie ce Pi a la boutique : le Pi le lit au demarrage et s'appaire.
+    await ecrire("kt-install.txt","CODE="+boutique.code+"\nBOUTIQUE="+boutique.id+"\nLABEL="+boutique.label+"\n");
+    // verif relecture
+    if((await lire("network-config"))!==newNet||(await lire("meta-data"))!==newMeta||(await lire("cmdline.txt"))!==newCmd||!(await lire("kt-install.txt")).includes("CODE="+boutique.code)){
+      throw new Error("vérification après écriture échouée");
+    }
+    // journal
+    let j="";try{j=await lire("kt-fix-journal.txt");}catch{}
+    await ecrire("kt-fix-journal.txt", j+new Date().toISOString()+" | installe-pont v1.0 | "+boutique.label+" ("+boutique.code+") | wifi "+ssid+" | instance "+id+"\n");
+
+    $("p2").textContent="✓";$("p2").classList.add("ok");$("p3").textContent="✓";$("p3").classList.add("ok");
+    effacer("msg3");
+    $("verifs").innerHTML=
+      '<div class="check"><span class="puce">✔</span> Boutique : <b>'+esc(boutique.label)+'</b> (code '+esc(boutique.code)+')</div>'+
+      '<div class="check"><span class="puce">✔</span> Wi-Fi : <b>'+esc(ssid)+'</b> (+ réseau de secours KINGTOOLS-SOS)</div>'+
+      '<div class="check"><span class="puce">✔</span> Le Pi s’appairera tout seul au premier démarrage</div>'+
+      '<div class="check"><span class="puce">✔</span> Anciens fichiers sauvegardés · vérification 4/4 OK</div>';
+    $("final").style.display="block";$("final").scrollIntoView({behavior:"smooth"});
+  }catch(e){erreur("msg3","❌ Échec : "+esc(e.message||e)+"<br>Rien d'irréversible (sauvegardes présentes sur la clé). Réessaie ou contacte le support.");}
+});
+</script>
+</body>
+</html>
