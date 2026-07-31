@@ -1221,6 +1221,18 @@ const server = http.createServer(async (req, res) => {
       if (!erMail.ok) return send(res, (erMail.code === 'NO_KEY' || erMail.code === 'NO_FROM') ? 503 : 502, { error: erMail.error });
       return send(res, 200, { ok: true, sentTo: emailMail });
     }
+    // ---- Supervision des ponts TPE (onglet « Ponts TPE ») : etat en direct par boutique ----
+    if (req.method === 'GET' && path === '/api/ponts') {
+      var pIds = boutiqueIds(); if (user.role !== 'admin') pIds = pIds.filter(function (id) { return id === user.boutiqueId; });
+      var pList = pIds.map(function (id) {
+        var pb = boutiques[id] || {};
+        var pd = pontDeviceForBoutique(id);
+        return { id: id, label: (pb.label || id), paired: !!pd, online: pontOnline(id), lastSeenMs: (pd && pd.lastSeen) ? (Date.now() - pd.lastSeen) : null, terminalIp: (pd && pd.ip) || '', terminalPort: (pd && pd.tcpPort) || null, code: (pd && pd.code) || null };
+      });
+      pList.sort(function (a, b) { var ra = a.online ? 2 : (a.paired ? 0 : 1); var rb = b.online ? 2 : (b.paired ? 0 : 1); return ra - rb; });
+      return send(res, 200, { role: user.role, count: pList.length, online: pList.filter(function (x) { return x.online; }).length, ponts: pList });
+    }
+
     if (req.method === 'GET' && path === '/api/royalties') {
       var rym = (u.searchParams.get('ym') || '').trim(); if(!rym){ var dN=new Date(); rym=dN.getFullYear()+'-'+('0'+(dN.getMonth()+1)).slice(-2); }
       var rids = boutiqueIds(); if (user.role !== 'admin') rids = rids.filter(function(id){ return id===user.boutiqueId; });
