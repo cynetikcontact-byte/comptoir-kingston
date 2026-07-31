@@ -844,7 +844,8 @@ table.tbl tr:hover td{background:#faf9f5;}
         }
       }
     }
-    return '<div class="pos"><div class="pos-left">'+
+    setTimeout(function(){ loadPontStatut(payBannerRender); },0);
+    return '<div id="pos-tpe-strip" style="margin-bottom:10px"></div>'+'<div class="pos"><div class="pos-left">'+
       '<div class="cats">'+cats.map(function(c){return '<button class="cat '+(c===st.cat?'on':'')+'" data-act="poscat" data-c="'+c+'">'+c+'</button>';}).join('')+'</div>'+
       '<input id="pos-search" class="pos-search" placeholder="Rechercher un produit…" value="'+esc(st.posSearch||'')+'"/>'+'<button data-act="prixlibre" style="width:100%;margin:-2px 0 12px;padding:11px 14px;border-radius:10px;border:1px solid var(--gold);background:var(--gold-soft);color:var(--gold);font-size:14px;font-weight:600;cursor:pointer">+ Prix libre</button>'+'<div class="pgrid">'+grid+'</div></div>'+
       '<div class="ticket"><div class="tk-head"><h3>Ticket</h3><span class="muted" style="font-size:12px">'+st.boutique+'</span><button class="tk-close" data-act="tkclose" title="Fermer">×</button></div>'+
@@ -1155,11 +1156,41 @@ table.tbl tr:hover td{background:#faf9f5;}
     if(API.on){ apiGet('/api/terminal/status').then(function(d){ var ts=(d&&d.terminals)||{}; var key=(st.user&&st.user.boutiqueId)||Object.keys(ts)[0]; var t=ts[key]||{}; if(t.online){ badge.className='tag tag-ok'; badge.textContent='Terminal prêt'; } else { badge.className='tag tag-low'; badge.textContent=t.paired?'Pont hors ligne':'Pont non appairé'; } }).catch(function(){ badge.textContent='Terminal : statut indisponible'; }); }
   }
   function boutiqueOptions(sel){ return Object.keys(BQNAME).map(function(id){ return '<option value="'+id+'"'+(sel===id?' selected':'')+'>'+esc(BQNAME[id])+'</option>'; }).join(''); }
-  function payInit(){ var sel=document.getElementById('pay-mode'); if(sel)sel.value=PAY_MODE; payModeRender(); }
+  var pontStatut={loaded:false,p:null};
+  function loadPontStatut(cb){
+    if(!API.on){pontStatut={loaded:true,p:null};if(cb)cb();return;}
+    apiGet('/api/ponts').then(function(d){
+      var l=(d&&d.ponts)||[]; var mine=null; var bid=st.user&&st.user.boutiqueId;
+      if(bid){ mine=l.filter(function(x){return x.id===bid;})[0]||null; }
+      else { mine=l.filter(function(x){return x.online;})[0]||l.filter(function(x){return x.paired;})[0]||l[0]||null; }
+      pontStatut={loaded:true,p:mine}; if(cb)cb();
+    }).catch(function(){pontStatut={loaded:true,p:null};if(cb)cb();});
+  }
+  function payBannerHtml(compact){
+    var p=pontStatut.p; var auto=(PAY_MODE==='auto');
+    function bx(bg,bord,coul,ico,titre,sous,btn){
+      return '<div style="background:'+bg+';border:2px solid '+bord+';border-radius:12px;padding:'+(compact?'8px 12px':'14px 16px')+';display:flex;align-items:center;gap:11px;flex-wrap:wrap">'+
+        '<span style="font-size:'+(compact?'18px':'26px')+'">'+ico+'</span><div style="flex:1;min-width:180px">'+
+        '<div style="font-weight:800;color:'+coul+';font-size:'+(compact?'12.5px':'15.5px')+'">'+titre+'</div>'+
+        (sous&&!compact?'<div class="muted" style="font-size:12px;margin-top:2px">'+sous+'</div>':'')+'</div>'+(btn||'')+'</div>';
+    }
+    if(!pontStatut.loaded) return bx('#f9fafb','#e5e7eb','#6b7280','&#9203;','Vérification du paiement par carte…','','');
+    if(auto&&p&&p.online) return bx('#f0fdf4','#86efac','#15803d','&#9989;','PAIEMENT PAR CARTE PRÊT','Le terminal se déclenche tout seul à l’encaissement — pont « '+esc(p.label||'')+' » en ligne'+(p.terminalIp?' · TPE '+esc(p.terminalIp):'')+'.','');
+    if(auto&&p&&p.paired&&!p.online) return bx('#fef2f2','#fecaca','#b91c1c','&#128308;','PONT HORS LIGNE — paiement auto indisponible','Débranche/rebranche l’alimentation du boîtier Raspberry et attends 2 minutes (voir aide-mémoire).','');
+    if(auto) return bx('#fff7ed','#fed7aa','#c2410c','&#9888;&#65039;','Aucun boîtier appairé pour cette boutique','Utilise « Installation automatique » ci-dessous, ou contacte le support.','');
+    if(p&&p.online) return bx('#fff7ed','#fed7aa','#c2410c','&#128073;','Pont EN LIGNE — mais cet appareil est en mode manuel','Un clic et le terminal se déclenchera tout seul à chaque encaissement :','<button class="btn btn-gold" data-act="pay-auto-on" style="white-space:nowrap">Activer le paiement automatique</button>');
+    return bx('#f9fafb','#e5e7eb','#6b7280','&#9997;&#65039;','Mode manuel','Tu saisis le montant sur le terminal à chaque encaissement.','');
+  }
+  function payBannerRender(){
+    var el=document.getElementById('pay-banner'); if(el)el.innerHTML=payBannerHtml(false);
+    var s=document.getElementById('pos-tpe-strip');
+    if(s)s.innerHTML=(PAY_MODE==='auto'||((pontStatut.p||{}).online))?payBannerHtml(true):'';
+  }
+  function payInit(){ var sel=document.getElementById('pay-mode'); if(sel)sel.value=PAY_MODE; payModeRender(); loadPontStatut(payBannerRender); if(!window.__payBannerInit){window.__payBannerInit=true; setInterval(function(){ try{ if((st.view==='reglages'||st.view==='pos')&&API.on) loadPontStatut(payBannerRender); }catch(e){} },10000);} }
   function ktFillPont(){try{var s=JSON.parse(localStorage.getItem('kt_pont')||'{}');[['pont-ip','ip'],['pont-port','port'],['pont-code','code'],['tpe-ip','ip'],['tpe-port','port']].forEach(function(p){var el=document.getElementById(p[0]);if(el&&!el.value&&document.activeElement!==el&&s[p[1]])el.value=s[p[1]];});var bq=document.getElementById('pont-bq');if(bq&&s.bq){bq.value=s.bq;}}catch(e){}}
 if(typeof window!=='undefined'){setInterval(ktFillPont,800);}
 ;(function(){function ktSideDocked(){var s=document.getElementById('side');return !!s&&getComputedStyle(s).position==='static';}function ktApplySide(){var b=document.body,c=false;try{c=localStorage.getItem('kt_side')==='1';}catch(e){}b.classList.toggle('kt-docked',ktSideDocked());b.classList.toggle('kt-side-collapsed',c);var f=document.getElementById('kt-side-fab');if(f){f.title=c?'Afficher le menu':'Replier le menu';f.innerHTML=c?'›':'‹';f.style.removeProperty('left');f.style.removeProperty('display');var _sb=document.getElementById('side');var _r=(c?0:(_sb?Math.round(_sb.getBoundingClientRect().right):236));f.style.setProperty('transform','translate('+(c?0:(_r-222))+'px,-50%)','important');f.style.setProperty('width',c?'30px':'22px','important');f.style.setProperty('height',c?'64px':'56px','important');f.style.setProperty('font-size',c?'24px':'17px','important');var _borne=Array.prototype.some.call(document.querySelectorAll('button'),function(_b){return /fermer la borne/i.test(_b.textContent||'');});var _ham=document.querySelector('.hamburger');var _mob=!!_ham&&getComputedStyle(_ham).display!=='none';f.style.setProperty('display',(_borne||_mob)?'none':'flex','important');}}function ktInitSide(){if(!document.getElementById('kt-side-css')){var st=document.createElement('style');st.id='kt-side-css';st.textContent="#kt-side-fab{position:fixed;top:50%;transform:translateY(-50%);left:222px;z-index:1200;width:22px;height:56px;border-radius:0 8px 8px 0;border:1px solid rgba(0,0,0,.18);border-left:none;background:#161310;color:#e6c884;font-size:17px;line-height:1;display:none;align-items:center;justify-content:center;cursor:pointer;box-shadow:2px 0 9px rgba(0,0,0,.28);transition:left .2s ease;padding:0}#kt-side-fab:hover{background:#241e16}body.kt-docked #kt-side-fab{display:flex}body.kt-docked.kt-side-collapsed #kt-side-fab{left:0}body.kt-docked.kt-side-collapsed #side{display:none}";document.head.appendChild(st);}if(!document.getElementById('kt-side-fab')){var btn=document.createElement('button');btn.id='kt-side-fab';btn.type='button';btn.setAttribute('aria-label','Menu');btn.onclick=function(){var cur=false;try{cur=localStorage.getItem('kt_side')==='1';}catch(e){}try{localStorage.setItem('kt_side',cur?'0':'1');}catch(e){}ktApplySide();};document.body.appendChild(btn);}ktApplySide();}if(document.readyState!=='loading'){ktInitSide();}else{document.addEventListener('DOMContentLoaded',ktInitSide);}window.addEventListener('resize',ktApplySide);setInterval(ktApplySide,1200);})();
-function setPayMode(m){ PAY_MODE=(m==='auto')?'auto':'manuel'; try{ localStorage.setItem('kt_pay_mode',PAY_MODE); }catch(e){} payModeRender(); }
+function setPayMode(m){ PAY_MODE=(m==='auto')?'auto':'manuel'; try{ localStorage.setItem('kt_pay_mode',PAY_MODE); }catch(e){} payModeRender(); var _s=document.getElementById('pay-mode'); if(_s)_s.value=PAY_MODE; payBannerRender(); }
   function loyInit(){
     if(!API.on){var b0=document.getElementById('loy-mode');if(b0){b0.className='tag tag-low';b0.textContent='Hors ligne';}return;}
     apiGet('/api/loyalty/status').then(function(s){
@@ -1186,6 +1217,7 @@ function setPayMode(m){ PAY_MODE=(m==='auto')?'auto':'manuel'; try{ localStorage
         '<div id="rg-res" style="margin-top:14px"></div>'+
       '</div>'+
       '<div class="card" id="tpe-card" style="padding:18px;max-width:660px;margin-top:16px"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px"><b style="font-family:var(--serif);font-size:16px">Paiement par carte</b><span id="tpe-state" class="tag tag-ok">Mode manuel</span></div>'+
+        '<div id="pay-banner" style="margin-bottom:12px"></div>'+
         '<div class="fld" style="margin-bottom:10px"><label>Mode</label><select id="pay-mode"><option value="manuel">Manuel - montant saisi sur le terminal (recommande pour demarrer)</option><option value="auto">Automatique - le terminal se declenche tout seul (via le pont de la boutique)</option></select></div>'+
         '<div id="pay-mode-help" class="muted" style="font-size:12.5px;line-height:1.5"></div>'+
         (st.user&&st.user.role==='admin' ? '<div style="border-top:1px solid var(--line);margin-top:14px;padding-top:12px"><div style="font-weight:700;font-size:13px;margin-bottom:4px">⚡ Installation automatique (recommandé)</div><div class="muted" style="font-size:11.5px;margin-bottom:10px">Choisis la boutique, génère son installateur et envoie le lien. La boutique le double-clique : le pont détecte le terminal et s\'appaire tout seul. Tu n\'as rien d\'autre à faire.</div><div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap"><div class="fld"><label>Boutique</label><select id="pont-auto-bq" style="padding:9px;border:1px solid var(--line);border-radius:8px">'+boutiqueOptions()+'</select></div><button class="btn btn-gold" data-act="pont-installer">Générer le lien d\'installation</button></div><div id="pont-installer-res" style="margin-top:10px"></div></div><div style="border-top:1px solid var(--line);margin-top:14px;padding-top:12px"><div style="font-weight:700;font-size:13px;margin-bottom:6px">Connexion manuelle (avancé / repli)</div><div class="muted" style="font-size:11.5px;margin-bottom:10px">Si l\'auto ne trouve pas le terminal : la page du pont (sur l\'ordi boutique) affiche un code à 6 lettres. Entre-le ici avec l\'IP du terminal.</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px"><div class="fld"><label>Boutique</label><select id="pont-bq" style="width:100%;padding:9px;border:1px solid var(--line);border-radius:8px">'+boutiqueOptions()+'</select></div><div class="fld"><label>Code du pont</label><input id="pont-code" placeholder="ex : K7M2Q4" style="width:100%;text-transform:uppercase"/></div><div class="fld"><label>IP du terminal</label><input id="pont-ip" placeholder="192.168.1.50" style="width:100%"/></div><div class="fld"><label>Port</label><input id="pont-port" value="8888" style="width:100%"/></div></div><div style="margin-top:8px"><button class="btn btn-gold" data-act="claim-pont">Connecter ce pont</button></div><div id="pont-code-res" style="margin-top:10px"></div></div>' : '')+
@@ -1736,14 +1768,21 @@ function setPayMode(m){ PAY_MODE=(m==='auto')?'auto':'manuel'; try{ localStorage
     if(!pontsData.loaded){el.innerHTML='<div class="muted" style="padding:14px">Chargement…</div>';return;}
     var cards=(pontsData.list||[]).map(function(p){
       var tag=p.online?'<span class="tag tag-ok">EN LIGNE</span>':(p.paired?'<span class="tag tag-low">HORS LIGNE</span>':'<span class="tag tag-low">JAMAIS APPAIRÉ</span>');
-      var sub=p.online?('vu '+pontsAgo(p.lastSeenMs)+(p.terminalIp?' · TPE détecté : '+esc(p.terminalIp)+(p.terminalPort?':'+p.terminalPort:''):'')):(p.paired?('dernier signe de vie : <b>'+pontsAgo(p.lastSeenMs)+'</b>'):'aucun boitier ne s’est encore annoncé pour cette boutique');
+      var sub=p.online?('en ligne · vu '+pontsAgo(p.lastSeenMs)):(p.paired?('dernier signe de vie : <b>'+pontsAgo(p.lastSeenMs)+'</b>'):'aucun boitier ne s’est encore annoncé pour cette boutique');
+      var tpetxt=p.terminalIp?esc(p.terminalIp):'non détecté';
+      function ktInfo(lbl,val){return '<span style="display:inline-flex;flex-direction:column;gap:1px"><span style="font-size:11px;text-transform:uppercase;letter-spacing:.05em" class="muted">'+lbl+'</span><b style="font-size:13.5px;color:var(--ink2)">'+val+'</b></span>';}
+      var infos=(p.paired||p.code)?('<div style="display:flex;gap:22px;flex-wrap:wrap;margin-top:12px;padding-top:10px;border-top:1px solid var(--line)">'+
+        ktInfo('IP du terminal (TPE)',tpetxt)+
+        ktInfo('Port',p.terminalPort?String(p.terminalPort):'—')+
+        ktInfo('Code du pont',p.code?esc(p.code):'—')+
+        '</div>'):'';
       var aide=(!p.online&&p.paired)?'<div class="muted" style="font-size:12.5px;margin-top:8px;color:#b4452f">À vérifier en boutique : alimentation du boitier, puis Wi-Fi (câble Ethernet ou partage de connexion « KINGTOOLS-SOS » en secours).</div>':'';
-      var codetxt=(!p.paired&&p.code)?'<div class="muted" style="font-size:12.5px;margin-top:8px">Un boitier attend l’appairage — code : <b>'+esc(p.code)+'</b></div>':'';
+      var codetxt=(!p.paired&&p.code)?'<div class="muted" style="font-size:12.5px;margin-top:8px">Un boitier attend l’appairage avec ce code.</div>':'';
       return '<div class="card" style="padding:16px;margin-bottom:12px">'+
         '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap">'+
         '<div><div style="font-family:var(--serif);font-size:18px">'+esc(p.label||p.id)+'</div>'+
         '<div class="muted" style="font-size:12.5px;margin-top:2px">'+sub+'</div></div>'+
-        '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:flex-start">'+tag+'</div></div>'+aide+codetxt+
+        '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:flex-start">'+tag+'</div></div>'+infos+aide+codetxt+
         '</div>';
     }).join('')||'<div class="muted" style="padding:14px">Aucune boutique pour le moment.</div>';
     el.innerHTML=cards;
@@ -2064,6 +2103,7 @@ function setPayMode(m){ PAY_MODE=(m==='auto')?'auto':'manuel'; try{ localStorage
     var el=ev.target.closest('[data-act]');
     if(!el)return;
     var a=el.getAttribute('data-act');
+    if(a==='pay-auto-on'){setPayMode('auto');toast('Paiement automatique activé ✓');return;}
     if(a==='navtoggle'){document.body.classList.toggle('nav-open');return;}
     if(a==='navclose'){document.body.classList.remove('nav-open');return;}
     if(a==='tkopen'){document.body.classList.add('tk-open');return;}
