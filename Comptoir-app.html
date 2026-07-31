@@ -466,6 +466,7 @@ table.tbl tr:hover td{background:#faf9f5;}
       <div class="nav-item" id="nav-franchises" data-view="franchises"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 21V9l9-6 9 6v12"/><path d="M3 21h18M9 21v-6h6v6"/></svg> Franchisés</div>
       <div class="nav-item" data-view="pro"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 7h11v8H3zM14 9h4l3 3v3h-7z"/><circle cx="7" cy="18" r="1.7"/><circle cx="17.5" cy="18" r="1.7"/></svg> Réassort pro <span id="pro-badge" style="margin-left:auto"></span></div>
       <div class="nav-grp">Système</div>
+      <div class="nav-item" data-view="ponts"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><circle cx="12" cy="20" r="1"/></svg> Ponts TPE</div>
       <div class="nav-item" data-view="reglages"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 8 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H2a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 3.6 8a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H8a1.65 1.65 0 0 0 1-1.51V2a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V8a1.65 1.65 0 0 0 1.51 1H22a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg> Réglages</div>
     </nav>
     <div class="side-foot" id="sideFoot"><b>Lenny K.</b>Admin réseau · KINGSTON</div>
@@ -793,7 +794,7 @@ table.tbl tr:hover td{background:#faf9f5;}
   function custRowsHtml(list,actName){if(!list.length)return '<div class="muted" style="padding:14px">Aucun client trouvé.</div>';return list.map(function(c,i){return '<div class="cust-row" data-act="'+actName+'" data-i="'+i+'"><div><b>'+esc(c.name||c.email)+'</b><div class="muted" style="font-size:12px">'+esc(c.email||'')+(c.phone?' · '+esc(c.phone):'')+'</div></div><div style="color:var(--gold);font-weight:700">'+Math.round(c.points||0)+' pts</div></div>';}).join('');}
 
   // ---------- Vues ----------
-  var titles={dash:'Tableau de bord',pos:'Caisse',borne:'Borne',commandes:'Commandes',challenge:'Challenge',journal:'Journal des ventes',produits:'Produits',stock:'Stock',fidelite:'Fidélité',factu:'Facturation',conformite:'Conformité',franchises:'Franchisés',pro:'Réassort pro',reglages:'Réglages'};
+  var titles={dash:'Tableau de bord',pos:'Caisse',borne:'Borne',commandes:'Commandes',challenge:'Challenge',journal:'Journal des ventes',produits:'Produits',stock:'Stock',fidelite:'Fidélité',factu:'Facturation',conformite:'Conformité',franchises:'Franchisés',pro:'Réassort pro',ponts:'Ponts TPE',reglages:'Réglages'};
 
   function viewDash(){
     if(!API.on){ return '<div class="vhead"><div><h1>Bonjour '+esc((((st.user&&st.user.name)||'').split(' ')[0])||'')+'</h1><p>Connecte l\'app au serveur pour voir tes chiffres en direct.</p></div></div><div class="net-note">'+crown('#b8902f')+' Va dans Réglages → Connecter au serveur.</div>'; }
@@ -1721,7 +1722,40 @@ function setPayMode(m){ PAY_MODE=(m==='auto')?'auto':'manuel'; try{ localStorage
     }).catch(function(e){toast('Échec : '+(e.message||e));});
   }
 
-  var viewsMap={dash:viewDash,pos:viewPos,produits:viewProduits,stock:viewStock,fidelite:viewFidelite,factu:viewFactu,borne:viewBorne,commandes:viewCommandes,challenge:viewChallenge,journal:viewJournal,conformite:viewConformite,franchises:viewFranchises,pro:viewPro,reglages:viewReglages};
+  // ---------- Ponts TPE : etat en direct des boitiers de paiement du reseau ----------
+  var pontsData={loaded:false,loading:false,list:[],online:0};
+  function loadPonts(){
+    if(!API.on||pontsData.loading)return;
+    pontsData.loading=true;
+    apiGet('/api/ponts').then(function(d){pontsData.list=(d&&d.ponts)||[];pontsData.online=(d&&d.online)||0;pontsData.loaded=true;pontsData.loading=false;if(st.view==='ponts')renderPontsBody();}).catch(function(){pontsData.loading=false;pontsData.loaded=true;if(st.view==='ponts')renderPontsBody();});
+  }
+  function pontsAgo(ms){ if(ms==null)return 'jamais vu'; var s=Math.floor(ms/1000); if(s<60)return 'il y a '+s+' s'; var m=Math.floor(s/60); if(m<60)return 'il y a '+m+' min'; var h=Math.floor(m/60); if(h<24)return 'il y a '+h+' h'; return 'il y a '+Math.floor(h/24)+' j'; }
+  function renderPontsBody(){
+    var el=document.getElementById('ponts-body');if(!el)return;
+    var cc=document.getElementById('ponts-count');if(cc)cc.innerHTML=(pontsData.list.length?('<b style="color:'+(pontsData.online===pontsData.list.length?'#2e7d4f':'#b4452f')+'">'+pontsData.online+' en ligne</b> / '+pontsData.list.length+' boutique'+(pontsData.list.length>1?'s':'')):'');
+    if(!pontsData.loaded){el.innerHTML='<div class="muted" style="padding:14px">Chargement…</div>';return;}
+    var cards=(pontsData.list||[]).map(function(p){
+      var tag=p.online?'<span class="tag tag-ok">EN LIGNE</span>':(p.paired?'<span class="tag tag-low">HORS LIGNE</span>':'<span class="tag tag-low">JAMAIS APPAIRÉ</span>');
+      var sub=p.online?('vu '+pontsAgo(p.lastSeenMs)+(p.terminalIp?' · TPE détecté : '+esc(p.terminalIp)+(p.terminalPort?':'+p.terminalPort:''):'')):(p.paired?('dernier signe de vie : <b>'+pontsAgo(p.lastSeenMs)+'</b>'):'aucun boitier ne s’est encore annoncé pour cette boutique');
+      var aide=(!p.online&&p.paired)?'<div class="muted" style="font-size:12.5px;margin-top:8px;color:#b4452f">À vérifier en boutique : alimentation du boitier, puis Wi-Fi (câble Ethernet ou partage de connexion « KINGTOOLS-SOS » en secours).</div>':'';
+      var codetxt=(!p.paired&&p.code)?'<div class="muted" style="font-size:12.5px;margin-top:8px">Un boitier attend l’appairage — code : <b>'+esc(p.code)+'</b></div>':'';
+      return '<div class="card" style="padding:16px;margin-bottom:12px">'+
+        '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap">'+
+        '<div><div style="font-family:var(--serif);font-size:18px">'+esc(p.label||p.id)+'</div>'+
+        '<div class="muted" style="font-size:12.5px;margin-top:2px">'+sub+'</div></div>'+
+        '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:flex-start">'+tag+'</div></div>'+aide+codetxt+
+        '</div>';
+    }).join('')||'<div class="muted" style="padding:14px">Aucune boutique pour le moment.</div>';
+    el.innerHTML=cards;
+  }
+  function viewPonts(){
+    setTimeout(function(){loadPonts();if(!window.__pontsInit){window.__pontsInit=true;setInterval(function(){try{if(st.view==='ponts'&&API.on)loadPonts();}catch(e){}},10000);}},0);
+    if(!API.on){ return '<div class="vhead"><div><h1>Ponts TPE</h1><p>Connecte l’app au serveur pour voir l’état des terminaux de paiement.</p></div></div><div class="net-note">'+crown('#b8902f')+' Va dans Réglages → Connecter au serveur.</div>'; }
+    return '<div class="vhead"><div><h1>Ponts TPE</h1><p>État en direct des boitiers qui relient chaque boutique à son terminal de paiement. Actualisation automatique toutes les 10 s.</p></div><div id="ponts-count" class="muted" style="font-size:13px;align-self:center"></div></div>'+
+      '<div id="ponts-body"></div>';
+  }
+
+  var viewsMap={dash:viewDash,pos:viewPos,produits:viewProduits,stock:viewStock,fidelite:viewFidelite,factu:viewFactu,borne:viewBorne,commandes:viewCommandes,challenge:viewChallenge,journal:viewJournal,conformite:viewConformite,franchises:viewFranchises,pro:viewPro,ponts:viewPonts,reglages:viewReglages};
 
   // Enrobe chaque tableau .tbl dans un conteneur à défilement horizontal (utile sur mobile ; transparent sur desktop).
   function wrapTables(root){
