@@ -467,6 +467,7 @@ table.tbl tr:hover td{background:#faf9f5;}
       <div class="nav-item" data-view="pro"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 7h11v8H3zM14 9h4l3 3v3h-7z"/><circle cx="7" cy="18" r="1.7"/><circle cx="17.5" cy="18" r="1.7"/></svg> Réassort pro <span id="pro-badge" style="margin-left:auto"></span></div>
       <div class="nav-grp">Système</div>
       <div class="nav-item" data-view="ponts"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><circle cx="12" cy="20" r="1"/></svg> Ponts TPE</div>
+      <div class="nav-item" id="nav-guideponts" data-view="guideponts"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg> Guide ponts</div>
       <div class="nav-item" data-view="reglages"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 8 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H2a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 3.6 8a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H8a1.65 1.65 0 0 0 1-1.51V2a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V8a1.65 1.65 0 0 0 1.51 1H22a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg> Réglages</div>
     </nav>
     <div class="side-foot" id="sideFoot"><b>Lenny K.</b>Admin réseau · KINGSTON</div>
@@ -794,7 +795,7 @@ table.tbl tr:hover td{background:#faf9f5;}
   function custRowsHtml(list,actName){if(!list.length)return '<div class="muted" style="padding:14px">Aucun client trouvé.</div>';return list.map(function(c,i){return '<div class="cust-row" data-act="'+actName+'" data-i="'+i+'"><div><b>'+esc(c.name||c.email)+'</b><div class="muted" style="font-size:12px">'+esc(c.email||'')+(c.phone?' · '+esc(c.phone):'')+'</div></div><div style="color:var(--gold);font-weight:700">'+Math.round(c.points||0)+' pts</div></div>';}).join('');}
 
   // ---------- Vues ----------
-  var titles={dash:'Tableau de bord',pos:'Caisse',borne:'Borne',commandes:'Commandes',challenge:'Challenge',journal:'Journal des ventes',produits:'Produits',stock:'Stock',fidelite:'Fidélité',factu:'Facturation',conformite:'Conformité',franchises:'Franchisés',pro:'Réassort pro',ponts:'Ponts TPE',reglages:'Réglages'};
+  var titles={dash:'Tableau de bord',pos:'Caisse',borne:'Borne',commandes:'Commandes',challenge:'Challenge',journal:'Journal des ventes',produits:'Produits',stock:'Stock',fidelite:'Fidélité',factu:'Facturation',conformite:'Conformité',franchises:'Franchisés',pro:'Réassort pro',ponts:'Ponts TPE',guideponts:'Guide ponts',reglages:'Réglages'};
 
   function viewDash(){
     if(!API.on){ return '<div class="vhead"><div><h1>Bonjour '+esc((((st.user&&st.user.name)||'').split(' ')[0])||'')+'</h1><p>Connecte l\'app au serveur pour voir tes chiffres en direct.</p></div></div><div class="net-note">'+crown('#b8902f')+' Va dans Réglages → Connecter au serveur.</div>'; }
@@ -1778,7 +1779,7 @@ function setPayMode(m){ PAY_MODE=(m==='auto')?'auto':'manuel'; try{ localStorage
         '</div>'):'';
       var aide=(!p.online&&p.paired)?'<div class="muted" style="font-size:12.5px;margin-top:8px;color:#b4452f">À vérifier en boutique : alimentation du boitier, puis Wi-Fi (câble Ethernet ou partage de connexion « KINGTOOLS-SOS » en secours).</div>':'';
       var codetxt=(!p.paired&&p.code)?'<div class="muted" style="font-size:12.5px;margin-top:8px">Un boitier attend l’appairage avec ce code.</div>':'';
-      var instBox=p.installCode?('<div style="margin-top:12px;padding:10px 12px;background:#eef2ff;border:1px solid #c7d2fe;border-radius:10px;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">'+
+      var instBox=((st.user&&st.user.role==='admin')&&p.installCode)?('<div style="margin-top:12px;padding:10px 12px;background:#eef2ff;border:1px solid #c7d2fe;border-radius:10px;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">'+
         '<div><div style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:#4f46e5;font-weight:700">Code d’installation</div>'+
         '<div style="font-family:var(--serif);font-size:22px;letter-spacing:1px;color:#312e81">'+esc(p.installCode)+'</div>'+
         '<div class="muted" style="font-size:11.5px">Pour installer un nouveau Raspberry : outil Installe-Pont → ce code.</div></div>'+
@@ -1790,7 +1791,21 @@ function setPayMode(m){ PAY_MODE=(m==='auto')?'auto':'manuel'; try{ localStorage
         '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:flex-start">'+tag+'</div></div>'+infos+instBox+aide+codetxt+
         '</div>';
     }).join('')||'<div class="muted" style="padding:14px">Aucune boutique pour le moment.</div>';
-    el.innerHTML=cards;
+    var guideFr=(st.user&&st.user.role==='manager')?gFranchiseGuide():'';
+    el.innerHTML=cards+guideFr;
+  }
+  function gFranchiseGuide(){
+    function box(coul,fond,bord,titre,corps){return '<div style="background:'+fond+';border:1px solid '+bord+';border-radius:10px;padding:12px 14px;margin-bottom:10px"><b style="color:'+coul+'">'+titre+'</b><div style="font-size:13.5px;margin-top:4px;line-height:1.55">'+corps+'</div></div>';}
+    function co(t){return '<code style="background:#15100a;color:#cfe8dd;border-radius:6px;padding:2px 7px;font-size:12.5px">'+esc(t)+'</code>';}
+    return '<div class="card" style="padding:18px;margin-top:18px">'+
+      '<div style="font-family:var(--serif);font-size:17px;margin-bottom:2px">🛟 Guide — que faire si le paiement carte ne marche plus</div>'+
+      '<div class="muted" style="font-size:12.5px;margin-bottom:10px">Boîtier = le petit ordinateur qui relie ta caisse au terminal de paiement.</div>'+
+      box('#15803d','#f0fdf4','#86efac','1. Regarde l\'état ci-dessus','<b>EN LIGNE</b> (vert) : le boîtier va bien — vérifie le terminal (allumé ? câble ?). <b>HORS LIGNE</b> : passe à l\'étape 2.')+
+      box('#1e3a8a','#eff6ff','#bfdbfe','2. Redémarre le boîtier','Débranche son alimentation, attends 10 s, rebranche, patiente <b>2 minutes</b>. Ça résout la plupart des cas.')+
+      box('#c2410c','#fff7ed','#fed7aa','3. Tu as changé de box internet ou de Wi-Fi ?','<b>Le plus simple :</b> relie le boîtier à la nouvelle box avec un <b>câble Ethernet (RJ45)</b> → il remarche tout seul, sans réglage.<br><b>Sinon, appelle le support :</b> il te fera activer un partage de connexion nommé '+co('KINGTOOLS-SOS')+' (mot de passe '+co('KT-Secours-8541')+') sur ton téléphone, et réglera tout <b>à distance</b>.')+
+      box('#6b7280','#f9fafb','#e5e7eb','4. Installer un boîtier neuf','Pose-le près de la box (idéalement relié en Ethernet), branche l\'alimentation et le terminal sur le même réseau. Après quelques minutes il apparaît EN LIGNE ci-dessus. Fais un paiement test.')+
+      '<div class="muted" style="font-size:12.5px;margin-top:2px">Besoin d\'aide ? Contacte le support KINGTOOLS.</div>'+
+      '</div>';
   }
   function viewPonts(){
     setTimeout(function(){loadPonts();if(!window.__pontsInit){window.__pontsInit=true;setInterval(function(){try{if(st.view==='ponts'&&API.on)loadPonts();}catch(e){}},10000);}},0);
@@ -1799,7 +1814,61 @@ function setPayMode(m){ PAY_MODE=(m==='auto')?'auto':'manuel'; try{ localStorage
       '<div id="ponts-body"></div>';
   }
 
-  var viewsMap={dash:viewDash,pos:viewPos,produits:viewProduits,stock:viewStock,fidelite:viewFidelite,factu:viewFactu,borne:viewBorne,commandes:viewCommandes,challenge:viewChallenge,journal:viewJournal,conformite:viewConformite,franchises:viewFranchises,pro:viewPro,ponts:viewPonts,reglages:viewReglages};
+  // ---------- Guide ponts : mode d'emploi integre (pour ne jamais oublier le process) ----------
+  function loadGuideCodes(){
+    if(!API.on)return;
+    apiGet('/api/ponts').then(function(d){
+      var el=document.getElementById('guide-codes'); if(!el)return;
+      var rows=(d.ponts||[]).filter(function(p){return p.installCode;}).map(function(p){
+        return '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--line)"><span>'+esc(p.label||p.id)+'</span><b style="font-family:var(--serif);font-size:17px;letter-spacing:1px;color:#312e81">'+esc(p.installCode)+'</b></div>';
+      }).join('');
+      el.innerHTML=rows||'<div class="muted" style="font-size:12.5px">Aucune boutique.</div>';
+    }).catch(function(){});
+  }
+  function gStep(num,txt){return '<div style="display:flex;gap:11px;margin:9px 0"><span style="flex:none;width:24px;height:24px;border-radius:50%;background:var(--gold,#c79a3a);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px">'+num+'</span><div style="font-size:14px;line-height:1.5">'+txt+'</div></div>';}
+  function gCode(t){return '<code style="background:#15100a;color:#cfe8dd;border-radius:6px;padding:2px 7px;font-size:12.5px">'+esc(t)+'</code>';}
+  function viewGuidePonts(){
+    setTimeout(loadGuideCodes,0);
+    var head='<div class="vhead"><div><h1>Guide ponts TPE</h1><p>Tout le process pour installer et dépanner les boîtiers, sans avoir à t’en souvenir.</p></div></div>';
+
+    var c1='<div class="card" style="padding:18px;max-width:760px;margin-bottom:14px">'+
+      '<div style="font-family:var(--serif);font-size:17px;margin-bottom:4px">🔌 Installer un pont pour une nouvelle boutique</div>'+
+      '<div class="muted" style="font-size:12.5px;margin-bottom:8px">Méthode « code » — ni SSH ni commande.</div>'+
+      gStep(1,'Récupère le <b>code d’installation</b> de la boutique dans l’onglet <b>Ponts TPE</b> (bouton Copier).')+
+      gStep(2,'Branche la <b>clé USB</b> du nouveau Raspberry (un clone du pont d’Aix) sur ton ordinateur. Si le Mac dit « disque illisible » → <b>Ignorer</b>.')+
+      gStep(3,'Ouvre '+gCode('kingtools.fr/installe-pont')+' dans Chrome, tape le <b>code</b> + le <b>Wi-Fi de la boutique</b>, puis « Choisir la clé ».')+
+      gStep(4,'<b>Éjecte</b> proprement la clé, remets-la dans le Pi, branche l’alimentation + le TPE sur le même réseau.')+
+      gStep(5,'Après 3-4 min il passe <b>EN LIGNE</b> dans Ponts TPE. Fais un paiement test de 1 €. ✅')+
+      '</div>';
+
+    var c2='<div class="card" style="padding:18px;max-width:760px;margin-bottom:14px">'+
+      '<div style="font-family:var(--serif);font-size:17px;margin-bottom:4px">📶 Un franchisé change de box (ou de Wi-Fi)</div>'+
+      '<div class="muted" style="font-size:12.5px;margin-bottom:8px">Le pont perd le réseau. 3 façons de le récupérer, de la plus simple à la plus manuelle.</div>'+
+      '<div style="background:#f0fdf4;border:1px solid #86efac;border-radius:10px;padding:11px 14px;margin-bottom:10px"><b style="color:#15803d">1. Câble Ethernet (le plus simple)</b><div style="font-size:13.5px;margin-top:3px">Branche le Pi à la nouvelle box avec un câble RJ45 → il remarche <b>instantanément</b>, sans rien configurer. Idéal : laisse-le branché en Ethernet en permanence, un futur changement de box devient un non-événement.</div></div>'+
+      '<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:11px 14px;margin-bottom:10px"><b style="color:#1e3a8a">2. À distance, via KINGTOOLS-SOS</b><div style="font-size:13.5px;margin-top:3px">Le franchisé active un <b>partage de connexion</b> nommé <b>KINGTOOLS-SOS</b> (mdp '+gCode('KT-Secours-8541')+'). Le Pi s’y connecte seul → il repasse en ligne dans <b>Raspberry Pi Connect</b> → tu ouvres son terminal et tapes :<br><div style="margin-top:6px">'+gCode("sudo nmcli device wifi connect 'NOUVEAU_WIFI' password 'MDP'")+'</div><div style="margin-top:4px">Le franchisé coupe son partage. Terminé, sans te déplacer.</div></div></div>'+
+      '<div style="background:#fff7ed;border:1px solid #fed7aa;border-radius:10px;padding:11px 14px"><b style="color:#c2410c">3. Secours : l’outil Répare-Clé</b><div style="font-size:13.5px;margin-top:3px">Le franchisé débranche la clé USB du Pi, la met sur un ordi, ouvre l’outil <b>Répare-Clé</b>, tape le nouveau Wi-Fi, éjecte, rebranche. Tu le guides au téléphone.</div></div>'+
+      '</div>';
+
+    var c3='<div class="card" style="padding:18px;max-width:760px;margin-bottom:14px">'+
+      '<div style="font-family:var(--serif);font-size:17px;margin-bottom:8px">🖥 Piloter à distance</div>'+
+      '<div style="font-size:13.5px;line-height:1.6"><b>Raspberry Pi Connect</b> ('+gCode('connect.raspberrypi.com')+') : terminal ou bureau de n’importe quel Pi, de partout. '+
+      '<b>Onglet Ponts TPE</b> : état en direct, IP du TPE, code du pont. Les pannes remontent en haut.</div>'+
+      '</div>';
+
+    var c4='<div class="card" style="padding:18px;max-width:760px">'+
+      '<div style="font-family:var(--serif);font-size:17px;margin-bottom:8px">🔑 Aide-mémoire</div>'+
+      '<div style="font-size:12.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);font-weight:700;margin-bottom:4px">Codes d’installation (à jour)</div>'+
+      '<div id="guide-codes" style="margin-bottom:14px"><div class="muted" style="font-size:12.5px">Chargement…</div></div>'+
+      '<div style="font-size:13.5px;line-height:1.7">'+
+      '<b>Réseau de secours</b> : '+gCode('KINGTOOLS-SOS')+' · mdp '+gCode('KT-Secours-8541')+'<br>'+
+      '<b>Outil d’installation</b> : '+gCode('kingtools.fr/installe-pont')+'<br>'+
+      '<b>Préparer le maître (1 fois)</b> : '+gCode('kingtools.fr/kt-onboard-install.sh')+'<br>'+
+      '<b>Règle d’or</b> : un seul pont par boutique — ne relance jamais un ancien pont (Mac/PC) en parallèle.'+
+      '</div></div>';
+
+    return head+c1+c2+c3+c4;
+  }
+  var viewsMap={dash:viewDash,pos:viewPos,produits:viewProduits,stock:viewStock,fidelite:viewFidelite,factu:viewFactu,borne:viewBorne,commandes:viewCommandes,challenge:viewChallenge,journal:viewJournal,conformite:viewConformite,franchises:viewFranchises,pro:viewPro,ponts:viewPonts,guideponts:viewGuidePonts,reglages:viewReglages};
 
   // Enrobe chaque tableau .tbl dans un conteneur à défilement horizontal (utile sur mobile ; transparent sur desktop).
   function wrapTables(root){
@@ -1820,6 +1889,7 @@ function setPayMode(m){ PAY_MODE=(m==='auto')?'auto':'manuel'; try{ localStorage
     var rb=document.querySelector('.role-badge');if(rb){rb.innerHTML='<span class="av">'+st.user.initials+'</span><div>'+st.user.roleLabel+'<br><b>'+st.user.name+'</b></div>';}
     var sel=document.getElementById('boutiqueSel');if(sel){sel.style.display=st.user.role==='admin'?'':'none';}
     var nfr=document.getElementById('nav-franchises');if(nfr){nfr.style.display=(st.user.role==='admin')?'':'none';}
+    var ngp=document.getElementById('nav-guideponts');if(ngp){ngp.style.display=(st.user.role==='admin')?'':'none';}
     if(st.user && !window.__proBadgeInit){ window.__proBadgeInit=true; refreshProBadge(); setInterval(function(){try{refreshProBadge();}catch(e){}},45000); }
     if(st.user && !window.__challengeInit){ window.__challengeInit=true; setInterval(function(){try{ if(st.view==='challenge'&&API.on) loadChallenge(); }catch(e){} },15000); }
     if(st.user && !window.__dashInit){ window.__dashInit=true; setInterval(function(){try{ if(st.view==='dash'&&API.on) loadDashboard(); }catch(e){} },60000); }
