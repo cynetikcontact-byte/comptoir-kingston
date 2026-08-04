@@ -1725,6 +1725,31 @@ const server = http.createServer(async (req, res) => {
       persist();
       return send(res, 200, { ok: true, boutique: { id: id, label: rec.label, prefix: rec.prefix, seller: rec.seller, motDePasseDefini: !!(rec.cred || process.env['COMPTOIR_PASS_' + id.toUpperCase()]) } });
     }
+
+    // Supprimer une franchise (OPERATION SENSIBLE) : admin reseau uniquement, avec confirmation explicite.
+    // On retire l'acces manager, l'identite active et les compteurs OPERATIONNELS de la boutique.
+    // Les factures et evenements fiscaux DEJA emis restent archives (obligation legale) : ils ne sont pas effaces.
+    if (req.method === 'DELETE' && path.indexOf('/api/boutiques/') === 0) {
+      if (user.role !== 'admin') return send(res, 403, { error: 'Réservé à l\'administrateur réseau' });
+      const id = decodeURIComponent(path.slice('/api/boutiques/'.length)).trim().toLowerCase();
+      if (!id || !boutiques[id]) return send(res, 404, { error: 'Boutique inconnue' });
+      if (boutiqueIds().length <= 1) return send(res, 400, { error: 'Impossible de supprimer la dernière boutique du réseau.' });
+      // Double confirmation : le client doit renvoyer l'identifiant exact (corps JSON { confirm } ou ?confirm=).
+      let confirm = '';
+      try { const body = await readJson(req); if (body && body.confirm != null) confirm = String(body.confirm); } catch (e) {}
+      if (!confirm) { const cu = u.searchParams.get('confirm'); if (cu) confirm = String(cu); }
+      if (confirm.trim().toLowerCase() !== id) return send(res, 400, { error: 'Confirmation invalide : renvoie l\'identifiant exact de la boutique.' });
+      const label = boutiques[id].label || id;
+      delete boutiques[id];                                             // registre des franchises
+      delete stock[id];                                                 // stock de la boutique
+      delete seqByB[id]; delete gtByB[id]; delete gtAvoirsByB[id]; delete clotureSeqByB[id];   // compteurs fiscaux operationnels
+      delete royaltiesRates[id]; delete royaltiesStatus[id];            // royalties
+      for (const t of Object.keys(sessions)) { if (sessions[t] && sessions[t].boutiqueId === id) delete sessions[t]; }  // revoquer les sessions du manager
+      rebuildAccounts();                                                // supprime le compte manager de la boutique
+      persist();
+      return send(res, 200, { ok: true, deleted: id, label: label });
+    }
+
     if ((req.method === 'GET' || req.method === 'POST') && path === '/api/my-boutique') {
       const bId = user.boutiqueId;
       if (!bId || !boutiques[bId]) return send(res, 403, { error: 'Reserve aux managers de boutique' });

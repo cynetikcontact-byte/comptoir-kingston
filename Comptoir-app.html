@@ -1488,7 +1488,8 @@ function setPayMode(m){ PAY_MODE=(m==='auto')?'auto':'manuel'; try{ localStorage
         franchUrlRow('Caisse / admin',base+'/')+
         franchUrlRow('Écran commandes',base+'/commande?boutique='+encodeURIComponent(b.id))+
         '</div>'+
-        '<div style="margin-top:10px"><button class="btn" data-act="editfranch" data-id="'+esc(b.id)+'">Modifier l’identité / le mot de passe</button></div>'+
+        '<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn" data-act="editfranch" data-id="'+esc(b.id)+'">Modifier l’identité / le mot de passe</button>'+
+        '<button class="btn" data-act="delfranch" data-id="'+esc(b.id)+'" data-label="'+esc(b.label||b.id)+'" style="color:#c0594a;border-color:#e3b4ab">Supprimer</button></div>'+
         '</div>';
     }).join('')||'<div class="muted" style="padding:14px">Aucune boutique pour le moment. Ajoute ta première franchise ci-dessus.</div>';
     el.innerHTML=cards;
@@ -2314,6 +2315,29 @@ function setPayMode(m){ PAY_MODE=(m==='auto')?'auto':'manuel'; try{ localStorage
       var sv=function(id,v){var n=document.getElementById(id);if(n)n.value=v||'';};
       sv('fr-id',bb.id);sv('fr-label',bb.label);sv('fr-name',s.name);sv('fr-siren',s.siren==='000000000'?'':s.siren);sv('fr-vat',s.vat);sv('fr-address',s.address);sv('fr-zip',s.zip);sv('fr-city',s.city);sv('fr-pass','');
       window.scrollTo(0,0);toast('Modifie les champs puis « Enregistrer la franchise »');return;
+    }
+    if(a==='delfranch'){
+      if(!API.on){toast('Connecte-toi au serveur');return;}
+      var did=el.getAttribute('data-id');var dlabel=el.getAttribute('data-label')||did;
+      openModal('<div class="modal-h" style="color:#c0594a">Supprimer la franchise</div><div class="modal-b">'+
+        '<div style="background:#fbeae6;border:1px solid #e3b4ab;border-radius:10px;padding:12px;font-size:13px;line-height:1.55;color:#8a3b30">⚠️ Tu es sur le point de supprimer <b>'+esc(dlabel)+'</b> (identifiant <b>'+esc(did)+'</b>).<br>Son accès manager et ses données opérationnelles (stock, compteurs de facturation) seront retirés du réseau. Les factures déjà émises restent archivées — obligation légale.</div>'+
+        '<label style="display:block;font-size:13px;margin:14px 0 6px">Pour confirmer, tape l’identifiant <b>'+esc(did)+'</b> ci-dessous :</label>'+
+        '<input id="delfr-confirm" type="text" autocomplete="off" spellcheck="false" placeholder="'+esc(did)+'" style="width:100%;padding:10px;border:1px solid var(--line);border-radius:8px;box-sizing:border-box;font-size:15px"/>'+
+        '<div style="display:flex;gap:10px;margin-top:16px"><button class="btn" style="flex:1" data-act="closemodal">Annuler</button>'+
+        '<button id="delfr-btn" class="btn" disabled data-act="delfranch-go" data-id="'+esc(did)+'" data-label="'+esc(dlabel)+'" style="flex:1;background:#c0594a;color:#fff;border-color:#c0594a;opacity:.55;cursor:not-allowed">Supprimer définitivement</button></div></div>');
+      setTimeout(function(){var inp=document.getElementById('delfr-confirm');var btn=document.getElementById('delfr-btn');if(inp){inp.focus();var chk=function(){var ok=inp.value.trim().toLowerCase()===String(did).toLowerCase();if(btn){btn.disabled=!ok;btn.style.opacity=ok?'1':'.55';btn.style.cursor=ok?'pointer':'not-allowed';}};inp.addEventListener('input',chk);inp.addEventListener('keydown',function(ev){if(ev.key==='Enter'&&btn&&!btn.disabled)btn.click();});}},60);
+      return;
+    }
+    if(a==='delfranch-go'){
+      var gid=el.getAttribute('data-id');var glabel=el.getAttribute('data-label')||gid;
+      var typed=((document.getElementById('delfr-confirm')||{}).value||'').trim().toLowerCase();
+      if(typed!==String(gid).toLowerCase()){toast('Le nom ne correspond pas');return;}
+      el.disabled=true;el.textContent='Suppression…';
+      fetch(API.base+'/api/boutiques/'+encodeURIComponent(gid),{method:'DELETE',headers:apiHeaders(),body:JSON.stringify({confirm:gid})})
+        .then(function(r){return r.json().catch(function(){return {};}).then(function(d){if(r.status===401){handleAuthFail();throw new Error('HTTP 401');}if(!r.ok)throw new Error(d.error||('HTTP '+r.status));return d;});})
+        .then(function(){closeModal();toast('Franchise « '+glabel+' » supprimée');franchData.loading=false;franchData.loaded=false;loadFranchises();})
+        .catch(function(e){toast('Échec : '+(e.message||e));var b=document.getElementById('delfr-btn');if(b){b.disabled=false;b.textContent='Supprimer définitivement';b.style.opacity='1';b.style.cursor='pointer';}});
+      return;
     }
     if(a==='copytxt'){
       var t=el.getAttribute('data-txt')||'';
