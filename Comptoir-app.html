@@ -939,9 +939,66 @@ table.tbl tr:hover td{background:#faf9f5;}
         '<table class="lots"><thead><tr><th>Lot</th><th>Quantité</th><th>Péremption</th><th>COA</th></tr></thead><tbody>'+lots+'</tbody></table></div>';
     }).join('');
     var accRows=acc.map(function(p){var low=p.stockU<15;return '<tr><td><b>'+p.name+'</b></td><td>'+p.cat+'</td><td>'+p.stockU+' u</td><td>'+(low?'<span class="tag tag-low">à réappro</span>':'<span class="tag tag-ok">OK</span>')+'</td></tr>';}).join('');
-    return '<div class="vhead"><div><h1>Stock — '+(BQNAME[st.boutiqueId]||st.boutique)+'</h1><p>Stock de la boutique sélectionnée (change la ville en haut à droite). Fleurs au gramme, par lot, avec péremption et COA.</p></div><div style="display:flex;gap:8px"><button class="btn" data-act="restockall">Réappro. tout</button><button class="btn btn-gold" data-act="recept">+ Réceptionner un lot</button></div></div>'+
+    var isAdm=(st.user&&st.user.role==='admin'&&API.on);
+    if(isAdm)setTimeout(ensureAdminStk,0);
+    var adminNet=isAdm?'<div id="astk-wrap" style="margin-bottom:24px"><div class="muted" style="padding:14px">Chargement de la vue réseau…</div></div>':'';
+    return '<div class="vhead"><div><h1>Stock'+(isAdm?' réseau':' — '+(BQNAME[st.boutiqueId]||st.boutique))+'</h1><p>'+(isAdm?'Vue admin : le stock et les mouvements de chaque franchisé. Plus bas, le détail de la boutique active et le comparatif.':'Stock de la boutique sélectionnée (change la ville en haut à droite). Fleurs au gramme, par lot, avec péremption et COA.')+'</p></div><div style="display:flex;gap:8px"><button class="btn" data-act="restockall">Réappro. tout</button><button class="btn btn-gold" data-act="recept">+ Réceptionner un lot</button></div></div>'+
+    adminNet+
     heatmap+
     '<h3 style="font-family:var(--serif);margin:26px 0 10px">Comparatif multi‑boutiques</h3>'+compareSection();
+  }
+
+  // ---------- Vue réseau du stock (admin) : stock détaillé + mouvements, par franchisé ----------
+  var adminStk={selLoading:false,netLoading:false,sel:'ALL',loadedSel:null,net:null,detail:null,moves:null};
+  function astkDate(iso){try{return new Date(iso).toLocaleString('fr-FR',{day:'2-digit',month:'2-digit',year:'2-digit',hour:'2-digit',minute:'2-digit'});}catch(e){return esc(iso||'');}}
+  function astkTag(q,unit){if(q<=0)return '<span class="tag tag-low">rupture</span>';var low=unit==='g'?q<=10:q<=3;return low?'<span class="tag tag-low">bas</span>':'<span class="tag tag-ok">OK</span>';}
+  function astkLabel(id){var n=(adminStk.net&&adminStk.net.boutiques)||[];for(var i=0;i<n.length;i++){if(n[i].id===id)return n[i].label;}return (BQNAME[id]||id);}
+  function ensureAdminStk(){
+    if(!(st.user&&st.user.role==='admin'&&API.on))return;
+    if(!adminStk.net&&!adminStk.netLoading)loadAdminStkNet();
+    if(adminStk.loadedSel!==adminStk.sel&&!adminStk.selLoading)loadAdminStkSel();
+    else renderAdminStk();
+  }
+  function loadAdminStkNet(){
+    adminStk.netLoading=true;
+    apiGet('/api/network/overview').then(function(d){adminStk.net=d;adminStk.netLoading=false;renderAdminStk();}).catch(function(){adminStk.netLoading=false;});
+  }
+  function loadAdminStkSel(){
+    adminStk.selLoading=true;renderAdminStk();
+    var sel=adminStk.sel;
+    var calls=[ apiGet('/api/stock/moves'+(sel!=='ALL'?('?boutique='+encodeURIComponent(sel)):'')).catch(function(){return {mouvements:[]};}),
+                (sel!=='ALL'?apiGet('/api/products?boutique='+encodeURIComponent(sel)).catch(function(){return null;}):Promise.resolve(null)) ];
+    Promise.all(calls).then(function(r){adminStk.moves=(r[0]&&r[0].mouvements)||[];adminStk.detail=r[1];adminStk.selLoading=false;adminStk.loadedSel=sel;renderAdminStk();});
+  }
+  function renderAdminStk(){
+    var wrap=document.getElementById('astk-wrap');if(!wrap)return;
+    var bqs=(adminStk.net&&adminStk.net.boutiques)||[];var sel=adminStk.sel;
+    var selBtns='<button class="toggle '+(sel==='ALL'?'on':'')+'" data-act="astk-sel" data-b="ALL">Toutes</button> '+bqs.map(function(b){var warn=(b.ruptures>0?' · '+b.ruptures+'⛔':'')+((b.stockBas>0)?' · '+b.stockBas+'⚠':'');return '<button class="toggle '+(sel===b.id?'on':'')+'" data-act="astk-sel" data-b="'+esc(b.id)+'">'+esc(b.label)+warn+'</button>';}).join(' ');
+    var content='';
+    if(sel==='ALL'){
+      var rows=bqs.map(function(b){return '<tr><td><b>'+esc(b.label)+'</b></td><td>'+b.produitsEnStock+'</td><td>'+(b.stockBas>0?'<span class="tag tag-low">'+b.stockBas+'</span>':'<span class="muted">0</span>')+'</td><td>'+(b.ruptures>0?'<span class="tag tag-low">'+b.ruptures+'</span>':'<span class="tag tag-ok">0</span>')+'</td><td style="text-align:right"><button class="toggle" data-act="astk-sel" data-b="'+esc(b.id)+'">Voir le détail</button></td></tr>';}).join('');
+      content='<table class="tbl"><thead><tr><th>Boutique</th><th>Produits en stock</th><th>Stock bas</th><th>Ruptures</th><th></th></tr></thead><tbody>'+(rows||'<tr><td colspan="5" class="muted" style="padding:12px">Aucune boutique.</td></tr>')+'</tbody></table>';
+    } else if(adminStk.selLoading&&!adminStk.detail){
+      content='<div class="muted" style="padding:14px">Chargement du stock…</div>';
+    } else {
+      var prods=(adminStk.detail&&adminStk.detail.products)||[];
+      var withQ=prods.map(function(p){var q=(p.unit==='g')?(p.stockG||0):(p.stockU||0);return {p:p,q:q};});
+      withQ.sort(function(a,b){return a.q-b.q;});
+      var prows=withQ.map(function(x){var p=x.p;return '<tr><td><b>'+esc(p.name)+'</b></td><td class="muted">'+esc(p.cat||'')+'</td><td>'+x.q+' '+(p.unit==='g'?'g':'u')+'</td><td>'+astkTag(x.q,p.unit)+'</td></tr>';}).join('');
+      content='<table class="tbl"><thead><tr><th>Produit</th><th>Catégorie</th><th>Quantité</th><th>Statut</th></tr></thead><tbody>'+(prows||'<tr><td colspan="4" class="muted" style="padding:12px">Aucun produit.</td></tr>')+'</tbody></table>';
+    }
+    var mv=adminStk.moves||[];
+    var mvRows=mv.slice(0,60).map(function(m){var q=(m.sens==='ajout'?'+':'−')+m.quantite+' '+m.unite;var col=m.sens==='ajout'?'#2f7d4f':'#b4452f';return '<tr><td class="muted" style="white-space:nowrap">'+astkDate(m.date)+'</td>'+(sel==='ALL'?'<td>'+esc(astkLabel(m.boutiqueId))+'</td>':'')+'<td><b>'+esc(m.produit||m.productId||'')+'</b></td><td style="color:'+col+';font-weight:700;white-space:nowrap">'+q+'</td><td>'+esc(m.motif||'')+'</td><td class="muted">'+esc(m.par||'')+'</td><td class="muted" style="white-space:nowrap">'+m.stockApres+' '+m.unite+'</td></tr>';}).join('');
+    var mvHead='<tr><th>Date</th>'+(sel==='ALL'?'<th>Boutique</th>':'')+'<th>Produit</th><th>Mouvement</th><th>Motif</th><th>Par</th><th>Stock après</th></tr>';
+    var mvNote=(mv.length>60)?'<div class="muted" style="font-size:11.5px;padding:6px 2px">Les 60 mouvements les plus récents sur '+mv.length+'.</div>':'';
+    var mvTable=(adminStk.selLoading&&!adminStk.moves)?'<div class="muted" style="padding:12px">Chargement des mouvements…</div>':('<table class="tbl"><thead>'+mvHead+'</thead><tbody>'+(mvRows||'<tr><td colspan="7" class="muted" style="padding:12px">Aucun mouvement enregistré.</td></tr>')+'</tbody></table>'+mvNote);
+    wrap.innerHTML='<div class="card" style="padding:16px">'+
+      '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px"><b style="font-family:var(--serif);font-size:16px">Stock réseau — par franchisé</b><span class="muted" style="font-size:11.5px">'+(sel==='ALL'?'Vue d’ensemble · touche une boutique pour son stock détaillé':'Détail de '+esc(astkLabel(sel)))+'</span></div>'+
+      '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px">'+selBtns+'</div>'+
+      content+
+      '<div style="font-family:var(--serif);font-size:15px;margin:20px 0 8px">Mouvements de stock'+(sel==='ALL'?' — toutes boutiques':' — '+esc(astkLabel(sel)))+'</div>'+
+      mvTable+
+      '</div>';
   }
 
   function viewFidelite(){
@@ -2371,6 +2428,7 @@ function setPayMode(m){ PAY_MODE=(m==='auto')?'auto':'manuel'; try{ localStorage
       return;
     }
     if(a==='recok'){var rp=pById($('#rc-prod').value);var lot=($('#rc-lot').value||'LOT-NEW').trim();var gg=parseInt($('#rc-g').value,10)||0;var exp=($('#rc-exp').value||'12/2027').trim();rp.lots=rp.lots||[];rp.lots.push({lot:lot,g:gg,exp:exp,coa:'COA-'+Math.floor(Math.random()*9000+1000)});saveStock(st.boutiqueId);closeModal();render();toast('Lot '+lot+' réceptionné (+'+gg+' g) · '+(BQNAME[st.boutiqueId]||''));return;}
+    if(a==='astk-sel'){adminStk.sel=el.getAttribute('data-b');adminStk.loadedSel=null;adminStk.detail=null;renderAdminStk();loadAdminStkSel();return;}
     if(a==='cmpbq'){var bb=el.getAttribute('data-b');var ci=st.compare.indexOf(bb);if(ci>=0)st.compare.splice(ci,1);else st.compare.push(bb);render();return;}
     if(a==='apiconnect'){doApiConnect();return;}
     if(a==='apidisconnect'){API.on=false;API.base='';if(LOCAL_SNAPSHOT)products=JSON.parse(JSON.stringify(LOCAL_SNAPSHOT));st.cart=[];st.client=null;render();toast('Déconnecté — retour aux données locales');return;}
