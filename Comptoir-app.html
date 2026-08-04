@@ -691,6 +691,18 @@ table.tbl tr:hover td{background:#faf9f5;}
   function cartTotal(){return Math.round((cartBrut()-discountEur())*100)/100;}
   function entryPrice(p){return p.unit==='g'?p.tiers[0][1]:p.price;}
   function crown(c){return '<svg width="16" height="12" viewBox="0 0 26 20" aria-hidden="true" style="vertical-align:-1px"><path d="M2 17 L4 6 L9 12 L13 4 L17 12 L22 6 L24 17 Z" fill="'+(c||'#d8b252')+'"/></svg>';}
+  function forcePwModal(ukey,currentPass,d){
+    window.__fpw={ukey:ukey,cur:currentPass,d:d};
+    openModal('<div class="modal-h">Sécurise ton accès</div><div class="modal-b">'+
+      '<div class="muted" style="font-size:13px;line-height:1.55;margin-bottom:12px">Ce compte utilise encore le mot de passe par défaut. Pour la sécurité de ta boutique, choisis un mot de passe personnel avant de continuer.</div>'+
+      '<label style="display:block;font-size:13px;margin:0 0 6px">Nouveau mot de passe <span class="muted">(6 caractères min.)</span></label>'+
+      '<input id="fpw-new" type="password" autocomplete="new-password" style="width:100%;padding:10px;border:1px solid var(--line);border-radius:8px;box-sizing:border-box;font-size:15px;margin-bottom:10px"/>'+
+      '<label style="display:block;font-size:13px;margin:0 0 6px">Confirme le mot de passe</label>'+
+      '<input id="fpw-confirm" type="password" autocomplete="new-password" style="width:100%;padding:10px;border:1px solid var(--line);border-radius:8px;box-sizing:border-box;font-size:15px"/>'+
+      '<div id="fpw-err" class="muted" style="font-size:12.5px;min-height:16px;margin-top:8px"></div>'+
+      '<button class="btn btn-gold" data-act="fpw-go" style="width:100%;margin-top:6px">Enregistrer et continuer</button></div>');
+    setTimeout(function(){var e=document.getElementById('fpw-new');var c=document.getElementById('fpw-confirm');if(e)e.focus();if(c)c.addEventListener('keydown',function(ev){if(ev.key==='Enter'){var b=document.querySelector('[data-act=fpw-go]');if(b)b.click();}});},60);
+  }
   function toast(m){toastEl.textContent=m;toastEl.className='toast show';setTimeout(function(){toastEl.className='toast';},2200);}
   function esc(s){return (''+s).replace(/&/g,'&amp;').replace(/</g,'&lt;');}
 
@@ -2194,8 +2206,21 @@ function setPayMode(m){ PAY_MODE=(m==='auto')?'auto':'manuel'; try{ localStorage
       var er=document.getElementById('lg-err');if(er){er.style.color='#8a8273';er.textContent='Connexion…';}
       fetch((API.base||'')+'/api/login',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({user:ukey,password:pass})})
         .then(function(r){return r.json().then(function(d){if(!r.ok)throw new Error(d.error||'Identifiants invalides');return d;});})
-        .then(function(d){var meta=ACCOUNTS[ukey]||{};st.user={name:d.name,role:d.role,roleLabel:meta.roleLabel||d.role,boutiqueId:d.boutiqueId,initials:meta.initials||'',token:d.token};st.boutique=d.boutiqueId?boutiqueName(d.boutiqueId):'Réseau (toutes boutiques)';API.token=d.token;saveSession();render();autoConnect();toast('Bienvenue, '+d.name);})
+        .then(function(d){API.token=d.token;if(d.mustChangePassword){forcePwModal(ukey,pass,d);return;}var meta=ACCOUNTS[ukey]||{};st.user={name:d.name,role:d.role,roleLabel:meta.roleLabel||d.role,boutiqueId:d.boutiqueId,initials:meta.initials||'',token:d.token};st.boutique=d.boutiqueId?boutiqueName(d.boutiqueId):'Réseau (toutes boutiques)';saveSession();render();autoConnect();toast('Bienvenue, '+d.name);})
         .catch(function(e){var e2=document.getElementById('lg-err');if(e2){e2.style.color='#e0917a';e2.textContent=(e.message||'Erreur de connexion');}});
+      return;
+    }
+    if(a==='fpw-go'){
+      var ctx=window.__fpw||{};var nw=((document.getElementById('fpw-new')||{}).value)||'';var cf=((document.getElementById('fpw-confirm')||{}).value)||'';var er=document.getElementById('fpw-err');
+      if(nw.length<6){if(er){er.style.color='#e0917a';er.textContent='6 caractères minimum.';}return;}
+      if(nw!==cf){if(er){er.style.color='#e0917a';er.textContent='Les deux mots de passe ne correspondent pas.';}return;}
+      el.disabled=true;el.textContent='Enregistrement…';
+      apiPost('/api/account/password',{currentPassword:ctx.cur,newPassword:nw}).then(function(){
+        var d=ctx.d||{};var meta=ACCOUNTS[ctx.ukey]||{};
+        st.user={name:d.name,role:d.role,roleLabel:meta.roleLabel||d.role,boutiqueId:d.boutiqueId,initials:meta.initials||'',token:d.token};
+        st.boutique=d.boutiqueId?boutiqueName(d.boutiqueId):'Réseau (toutes boutiques)';
+        saveSession();closeModal();render();autoConnect();toast('Mot de passe mis à jour · Bienvenue, '+d.name);
+      }).catch(function(e){if(er){er.style.color='#e0917a';er.textContent=(e&&e.message)||'Erreur';}el.disabled=false;el.textContent='Enregistrer et continuer';});
       return;
     }
     if(a==='logout'){clearSession();st.user=null;st.client=null;st.cart=[];API.on=false;API.token='';render();return;}

@@ -127,17 +127,21 @@ const DEFAULT_PASS = 'kingston';
 let accounts = {};
 const credentials = {};
 let usingDefaultPass = false;
+let adminCred = null;   // mot de passe admin PERSISTE (defini via /api/account/password) ; sinon COMPTOIR_PASS_ADMIN, sinon defaut
 function rebuildAccounts() {
   for (const k of Object.keys(credentials)) delete credentials[k];
   accounts = { admin: { name: 'Lenny K.', role: 'admin', boutiqueId: null } };
-  { const p = process.env.COMPTOIR_PASS_ADMIN; if (!p) usingDefaultPass = true; credentials.admin = { hash: hashPass(p || DEFAULT_PASS) }; }
+  { const p = process.env.COMPTOIR_PASS_ADMIN;
+    if (p) credentials.admin = { hash: hashPass(p) };
+    else if (adminCred && adminCred.salt) credentials.admin = { stored: adminCred };
+    else { credentials.admin = { hash: hashPass(DEFAULT_PASS), isDefault: true }; usingDefaultPass = true; } }
   for (const id of boutiqueIds()) {
     const b = boutiques[id];
     accounts[id] = { name: 'Manager ' + (b.label || id), role: 'manager', boutiqueId: id };
     const envp = process.env['COMPTOIR_PASS_' + id.toUpperCase()];
     if (envp) credentials[id] = { hash: hashPass(envp) };
     else if (b.cred && b.cred.salt) credentials[id] = { stored: b.cred };
-    else { credentials[id] = { hash: hashPass(DEFAULT_PASS) }; usingDefaultPass = true; }
+    else { credentials[id] = { hash: hashPass(DEFAULT_PASS), isDefault: true }; usingDefaultPass = true; }
   }
 }
 rebuildAccounts();
@@ -507,7 +511,7 @@ function persist() {
       // Écriture ATOMIQUE : fichier temporaire puis renommage -> jamais de fichier tronqué en cas de coupure.
       // NB : fiscalKey n'est PLUS écrite ici (stockée à part, fichier protégé).
       const tmp = DATA_FILE + '.tmp';
-      fs.writeFileSync(tmp, JSON.stringify({ v: 1, savedAt: new Date().toISOString(), pointsPerEuro: POINTS_PER_EURO, hideBaseCatalog, customProducts, stock, boutiques, invoiceSeq, lastHash, invoices, orderSeq, orders, fiscalEvents, fiscalSeq, lastFiscalSig, clotureSeq, gtPerpetuel, gtPerpetuelAvoirs, seqByB, gtByB, gtAvoirsByB, royaltiesRates, royaltiesStatus, clotureSeqByB, supplyOrders, supplySeq, stockMoves, proRate, pontDevices, sessions, proProducts, lastProSync, proLots, entreprise }), 'utf8');
+      fs.writeFileSync(tmp, JSON.stringify({ v: 1, savedAt: new Date().toISOString(), pointsPerEuro: POINTS_PER_EURO, hideBaseCatalog, customProducts, stock, boutiques, invoiceSeq, lastHash, invoices, orderSeq, orders, fiscalEvents, fiscalSeq, lastFiscalSig, clotureSeq, gtPerpetuel, gtPerpetuelAvoirs, seqByB, gtByB, gtAvoirsByB, royaltiesRates, royaltiesStatus, clotureSeqByB, supplyOrders, supplySeq, stockMoves, proRate, pontDevices, sessions, proProducts, lastProSync, proLots, entreprise, adminCred }), 'utf8');
       fs.renameSync(tmp, DATA_FILE);
     } catch (e) { console.error('Persistance impossible :', e.message); }
   }, 200);
@@ -517,6 +521,7 @@ function loadPersisted() {
   try {
     if (!fs.existsSync(DATA_FILE)) return;
     const d = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
+    if (d.adminCred && typeof d.adminCred === 'object') adminCred = d.adminCred;   // mot de passe admin persiste (avant rebuildAccounts)
     if (typeof d.pointsPerEuro === 'number') { POINTS_PER_EURO = d.pointsPerEuro; if (loyalty) loyalty.pointsPerEuro = POINTS_PER_EURO; }
     if (typeof d.hideBaseCatalog === 'boolean') hideBaseCatalog = d.hideBaseCatalog;
     if (Array.isArray(d.customProducts)) { customProducts = d.customProducts; customProducts.forEach(ensureStock); }
@@ -1117,7 +1122,8 @@ const server = http.createServer(async (req, res) => {
     loginOk(gate.ip);
     const token = newSession(uname);
     const a = accounts[uname];
-    return send(res, 200, { token: token, name: a.name, role: a.role, boutiqueId: a.boutiqueId });
+    const mustChangePassword = !!(credentials[uname] && credentials[uname].isDefault);
+    return send(res, 200, { token: token, name: a.name, role: a.role, boutiqueId: a.boutiqueId, mustChangePassword: mustChangePassword });
   }
 
   // ---- Installateur AUTO du pont (libre-service) : source du pont + installateur pre-rempli par jeton ----
@@ -1748,6 +1754,22 @@ const server = http.createServer(async (req, res) => {
       rebuildAccounts();                                                // supprime le compte manager de la boutique
       persist();
       return send(res, 200, { ok: true, deleted: id, label: label });
+    }
+
+    // Changer SON PROPRE mot de passe (tout compte connecte). Sert au « mot de passe obligatoire a la 1re connexion ».
+    if (req.method === 'POST' && path === '/api/account/password') {
+      const body = await readJson(req);
+      const uname = user.role === 'admin' ? 'admin' : user.boutiqueId;
+      if (!uname || !credentials[uname]) return send(res, 400, { error: 'Compte inconnu' });
+      if (!checkPass(uname, (body && body.currentPassword) || '')) return send(res, 403, { error: 'Mot de passe actuel incorrect' });
+      const nw = String((body && body.newPassword) || '');
+      if (nw.length < 6) return send(res, 400, { error: 'Nouveau mot de passe : 6 caractères minimum.' });
+      if (nw.toLowerCase() === DEFAULT_PASS) return send(res, 400, { error: 'Choisis un mot de passe différent de celui par défaut.' });
+      if (user.role === 'admin') { adminCred = makeStoredPass(nw); }
+      else { if (!boutiques[uname]) return send(res, 404, { error: 'Boutique inconnue' }); boutiques[uname].cred = makeStoredPass(nw); }
+      rebuildAccounts();
+      persist();
+      return send(res, 200, { ok: true });
     }
 
     if ((req.method === 'GET' || req.method === 'POST') && path === '/api/my-boutique') {
