@@ -973,10 +973,10 @@ table.tbl tr:hover td{background:#faf9f5;}
   function renderAdminStk(){
     var wrap=document.getElementById('astk-wrap');if(!wrap)return;
     var bqs=(adminStk.net&&adminStk.net.boutiques)||[];var sel=adminStk.sel;
-    var selBtns='<button class="toggle '+(sel==='ALL'?'on':'')+'" data-act="astk-sel" data-b="ALL">Toutes</button> '+bqs.map(function(b){var warn=(b.ruptures>0?' · '+b.ruptures+'⛔':'')+((b.stockBas>0)?' · '+b.stockBas+'⚠':'');return '<button class="toggle '+(sel===b.id?'on':'')+'" data-act="astk-sel" data-b="'+esc(b.id)+'">'+esc(b.label)+warn+'</button>';}).join(' ');
+    var selBtns='<button class="toggle '+(sel==='ALL'?'on':'')+'" data-act="astk-sel" data-astk="ALL">Toutes</button> '+bqs.map(function(b){var warn=(b.ruptures>0?' · '+b.ruptures+'⛔':'')+((b.stockBas>0)?' · '+b.stockBas+'⚠':'');return '<button class="toggle '+(sel===b.id?'on':'')+'" data-act="astk-sel" data-astk="'+esc(b.id)+'">'+esc(b.label)+warn+'</button>';}).join(' ');
     var content='';
     if(sel==='ALL'){
-      var rows=bqs.map(function(b){return '<tr><td><b>'+esc(b.label)+'</b></td><td>'+b.produitsEnStock+'</td><td>'+(b.stockBas>0?'<span class="tag tag-low">'+b.stockBas+'</span>':'<span class="muted">0</span>')+'</td><td>'+(b.ruptures>0?'<span class="tag tag-low">'+b.ruptures+'</span>':'<span class="tag tag-ok">0</span>')+'</td><td style="text-align:right"><button class="toggle" data-act="astk-sel" data-b="'+esc(b.id)+'">Voir le détail</button></td></tr>';}).join('');
+      var rows=bqs.map(function(b){return '<tr><td><b>'+esc(b.label)+'</b></td><td>'+b.produitsEnStock+'</td><td>'+(b.stockBas>0?'<span class="tag tag-low">'+b.stockBas+'</span>':'<span class="muted">0</span>')+'</td><td>'+(b.ruptures>0?'<span class="tag tag-low">'+b.ruptures+'</span>':'<span class="tag tag-ok">0</span>')+'</td><td style="text-align:right"><button class="toggle" data-act="astk-sel" data-astk="'+esc(b.id)+'">Voir le détail</button></td></tr>';}).join('');
       content='<table class="tbl"><thead><tr><th>Boutique</th><th>Produits en stock</th><th>Stock bas</th><th>Ruptures</th><th></th></tr></thead><tbody>'+(rows||'<tr><td colspan="5" class="muted" style="padding:12px">Aucune boutique.</td></tr>')+'</tbody></table>';
     } else if(adminStk.selLoading&&!adminStk.detail){
       content='<div class="muted" style="padding:14px">Chargement du stock…</div>';
@@ -2428,7 +2428,7 @@ function setPayMode(m){ PAY_MODE=(m==='auto')?'auto':'manuel'; try{ localStorage
       return;
     }
     if(a==='recok'){var rp=pById($('#rc-prod').value);var lot=($('#rc-lot').value||'LOT-NEW').trim();var gg=parseInt($('#rc-g').value,10)||0;var exp=($('#rc-exp').value||'12/2027').trim();rp.lots=rp.lots||[];rp.lots.push({lot:lot,g:gg,exp:exp,coa:'COA-'+Math.floor(Math.random()*9000+1000)});saveStock(st.boutiqueId);closeModal();render();toast('Lot '+lot+' réceptionné (+'+gg+' g) · '+(BQNAME[st.boutiqueId]||''));return;}
-    if(a==='astk-sel'){adminStk.sel=el.getAttribute('data-b');adminStk.loadedSel=null;adminStk.detail=null;renderAdminStk();loadAdminStkSel();return;}
+    if(a==='astk-sel'){adminStk.sel=el.getAttribute('data-astk');adminStk.loadedSel=null;adminStk.detail=null;renderAdminStk();loadAdminStkSel();return;}
     if(a==='cmpbq'){var bb=el.getAttribute('data-b');var ci=st.compare.indexOf(bb);if(ci>=0)st.compare.splice(ci,1);else st.compare.push(bb);render();return;}
     if(a==='apiconnect'){doApiConnect();return;}
     if(a==='apidisconnect'){API.on=false;API.base='';if(LOCAL_SNAPSHOT)products=JSON.parse(JSON.stringify(LOCAL_SNAPSHOT));st.cart=[];st.client=null;render();toast('Déconnecté — retour aux données locales');return;}
