@@ -583,7 +583,7 @@ table.tbl tr:hover td{background:#faf9f5;}
     else{o.price=p.price;o.stockU=p.stockU||0;if(p.packs&&p.packs.length)o.packs=p.packs;}
     return o;
   }
-  function reloadProducts(cb){ if(!API.on){if(cb)cb();return;} apiGet('/api/products').then(function(d){ products=(d.products||[]).map(mapServerProduct); if(cb)cb(); if(st.view==='produits'||st.view==='pos')render(); }).catch(function(){if(cb)cb();}); }
+  function reloadProducts(cb){ if(!API.on){if(cb)cb();return;} var _q=(st.user&&st.user.role==='admin')?('?boutique='+encodeURIComponent(st.prodBtq||st.boutiqueId||'aix')):''; apiGet('/api/products'+_q).then(function(d){ products=(d.products||[]).map(mapServerProduct); if(cb)cb(); if(st.view==='produits'||st.view==='pos')render(); }).catch(function(){if(cb)cb();}); }
   function doApiConnect(){
     API.base=(document.getElementById('rg-api-url').value||'').trim().replace(/\/$/,'');
     API.token=(document.getElementById('rg-api-token').value||'').trim();
@@ -912,10 +912,10 @@ table.tbl tr:hover td{background:#faf9f5;}
     if(__bqCache||!API.on||!(st.user&&st.user.role==='admin')){cb(__bqCache||[],false);return;}
     apiGet('/api/boutiques').then(function(d){__bqCache=((d&&d.boutiques)||[]).map(function(b){return{id:b.id,label:b.label||b.id};});cb(__bqCache,true);}).catch(function(){cb([],false);});
   }
-  function bqLabel(id){ if(__bqCache){for(var i=0;i<__bqCache.length;i++){if(__bqCache[i].id===id)return __bqCache[i].label;}} return BQNAME[id]||id; }
+  function bqLabelFull(id){ if(__bqCache){for(var i=0;i<__bqCache.length;i++){if(__bqCache[i].id===id)return __bqCache[i].label;}} return BQNAME[id]||id; }
   function viewProduits(){
     if(st.user&&st.user.role==='admin'&&API.on)setTimeout(function(){ensureBqList(function(_l,fetched){if(fetched&&st.view==='produits')render();});},0);
-    var rows=products.map(function(p){
+    var prodRow=function(p){
       var stock=p.unit==='g'?(totalStockG(p)+' g'):((p.stockU||0)+' u');
       var detail=p.unit==='g'
         ? 'Paliers : '+(p.tiers||[]).map(function(t){return t[0]+' g = '+eur(t[1]);}).join(' · ')
@@ -929,20 +929,36 @@ table.tbl tr:hover td{background:#faf9f5;}
       var scopeTag=!p.custom
         ? '<span class="tag" style="font-size:10.5px">catalogue de base</span>'
         : (p.boutiqueId
-          ? '<span class="tag tag-ok" style="font-size:10.5px">'+(isMine?'ma boutique':('boutique '+esc(bqLabel(p.boutiqueId))))+'</span>'
+          ? '<span class="tag tag-ok" style="font-size:10.5px">'+(isMine?'ma boutique':('boutique '+esc(bqLabelFull(p.boutiqueId))))+'</span>'
           : '<span class="tag" style="font-size:10.5px">catalogue KINGSTON</span>');
       var actions=(canEdit
         ? '<button class="toggle" data-act="editprod" data-id="'+p.id+'">Modifier</button><button class="toggle" data-act="delprod" data-id="'+p.id+'" style="color:#b4452f;border-color:#e7c4bb">Supprimer</button>'
         : '')+scopeTag;
       return '<div class="prow" style="gap:12px"><div style="display:flex;gap:12px;align-items:center;flex:1;min-width:220px">'+thumb+'<div><div style="font-weight:700">'+esc(p.name)+'</div><div class="muted" style="font-size:11.5px">'+esc(p.cat)+' · '+stock+' en stock</div><div class="muted" style="font-size:11px;margin-top:2px">'+detail+'</div></div></div>'+
         '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">'+actions+'</div></div>';
-    }).join('');
+    };
     var note=API.on?'':'<div class="net-note" style="margin-bottom:14px">'+crown('#b8902f')+' Connecte le serveur (Réglages) pour ajouter des produits qui se sauvegardent et apparaissent sur la borne.</div>';
     var sub=(st.user&&st.user.role==='manager')
       ? 'Le catalogue KINGSTON, plus TES produits à toi (ex. café, snacks…) : ce que tu ajoutes ici n\'apparaît QUE dans ta boutique, en caisse et sur ta borne.'
       : 'Ton catalogue. Les produits que tu ajoutes ici sont sauvegardés et apparaissent en caisse ET sur la borne.';
+    var isMgrV=st.user&&st.user.role==='manager';
+    var isAdmV=st.user&&st.user.role==='admin';
+    var curB=isAdmV?(st.prodBtq||st.boutiqueId||'aix'):(st.user?st.user.boutiqueId:'');
+    var bqProds=products.filter(function(p){return !!p.boutiqueId;});
+    var netProds=products.filter(function(p){return !p.boutiqueId;});
+    var selRow='';
+    if(isAdmV&&API.on&&(__bqCache||[]).length){
+      selRow='<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:12px"><span class="muted" style="font-size:12px;margin-right:4px">Boutique :</span>'+
+        (__bqCache||[]).map(function(b){return '<button class="toggle '+(curB===b.id?'on':'')+'" data-act="prodbtq-sel" data-pb="'+esc(b.id)+'">'+esc(b.label||b.id)+'</button>';}).join(' ')+'</div>';
+    }
+    var bqTitle=isMgrV?'🏪 Produits de ma boutique':('🏪 Produits propres à '+esc(bqLabelFull(curB)));
+    var bqEmpty=isMgrV?'Aucun produit propre à ta boutique pour le moment. Clique « + Ajouter un produit » : il apparaîtra ici, et uniquement chez toi.':'Aucun produit propre à cette boutique.';
+    var secB='<h3 style="font-family:var(--serif);margin:2px 0 10px">'+bqTitle+' <span class="muted" style="font-size:12.5px;font-weight:400">('+bqProds.length+')</span></h3>'+
+      '<div class="card" style="margin-bottom:18px">'+(bqProds.map(prodRow).join('')||'<div class="muted" style="padding:14px">'+bqEmpty+'</div>')+'</div>';
+    var secN='<h3 style="font-family:var(--serif);margin:16px 0 10px">'+crown('#b8902f')+' Catalogue KINGSTON <span class="muted" style="font-size:12.5px;font-weight:400">('+netProds.length+' — commun à tout le réseau)</span></h3>'+
+      '<div class="card">'+(netProds.map(prodRow).join('')||'<div class="muted" style="padding:14px">Aucun produit pour le moment.</div>')+'</div>';
     return '<div class="vhead"><div><h1>Produits</h1><p>'+sub+'</p></div>'+(API.on?'<button class="btn btn-gold" data-act="openprod">+ Ajouter un produit</button>':'')+'</div>'+
-      note+'<div class="card">'+(rows||'<div class="muted" style="padding:14px">Aucun produit pour le moment.</div>')+'</div>';
+      note+selRow+secB+secN;
   }
 
   function hmModal(pid){
@@ -2121,7 +2137,7 @@ function setPayMode(m){ PAY_MODE=(m==='auto')?'auto':'manuel'; try{ localStorage
     if(st.user&&st.user.role==='admin'){
       if(f.editId){
         var _pe=pById(f.editId);
-        scopeBlock='<div class="muted" style="font-size:12px;margin:-2px 0 10px">'+((_pe&&_pe.boutiqueId)?('🏪 Produit propre à : '+esc(bqLabel(_pe.boutiqueId))):'Catalogue : tout le réseau KINGSTON')+'</div>';
+        scopeBlock='<div class="muted" style="font-size:12px;margin:-2px 0 10px">'+((_pe&&_pe.boutiqueId)?('🏪 Produit propre à : '+esc(bqLabelFull(_pe.boutiqueId))):'Catalogue : tout le réseau KINGSTON')+'</div>';
       }else{
         scopeBlock='<div class="fld"><label>Disponible dans</label><select id="pf-scope" style="width:100%">'+
           '<option value="">Tout le réseau KINGSTON</option>'+
@@ -2703,6 +2719,7 @@ function setPayMode(m){ PAY_MODE=(m==='auto')?'auto':'manuel'; try{ localStorage
     if(a==='exportfec'){toast('Export FEC généré (démo)');return;}
     if(a==='jperiod'){st.jperiod=el.getAttribute('data-p');journalData.loaded=false;render();return;}
     if(a==='jbtq-sel'){st.jbtq=el.getAttribute('data-jb');journalData.loaded=false;render();return;}
+    if(a==='prodbtq-sel'){st.prodBtq=el.getAttribute('data-pb');reloadProducts();return;}
     if(a==='jday'){var dv=(document.getElementById('jday')||{}).value||'';if(!dv){toast('Choisis une date');return;}st.jday=dv;st.jperiod='day';journalData.loaded=false;render();return;}
     if(a==='jrange'){var jf=(document.getElementById('jfrom')||{}).value||'';var jt=(document.getElementById('jto')||{}).value||'';if(!jf&&!jt){toast('Choisis au moins une date');return;}st.jfrom=jf;st.jto=jt;st.jperiod='range';journalData.loaded=false;render();return;}
     if(a==='jcsv'){dlAuth('/api/journal/export.csv'+jQS(),'journal-kingston.csv');return;}
@@ -2738,7 +2755,7 @@ function setPayMode(m){ PAY_MODE=(m==='auto')?'auto':'manuel'; try{ localStorage
   }
 
   // boutique selector
-  $("#boutiqueSel").addEventListener('change',function(e){var nid=bIdOf(e.target.value);st.netScope=!nid;if(nid&&!API.on){saveStock(st.boutiqueId);st.boutiqueId=nid;loadStock(nid);}else if(nid){st.boutiqueId=nid;}st.boutique=e.target.value;render();toast('Boutique : '+e.target.value);});
+  $("#boutiqueSel").addEventListener('change',function(e){var nid=bIdOf(e.target.value);st.netScope=!nid;if(nid&&!API.on){saveStock(st.boutiqueId);st.boutiqueId=nid;loadStock(nid);}else if(nid){st.boutiqueId=nid;}st.boutique=e.target.value;if(API.on)reloadProducts();render();toast('Boutique : '+e.target.value);});
   var custSearchTimer=null;
   document.body.addEventListener('input',function(e){
     if(e.target&&e.target.id==='pos-search'){ st.posSearch=e.target.value; var g=document.querySelector('.pgrid'); if(g){g.innerHTML=posGrid();} return; }
