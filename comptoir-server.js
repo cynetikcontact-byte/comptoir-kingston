@@ -1903,13 +1903,19 @@ const server = http.createServer(async (req, res) => {
       const b = boutiques[bId];
       if (req.method === 'GET') {
         const sg = b.seller || {};
-        return send(res, 200, { boutiqueId: bId, label: b.label || bId, seller: { name: sg.name || '', siren: sg.siren || '', vat: sg.vat || '', address: sg.address || '', zip: sg.zip || '', city: sg.city || '', phone: sg.phone || '', contact: sg.contact || '' } });
+        return send(res, 200, { boutiqueId: bId, label: b.label || bId, email: b.email || '', seller: { name: sg.name || '', siren: sg.siren || '', vat: sg.vat || '', address: sg.address || '', zip: sg.zip || '', city: sg.city || '', phone: sg.phone || '', contact: sg.contact || '' } });
       }
       const body = await readJson(req);
       if (body.newPassword) {
         if (!checkPass(bId, body.currentPassword || '')) return send(res, 403, { error: 'Mot de passe actuel incorrect' });
-        if (String(body.newPassword).length < 4) return send(res, 400, { error: 'Nouveau mot de passe trop court (4 caracteres minimum)' });
-        b.cred = makeStoredPass(body.newPassword);
+        if (String(body.newPassword).length < 6) return send(res, 400, { error: 'Nouveau mot de passe : 6 caractères minimum.' });
+        if (String(body.newPassword).toLowerCase() === DEFAULT_PASS) return send(res, 400, { error: 'Choisis un mot de passe différent de celui par défaut.' });
+        b.cred = makeStoredPass(body.newPassword); b.mustChangePw = false;
+      }
+      if (body.email !== undefined) {                                   // e-mail de recuperation, modifiable depuis « Mon compte »
+        const em = String(body.email || '').trim();
+        if (em && !ktValidEmail(em)) return send(res, 400, { error: 'E-mail invalide.' });
+        b.email = em;
       }
       const s = b.seller || {};
       const setIf = (k, val) => { if (val !== undefined && val !== null) s[k] = String(val).trim(); };
@@ -1920,7 +1926,7 @@ const server = http.createServer(async (req, res) => {
       b.seller = s;
       rebuildAccounts();
       persist();
-      return send(res, 200, { ok: true, seller: b.seller, passwordChanged: !!body.newPassword });
+      return send(res, 200, { ok: true, seller: b.seller, email: b.email || '', passwordChanged: !!body.newPassword });
     }
 
 
