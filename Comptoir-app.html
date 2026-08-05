@@ -577,6 +577,7 @@ table.tbl tr:hover td{background:#faf9f5;}
   // Convertit un produit renvoye par le serveur en produit local (photo, packs, desc, stock, perso).
   function mapServerProduct(p){
     var o={id:p.id,name:p.name,cat:p.cat,unit:p.unit,onBorne:true,onWeb:true,cbd:p.desc||p.cat,img:p.img||'',desc:p.desc||'',custom:!!p.custom};
+    if(p.boutiqueId)o.boutiqueId=p.boutiqueId;   // produit du catalogue secondaire d'une boutique
     if(p.vat!=null)o.vat=p.vat;
     if(p.unit==='g'){o.tiers=p.tiers||[];o.stockG=p.stockG||0;o.lots=[{lot:'serveur',g:p.stockG||0,exp:'—',coa:'—'}];}
     else{o.price=p.price;o.stockU=p.stockU||0;if(p.packs&&p.packs.length)o.packs=p.packs;}
@@ -906,7 +907,14 @@ table.tbl tr:hover td{background:#faf9f5;}
       '<div class="tk-pay"><button class="btn btn-gold" data-act="pay" data-m="Carte bancaire">Carte bancaire</button><button class="btn" data-act="pay" data-m="Espèces">Espèces</button></div></div></div>'+tkbar+'</div>';
   }
 
+  var __bqCache=null;
+  function ensureBqList(cb){
+    if(__bqCache||!API.on||!(st.user&&st.user.role==='admin')){cb(__bqCache||[],false);return;}
+    apiGet('/api/boutiques').then(function(d){__bqCache=((d&&d.boutiques)||[]).map(function(b){return{id:b.id,label:b.label||b.id};});cb(__bqCache,true);}).catch(function(){cb([],false);});
+  }
+  function bqLabel(id){ if(__bqCache){for(var i=0;i<__bqCache.length;i++){if(__bqCache[i].id===id)return __bqCache[i].label;}} return BQNAME[id]||id; }
   function viewProduits(){
+    if(st.user&&st.user.role==='admin'&&API.on)setTimeout(function(){ensureBqList(function(_l,fetched){if(fetched&&st.view==='produits')render();});},0);
     var rows=products.map(function(p){
       var stock=p.unit==='g'?(totalStockG(p)+' g'):((p.stockU||0)+' u');
       var detail=p.unit==='g'
@@ -915,14 +923,25 @@ table.tbl tr:hover td{background:#faf9f5;}
       var thumb=p.img
         ? '<div style="width:52px;height:52px;border-radius:9px;background:#f5f3ec center/contain no-repeat;border:1px solid var(--line);background-image:url(\''+esc(p.img)+'\');flex:0 0 52px"></div>'
         : '<div style="width:48px;height:48px;border-radius:9px;background:var(--ink);flex:0 0 48px;display:flex;align-items:center;justify-content:center;color:var(--muted)">'+(p.unit==='g'?'g':'u')+'</div>';
-      var actions=p.custom
+      var isAdmin=st.user&&st.user.role==='admin';
+      var isMine=st.user&&st.user.role==='manager'&&p.boutiqueId===st.user.boutiqueId;
+      var canEdit=p.custom&&(isAdmin||isMine);
+      var scopeTag=!p.custom
+        ? '<span class="tag" style="font-size:10.5px">catalogue de base</span>'
+        : (p.boutiqueId
+          ? '<span class="tag tag-ok" style="font-size:10.5px">'+(isMine?'ma boutique':('boutique '+esc(bqLabel(p.boutiqueId))))+'</span>'
+          : '<span class="tag" style="font-size:10.5px">catalogue KINGSTON</span>');
+      var actions=(canEdit
         ? '<button class="toggle" data-act="editprod" data-id="'+p.id+'">Modifier</button><button class="toggle" data-act="delprod" data-id="'+p.id+'" style="color:#b4452f;border-color:#e7c4bb">Supprimer</button>'
-        : '<span class="tag" style="font-size:10.5px">catalogue de base</span>';
+        : '')+scopeTag;
       return '<div class="prow" style="gap:12px"><div style="display:flex;gap:12px;align-items:center;flex:1;min-width:220px">'+thumb+'<div><div style="font-weight:700">'+esc(p.name)+'</div><div class="muted" style="font-size:11.5px">'+esc(p.cat)+' · '+stock+' en stock</div><div class="muted" style="font-size:11px;margin-top:2px">'+detail+'</div></div></div>'+
         '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">'+actions+'</div></div>';
     }).join('');
     var note=API.on?'':'<div class="net-note" style="margin-bottom:14px">'+crown('#b8902f')+' Connecte le serveur (Réglages) pour ajouter des produits qui se sauvegardent et apparaissent sur la borne.</div>';
-    return '<div class="vhead"><div><h1>Produits</h1><p>Ton catalogue. Les produits que tu ajoutes ici sont sauvegardés et apparaissent en caisse ET sur la borne.</p></div>'+(API.on?'<button class="btn btn-gold" data-act="openprod">+ Ajouter un produit</button>':'')+'</div>'+
+    var sub=(st.user&&st.user.role==='manager')
+      ? 'Le catalogue KINGSTON, plus TES produits à toi (ex. café, snacks…) : ce que tu ajoutes ici n\'apparaît QUE dans ta boutique, en caisse et sur ta borne.'
+      : 'Ton catalogue. Les produits que tu ajoutes ici sont sauvegardés et apparaissent en caisse ET sur la borne.';
+    return '<div class="vhead"><div><h1>Produits</h1><p>'+sub+'</p></div>'+(API.on?'<button class="btn btn-gold" data-act="openprod">+ Ajouter un produit</button>':'')+'</div>'+
       note+'<div class="card">'+(rows||'<div class="muted" style="padding:14px">Aucun produit pour le moment.</div>')+'</div>';
   }
 
@@ -2098,9 +2117,24 @@ function setPayMode(m){ PAY_MODE=(m==='auto')?'auto':'manuel'; try{ localStorage
       ? '<div class="fld"><label>Poids vendus (gramme → prix)</label>'+pfTierRows()+'<button class="btn" data-act="pf-addtier" style="padding:6px 12px;margin-top:2px">+ Ajouter un poids</button></div>'
       : '<div class="fld"><label>Prix à l\'unité (€)</label><input id="pf-price" type="number" min="0" step="0.5" value="'+f.price+'" style="width:120px"/></div><div class="fld"><label>Packs — prix réduit par quantité (facultatif)</label>'+pfPackRows()+'<button class="btn" data-act="pf-addpack" style="padding:6px 12px;margin-top:2px">+ Ajouter un pack</button></div>';
     var prev=f.img?'<img src="'+esc(f.img)+'" style="width:64px;height:64px;object-fit:cover;border-radius:9px;margin-top:8px"/>':'';
+    var scopeBlock='';
+    if(st.user&&st.user.role==='admin'){
+      if(f.editId){
+        var _pe=pById(f.editId);
+        scopeBlock='<div class="muted" style="font-size:12px;margin:-2px 0 10px">'+((_pe&&_pe.boutiqueId)?('🏪 Produit propre à : '+esc(bqLabel(_pe.boutiqueId))):'Catalogue : tout le réseau KINGSTON')+'</div>';
+      }else{
+        scopeBlock='<div class="fld"><label>Disponible dans</label><select id="pf-scope" style="width:100%">'+
+          '<option value="">Tout le réseau KINGSTON</option>'+
+          ((__bqCache||[]).map(function(b){return '<option value="'+esc(b.id)+'">Seulement '+esc(b.label)+'</option>';}).join(''))+
+          '</select></div>';
+      }
+    }else if(st.user&&st.user.role==='manager'){
+      scopeBlock='<div class="muted" style="font-size:12px;margin:-2px 0 10px">🏪 Produit propre à ta boutique (ex. café) — visible uniquement dans ta caisse et sur ta borne, pas dans les autres boutiques.</div>';
+    }
     return '<div class="modal-h">'+(f.editId?'Modifier le produit':'Ajouter un produit')+'</div><div class="modal-b">'+
       '<div class="fld"><label>Nom</label><input id="pf-name" value="'+esc(f.name)+'" placeholder="ex : Amnesia Haze"/></div>'+
-      '<div class="fld"><label>Catégorie</label><input id="pf-cat" value="'+esc(f.cat)+'" placeholder="ex : Fleurs, Feuilles, Plateaux…"/></div>'+
+      '<div class="fld"><label>Catégorie</label><input id="pf-cat" value="'+esc(f.cat)+'" placeholder="ex : Fleurs, Café, Snacks…"/></div>'+
+      scopeBlock+
       typeBtns+block+
       '<div class="fld"><label>Photo</label><input id="pf-file" type="file" accept="image/*" style="font-size:12px"/><input id="pf-imgurl" value="'+esc(f.img)+'" placeholder="ou colle un lien d\'image (https://…)" style="margin-top:6px"/>'+prev+'</div>'+
       '<div class="fld"><label>Description (facultatif)</label><input id="pf-desc" value="'+esc(f.desc)+'" placeholder="ex : Indica douce, 18% CBD"/></div>'+
@@ -2125,6 +2159,7 @@ function setPayMode(m){ PAY_MODE=(m==='auto')?'auto':'manuel'; try{ localStorage
     readProdForm();var f=st.pform,msg=document.getElementById('pf-msg');
     if(!(f.name||'').trim()){if(msg)msg.textContent='Donne un nom au produit.';return;}
     var payload={name:f.name.trim(),cat:(f.cat||'Divers').trim(),unit:f.unit,desc:(f.desc||'').trim(),boutiqueId:st.boutiqueId};
+    var _scEl=document.getElementById('pf-scope'); if(!f.editId&&_scEl&&_scEl.value)payload.forBoutique=_scEl.value;   // admin : produit pour une seule boutique
     if(f.unit==='g'){var ts=f.tiers.filter(function(t){return t[0]>0;});if(!ts.length){if(msg)msg.textContent='Ajoute au moins un palier (poids + prix).';return;}payload.tiers=ts;}
     else{payload.price=f.price||0;payload.packs=f.packs.filter(function(k){return k.qty>1;});}
     if(!f.editId)payload.initStock=f.initStock||0;
@@ -2453,7 +2488,7 @@ function setPayMode(m){ PAY_MODE=(m==='auto')?'auto':'manuel'; try{ localStorage
     if(a==='savecompany'){saveCompany();return;}
     if(a==='tgl'){var pt=pById(el.getAttribute('data-id'));var k=el.getAttribute('data-k');pt[k]=!pt[k];render();toast('Mise à jour synchronisée (caisse · borne)');return;}
     if(a==='delprod'){var dpp=pById(el.getAttribute('data-id'));if(!dpp)return;if(API.on&&dpp.custom){apiDelete('/api/products/'+encodeURIComponent(dpp.id)).then(function(){reloadProducts();toast('Produit supprimé');}).catch(function(e){toast('Échec : '+(e.message||e));});return;}products=products.filter(function(p){return p.id!==dpp.id;});render();toast('Produit retiré');return;}
-    if(a==='openprod'){st.pform=blankPForm();openModal(productModal());return;}
+    if(a==='openprod'){st.pform=blankPForm();if(st.user&&st.user.role==='admin'&&API.on){ensureBqList(function(){openModal(productModal());});}else{openModal(productModal());}return;}
     if(a==='editprod'){var pe=pById(el.getAttribute('data-id'));if(!pe)return;st.pform={editId:pe.id,name:pe.name,cat:pe.cat,unit:pe.unit,tiers:(pe.tiers||[]).map(function(t){return [t[0],t[1]];}),price:pe.price||0,packs:(pe.packs||[]).map(function(k){return {qty:k.qty,price:k.price};}),img:pe.img||'',desc:pe.desc||'',initStock:0};openModal(productModal());return;}
     if(a==='pf-type'){readProdForm();st.pform.unit=el.getAttribute('data-u');if(st.pform.unit==='g'&&!st.pform.tiers.length)st.pform.tiers=[[2,5]];openModal(productModal());return;}
     if(a==='pf-addtier'){readProdForm();st.pform.tiers.push([0,0]);openModal(productModal());return;}

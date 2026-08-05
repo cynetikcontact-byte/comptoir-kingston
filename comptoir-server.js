@@ -215,6 +215,7 @@ function allCatalog() { return hideBaseCatalog ? customProducts.slice() : catalo
 function findProduct(id) { return allCatalog().find((p) => p.id === id); }
 function ensureStock(p) {
   for (const id of boutiqueIds()) {
+    if (p.boutiqueId && p.boutiqueId !== id) continue;   // produit propre a une boutique : stock seulement chez elle
     if (!stock[id]) stock[id] = {};
     if (!stock[id][p.id]) stock[id][p.id] = (p.unit === 'g') ? { lots: [] } : { units: 0 };
   }
@@ -293,7 +294,7 @@ async function syncWooCatalog(opts) {
     try { const r = await fetch(apiBase + '?per_page=100'); list = await r.json(); } catch (e) { return { error: 'Site injoignable : ' + e.message }; }
     if (!Array.isArray(list)) return { error: 'Réponse du site inattendue (Store API WooCommerce introuvable)' };
     const byWoo = {}, byName = {};
-    customProducts.forEach((p) => { if (p.wooId != null) byWoo[p.wooId] = p; if (p.name) byName[p.name.toLowerCase()] = p; });
+    customProducts.forEach((p) => { if (p.boutiqueId) return; /* les produits propres a une boutique ne sont JAMAIS fusionnes avec le site */ if (p.wooId != null) byWoo[p.wooId] = p; if (p.name) byName[p.name.toLowerCase()] = p; });
     let created = 0, updated = 0, errors = 0;
     for (const wp of list) {
       const name = (wp.name || '').trim();
@@ -1213,7 +1214,7 @@ const server = http.createServer(async (req, res) => {
     const sales = {};
     for (const inv of invoices) { if (inv.total < 0) continue; for (const ln of (inv.lines || [])) { const nm = String(ln.name || '').toLowerCase(); if (nm) sales[nm] = (sales[nm] || 0) + (ln.qty || 1); } }
     const ranked = Object.keys(sales).sort((a, b) => sales[b] - sales[a]).slice(0, 5);
-    const list = allCatalog().map((p) => {
+    const list = allCatalog().filter((p) => !p.boutiqueId || p.boutiqueId === bId).map((p) => {
       const o = { id: p.id, name: p.name, cat: p.cat, unit: p.unit, img: p.img || '', desc: p.desc || '', custom: !!p.custom, new: !!p.new, popular: ranked.indexOf(String(p.name || '').toLowerCase()) >= 0 };
       const sk = (stock[bId] || {})[p.id];
       if (p.unit === 'g') { o.tiers = p.tiers; o.stockG = totalGrams(sk); }
@@ -1598,9 +1599,11 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && path === '/api/products') {
       if (PG) return send(res, 200, await PG.getProducts(user, u.searchParams.get('boutique')));
       const bId = user.role === 'admin' ? (u.searchParams.get('boutique') || 'aix') : user.boutiqueId;
-      const products = allCatalog().map((p) => {
+      // Catalogue = base KINGSTON (+ produits reseau) + catalogue SECONDAIRE propre a la boutique (p.boutiqueId).
+      const products = allCatalog().filter((p) => !p.boutiqueId || p.boutiqueId === bId).map((p) => {
         const s = (stock[bId] || {})[p.id];
         const base = { id: p.id, name: p.name, cat: p.cat, unit: p.unit, img: p.img || '', desc: p.desc || '', custom: !!p.custom };
+        if (p.boutiqueId) base.boutiqueId = p.boutiqueId;
         if (p.vat != null) base.vat = p.vat;
         if (p.new) base.new = true;
         if (p.unit === 'g') { base.tiers = p.tiers; base.stockG = totalGrams(s); }
@@ -1613,7 +1616,7 @@ const server = http.createServer(async (req, res) => {
     // ---------------- Produits : photo, ajout, edition, suppression (admin) ----------------
     // Upload d'une photo (data URL) -> enregistree dans img/ -> renvoie son URL servie par /img/.
     if (req.method === 'POST' && path === '/api/products/image') {
-      if (user.role !== 'admin') return send(res, 403, { error: 'Réservé à l\'administrateur réseau' });
+      if (user.role !== 'admin' && user.role !== 'manager') return send(res, 403, { error: 'Réservé au personnel' });
       const b = await readJson(req);
       const m = /^data:(image\/(png|jpe?g|webp|gif));base64,(.+)$/.exec(b.dataUrl || '');
       if (!m) return send(res, 400, { error: 'Image invalide (png, jpg, webp ou gif attendu)' });
@@ -1627,13 +1630,17 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (req.method === 'POST' && path === '/api/products') {
-      if (user.role !== 'admin') return send(res, 403, { error: 'Réservé à l\'administrateur réseau' });
+      if (user.role !== 'admin' && user.role !== 'manager') return send(res, 403, { error: 'Réservé au personnel' });
       const b = await readJson(req);
       const name = (b.name || '').trim();
       if (!name) return send(res, 400, { error: 'Nom du produit requis' });
       const unit = b.unit === 'g' ? 'g' : 'u';
       const p = { id: 'cp' + Date.now().toString(36), name: name, cat: (b.cat || 'Divers').trim(), unit: unit, custom: true, img: b.img || '', desc: (b.desc || '').trim() };
-      if (typeof b.proPrice === 'number') p.proPrice = Math.round(b.proPrice * 100) / 100;   // prix de gros (réassort)
+      // Portee : un MANAGER cree toujours un produit propre a SA boutique (catalogue secondaire, ex. cafe).
+      // L'admin cree par defaut pour tout le reseau, ou pour une boutique precise via forBoutique.
+      if (user.role === 'manager') p.boutiqueId = user.boutiqueId;
+      else if (b.forBoutique) { const fb = String(b.forBoutique).trim().toLowerCase(); if (!boutiques[fb]) return send(res, 400, { error: 'Boutique inconnue : ' + fb }); p.boutiqueId = fb; }
+      if (typeof b.proPrice === 'number' && user.role === 'admin') p.proPrice = Math.round(b.proPrice * 100) / 100;   // prix de gros (réassort) : admin uniquement
       if (typeof b.vat === 'number') p.vat = b.vat;
       if (b.new) p.new = true;
       if (unit === 'g') {
@@ -1647,7 +1654,7 @@ const server = http.createServer(async (req, res) => {
       }
       customProducts.push(p);
       ensureStock(p);
-      const bId = user.role === 'admin' ? (b.boutiqueId || 'aix') : user.boutiqueId;
+      const bId = user.role === 'admin' ? (p.boutiqueId || b.boutiqueId || 'aix') : user.boutiqueId;   // produit de boutique -> stock initial CHEZ ELLE
       const init = Number(b.initStock) || 0;
       if (init > 0) {
         if (unit === 'g') stock[bId][p.id] = { lots: [{ lot: name.replace(/\s/g, '').slice(0, 6).toUpperCase() + '-INIT', g: init, exp: '2099-01' }] };
@@ -1659,10 +1666,12 @@ const server = http.createServer(async (req, res) => {
 
     const mProd = path.match(/^\/api\/products\/([^/]+)$/);
     if (mProd && mProd[1] !== 'import-site' && mProd[1] !== 'image' && (req.method === 'POST' || req.method === 'DELETE')) {
-      if (user.role !== 'admin') return send(res, 403, { error: 'Réservé à l\'administrateur réseau' });
+      if (user.role !== 'admin' && user.role !== 'manager') return send(res, 403, { error: 'Réservé au personnel' });
       const id = decodeURIComponent(mProd[1]);
       const p = customProducts.find((x) => x.id === id);
       if (!p) return send(res, 404, { error: 'Seuls les produits ajoutés depuis l\'app sont modifiables ici.' });
+      // Un manager ne peut modifier/supprimer QUE les produits de SA boutique (jamais le catalogue KINGSTON).
+      if (user.role === 'manager' && p.boutiqueId !== user.boutiqueId) return send(res, 403, { error: 'Ce produit appartient au catalogue KINGSTON (ou à une autre boutique) : seul l\'admin réseau peut le modifier.' });
       if (req.method === 'DELETE') {
         customProducts = customProducts.filter((x) => x.id !== id);
         persist();
@@ -1675,7 +1684,7 @@ const server = http.createServer(async (req, res) => {
       if (b.desc != null) p.desc = b.desc.trim();
       if (typeof b.vat === 'number') p.vat = b.vat;
       if ('new' in b) p.new = !!b.new;
-      if (typeof b.proPrice === 'number') p.proPrice = Math.round(b.proPrice * 100) / 100; else if (b.proPrice === null) delete p.proPrice; // prix de gros (réassort), réglé par l'admin
+      if (user.role === 'admin') { if (typeof b.proPrice === 'number') p.proPrice = Math.round(b.proPrice * 100) / 100; else if (b.proPrice === null) delete p.proPrice; } // prix de gros (réassort), réglé par l'admin
       if (p.unit === 'g' && Array.isArray(b.tiers)) {
         const t = b.tiers.map((x) => [Number(x[0]), Number(x[1])]).filter((x) => x[0] > 0 && x[1] >= 0);
         if (t.length) p.tiers = t;
@@ -1709,6 +1718,7 @@ const server = http.createServer(async (req, res) => {
       let n = 0;
       const lot = 'RESTOCK-' + new Date().toISOString().slice(0, 10);
       for (const p of allCatalog()) {
+        if (p.boutiqueId && p.boutiqueId !== bId) continue;   // ne restocke pas les produits des autres boutiques
         if (p.unit === 'g') stock[bId][p.id] = { lots: [{ lot: lot, g: qty, exp: '2099-01' }] };
         else stock[bId][p.id] = { units: qty };
         n++;
@@ -2529,6 +2539,7 @@ const server = http.createServer(async (req, res) => {
         const bq = boutiques[id]; const sk = stock[id] || {};
         let inStock = 0, low = 0, out = 0;
         for (const p of cat) {
+          if (p.boutiqueId && p.boutiqueId !== id) continue;   // produit propre a une autre boutique : hors compteurs
           const s = sk[p.id];
           const q = p.unit === 'g' ? totalGrams(s) : (s ? (s.units || 0) : 0);
           if (q > 0) inStock++;
@@ -2544,7 +2555,7 @@ const server = http.createServer(async (req, res) => {
     // ---------------- RÉASSORT PRO (B2B) : les franchisés commandent leur stock au réseau ----------------
     if (req.method === 'GET' && path === '/api/pro/catalog') {
       const usePro = proProducts.length > 0;          // kingbase.fr branche -> le catalogue de gros = kingbase
-      const src = usePro ? proProducts : allCatalog();
+      const src = usePro ? proProducts : allCatalog().filter((p) => !p.boutiqueId);   // le reassort reseau ignore les produits propres a une boutique
       const list = src.map((p) => {
         const pi = proUnitInfo(p);
         const retail = p.unit === 'g' ? ((p.tiers && p.tiers[0]) ? p.tiers[0][1] : 0) : (p.price || 0);
