@@ -1602,7 +1602,8 @@ function setPayMode(m){ PAY_MODE=(m==='auto')?'auto':'manuel'; try{ localStorage
         franchUrlRow('Caisse / admin',base+'/')+
         franchUrlRow('Écran commandes',base+'/commande?boutique='+encodeURIComponent(b.id))+
         '</div>'+
-        '<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn" data-act="editfranch" data-id="'+esc(b.id)+'">Modifier l’identité / le mot de passe</button>'+
+        '<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-gold" data-act="enterfranch" data-id="'+esc(b.id)+'" data-label="'+esc(b.label||b.id)+'">Ouvrir l’espace</button>'+
+        '<button class="btn" data-act="editfranch" data-id="'+esc(b.id)+'">Modifier l’identité / le mot de passe</button>'+
         '<button class="btn" data-act="resetfranchpw" data-id="'+esc(b.id)+'" data-label="'+esc(b.label||b.id)+'">Réinitialiser le mot de passe</button>'+
         '<button class="btn" data-act="delfranch" data-id="'+esc(b.id)+'" data-label="'+esc(b.label||b.id)+'" style="color:#c0594a;border-color:#e3b4ab">Supprimer</button></div>'+
         '</div>';
@@ -2010,6 +2011,19 @@ function setPayMode(m){ PAY_MODE=(m==='auto')?'auto':'manuel'; try{ localStorage
     if(st.user && !window.__challengeInit){ window.__challengeInit=true; setInterval(function(){try{ if(st.view==='challenge'&&API.on) loadChallenge(); }catch(e){} },15000); }
     if(st.user && !window.__dashInit){ window.__dashInit=true; setInterval(function(){try{ if(st.view==='dash'&&API.on) loadDashboard(); }catch(e){} },60000); }
     var sf=document.getElementById('sideFoot');if(sf){sf.innerHTML='<b>'+st.user.name+'</b>'+st.user.roleLabel+' · KINGSTON<button class="btn" style="width:100%;margin-top:10px;background:transparent;color:#cfc9ba;border-color:rgba(255,255,255,.16)" data-act="logout">Se déconnecter</button>';}
+    renderAdminBar();
+  }
+  // Bandeau « accès admin » affiché quand l'admin a ouvert l'espace d'un franchisé (impersonation) ; bouton de retour.
+  function renderAdminBar(){
+    var ex=document.getElementById('kt-admin-bar');
+    var active=!!(st.user&&st.user.viaAdmin&&st.adminReturn);
+    if(active){
+      var lbl=st.boutique||(st.user&&st.user.boutiqueId)||'';
+      if(!ex){ ex=document.createElement('div'); ex.id='kt-admin-bar'; document.body.appendChild(ex); }
+      ex.setAttribute('style','position:fixed;left:0;right:0;bottom:0;z-index:99999;background:linear-gradient(90deg,#2a1e0b,#4a3410);color:#f4e6c5;padding:9px 16px;display:flex;align-items:center;justify-content:center;gap:14px;flex-wrap:wrap;font-size:13.5px;box-shadow:0 -3px 14px rgba(0,0,0,.28);border-top:1px solid #6b501d');
+      ex.innerHTML='<span>👑 Accès administrateur — tu consultes l\'espace <b>'+esc(lbl)+'</b> · le mot de passe du franchisé n\'a pas été touché</span><button class="btn" data-act="backtoadmin" style="background:#e9c877;color:#2a1e0b;border:none;font-weight:700;padding:6px 14px;white-space:nowrap">← Revenir à mon compte admin</button>';
+      document.body.style.paddingBottom='52px';
+    } else { if(ex)ex.remove(); document.body.style.paddingBottom=''; }
   }
 
   // ---------- Modales ----------
@@ -2476,6 +2490,28 @@ function setPayMode(m){ PAY_MODE=(m==='auto')?'auto':'manuel'; try{ localStorage
       apiPost('/api/boutiques',body).then(function(d){franchData.loading=false;franchData.loaded=false;loadFranchises();if(d&&d.tempPassword){showTempPass((d.boutique&&d.boutique.label)||body.label||body.id,(d.boutique&&d.boutique.id)||body.id,d.tempPassword);}else{toast('Franchise « '+((d.boutique&&d.boutique.label)||body.label||body.id)+' » enregistrée');}}).catch(function(e){toast('Échec : '+(e.message||e));});
       return;
     }
+    if(a==='enterfranch'){
+      if(!API.on){toast('Connecte-toi au serveur');return;}
+      var _eid=el.getAttribute('data-id');var _elabel=el.getAttribute('data-label')||_eid;
+      if(!_eid)return;
+      apiPost('/api/admin/enter-boutique',{id:_eid}).then(function(d){
+        if(st.user&&st.user.role==='admin'){ st.adminReturn={name:st.user.name,role:st.user.role,roleLabel:st.user.roleLabel,boutiqueId:st.user.boutiqueId,initials:st.user.initials,token:st.user.token}; try{localStorage.setItem('kt_admin_return',JSON.stringify(st.adminReturn));}catch(e){} }
+        var _lb=d.label||_elabel;
+        var _ini=_lb.replace(/[^0-9A-Za-zÀ-ÿ]/g,'').slice(0,2).toUpperCase()||'BT';
+        st.user={name:d.name||('Manager '+_lb),role:d.role,roleLabel:'Accès admin',boutiqueId:d.boutiqueId,initials:_ini,token:d.token,viaAdmin:true};
+        API.token=d.token;API.on=true;st.boutique=boutiqueName(d.boutiqueId);st.view='dash';
+        saveSession();render();toast('Espace « '+_lb+' » ouvert — accès admin');
+      }).catch(function(e){toast('Échec : '+(e&&e.message||e));});
+      return;
+    }
+    if(a==='backtoadmin'){
+      var _ar=st.adminReturn;if(!_ar){try{_ar=JSON.parse(localStorage.getItem('kt_admin_return')||'null');}catch(e){}}
+      if(!_ar||!_ar.token){toast('Session admin introuvable — reconnecte-toi');return;}
+      st.user=_ar;st.adminReturn=null;try{localStorage.removeItem('kt_admin_return');}catch(e){}
+      API.token=_ar.token;API.on=true;st.boutique='Réseau (toutes boutiques)';st.view='franchises';
+      saveSession();render();toast('Retour à ton compte admin');
+      return;
+    }
     if(a==='resetfranchpw'){
       if(!API.on){toast('Connecte-toi au serveur');return;}
       var _rid=el.getAttribute('data-id');var _rlabel=el.getAttribute('data-label')||_rid;
@@ -2589,7 +2625,7 @@ function setPayMode(m){ PAY_MODE=(m==='auto')?'auto':'manuel'; try{ localStorage
   document.body.addEventListener('change',function(e){ if(e.target&&e.target.id==='tpe-mode'){ tpeToggle(); } if(e.target&&e.target.id==='pay-mode'){ setPayMode(e.target.value); } if(e.target&&e.target.classList&&e.target.classList.contains('pro-qty')){ proSetQty(e.target.getAttribute('data-pid'), e.target.value); renderProCat(); } if(e.target&&e.target.classList&&e.target.classList.contains('pro-lot-f')){ var lid=e.target.getAttribute('data-id'); var lv=(e.target.value||'').trim(); apiPost('/api/pro/lots',{productId:lid,lot:lv}).then(function(){ var it=(proData.catalog||[]).filter(function(x){return x.id===lid;})[0]; if(it)it.lot=lv; toast(lv?('Lot « '+lv+' » enregistré sur '+((it&&it.name)||'le produit')):'Lot retiré'); }).catch(function(err){toast('Échec : '+(err.message||err));}); } });
 
   // Reprise de session : si la caisse etait deja connectee sur cet appareil, on la reconnecte toute seule.
-  (function(){ try{ var s=JSON.parse(localStorage.getItem('kt_session')||'null'); if(s&&s.token){ st.user=s; API.token=s.token; st.boutique=s.boutiqueId?boutiqueName(s.boutiqueId):'Réseau (toutes boutiques)'; } }catch(e){} })();
+  (function(){ try{ var s=JSON.parse(localStorage.getItem('kt_session')||'null'); if(s&&s.token){ st.user=s; API.token=s.token; st.boutique=s.boutiqueId?boutiqueName(s.boutiqueId):'Réseau (toutes boutiques)'; } var ar=JSON.parse(localStorage.getItem('kt_admin_return')||'null'); if(ar&&ar.token) st.adminReturn=ar; }catch(e){} })();
   render();
   if(st.user&&st.user.token){ autoConnect(); }
 })();

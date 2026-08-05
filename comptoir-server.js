@@ -1860,6 +1860,20 @@ const server = http.createServer(async (req, res) => {
       return send(res, 200, { ok: true, deleted: id, label: label });
     }
 
+    // Ouvrir l'espace d'une franchise EN TANT QU'ADMIN, sans connaitre ni modifier le mot de passe du franchise.
+    // Cree une session « manager » temporaire pour la boutique demandee. Admin reseau uniquement.
+    // Le mot de passe et l'e-mail du franchise ne sont JAMAIS touches ; sa propre 1re connexion reste inchangee.
+    if (req.method === 'POST' && path === '/api/admin/enter-boutique') {
+      if (user.role !== 'admin') return send(res, 403, { error: 'Réservé à l\'administrateur réseau' });
+      const body = await readJson(req);
+      const id = String((body && body.id) || '').trim().toLowerCase();
+      if (!id || !boutiques[id] || !accounts[id]) return send(res, 404, { error: 'Boutique inconnue' });
+      const token = newSession(id);                          // session manager de la boutique (n'affecte pas le mot de passe)
+      if (sessions[token]) sessions[token].viaAdmin = true;  // marqueur d'audit : espace ouvert par l'administrateur
+      const a = accounts[id];
+      return send(res, 200, { token: token, name: a.name, role: a.role, boutiqueId: a.boutiqueId, label: (boutiques[id].label || id), impersonating: true });
+    }
+
     // Changer SON PROPRE mot de passe (tout compte connecte). Sert au « mot de passe obligatoire a la 1re connexion ».
     if (req.method === 'POST' && path === '/api/account/password') {
       const body = await readJson(req);
