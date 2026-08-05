@@ -1997,9 +1997,10 @@ function setPayMode(m){ PAY_MODE=(m==='auto')?'auto':'manuel'; try{ localStorage
     return head+c1+c2+c3+c4;
   }
   function viewMoncompte(){
-    if(!(st.user&&st.user.role==='manager')){return '<div class="vhead"><div><h1>Mon compte</h1><p>Réservé aux comptes boutique (franchisés).</p></div></div>';}
+    if(!(st.user&&(st.user.role==='manager'||st.user.role==='admin'))){return '<div class="vhead"><div><h1>Mon compte</h1><p>Réservé aux comptes connectés.</p></div></div>';}
     if(!API.on){return '<div class="vhead"><div><h1>Mon compte</h1><p>Connecte l’app au serveur pour gérer ton compte.</p></div></div>';}
-    return '<div class="vhead"><div><h1>Mon compte</h1><p>Ton e-mail de récupération, ton mot de passe et ta fiche de facturation — modifiables quand tu veux.</p></div></div>'+
+    var sub=(st.user.role==='admin')?'Ton e-mail de connexion et ton mot de passe admin — modifiables quand tu veux.':'Ton e-mail de récupération, ton mot de passe et ta fiche de facturation — modifiables quand tu veux.';
+    return '<div class="vhead"><div><h1>Mon compte</h1><p>'+sub+'</p></div></div>'+
       '<div id="moncompte-body"><div class="muted" style="padding:16px">Chargement…</div></div>';
   }
   var viewsMap={dash:viewDash,pos:viewPos,produits:viewProduits,stock:viewStock,fidelite:viewFidelite,factu:viewFactu,borne:viewBorne,commandes:viewCommandes,challenge:viewChallenge,journal:viewJournal,conformite:viewConformite,franchises:viewFranchises,pro:viewPro,ponts:viewPonts,guideponts:viewGuidePonts,moncompte:viewMoncompte,reglages:viewReglages};
@@ -2024,7 +2025,7 @@ function setPayMode(m){ PAY_MODE=(m==='auto')?'auto':'manuel'; try{ localStorage
     var sel=document.getElementById('boutiqueSel');if(sel){sel.style.display=st.user.role==='admin'?'':'none';}
     var nfr=document.getElementById('nav-franchises');if(nfr){nfr.style.display=(st.user.role==='admin')?'':'none';}
     var ngp=document.getElementById('nav-guideponts');if(ngp){ngp.style.display=(st.user.role==='admin')?'':'none';}
-    var nmc=document.getElementById('nav-moncompte');if(nmc){nmc.style.display=(st.user.role==='manager')?'':'none';}
+    var nmc=document.getElementById('nav-moncompte');if(nmc){nmc.style.display=(st.user.role==='manager'||st.user.role==='admin')?'':'none';}
     if(st.user && !window.__proBadgeInit){ window.__proBadgeInit=true; refreshProBadge(); setInterval(function(){try{refreshProBadge();}catch(e){}},45000); }
     if(st.user && !window.__challengeInit){ window.__challengeInit=true; setInterval(function(){try{ if(st.view==='challenge'&&API.on) loadChallenge(); }catch(e){} },15000); }
     if(st.user && !window.__dashInit){ window.__dashInit=true; setInterval(function(){try{ if(st.view==='dash'&&API.on) loadDashboard(); }catch(e){} },60000); }
@@ -3114,21 +3115,76 @@ function setPayMode(m){ PAY_MODE=(m==='auto')?'auto':'manuel'; try{ localStorage
         .catch(function(){ pm.style.color = '#b4452f'; pm.textContent = 'Erreur réseau'; });
     });
   }
+  // --- Carte ADMIN : e-mail de connexion + changement de mot de passe (pas de fiche de facturation) ---
+  function buildAdmin(d){
+    d = d || {}; var email = d.email || ''; var login = d.login || 'admin';
+    var card = document.createElement('div');
+    card.className = 'card'; card.id = 'kt-myfiche'; card.style.cssText = 'margin-bottom:18px;max-width:660px';
+    card.innerHTML =
+      '<div style="font-family:var(--serif,Georgia,serif);font-size:19px;font-weight:800;margin:0 0 4px">Mon compte</div>' +
+      '<div style="font-size:12.5px;color:#8a8475;margin-bottom:18px">Compte administrateur réseau (identifiant <b>' + esc(login) + '</b>). Gère ton e-mail et ton mot de passe de connexion.</div>' +
+      '<div style="font-weight:700;margin-bottom:6px">E-mail de connexion / récupération</div>' +
+      '<div style="font-size:12px;color:#8a8475;margin-bottom:8px">Sert à récupérer ton mot de passe en cas d\'oubli (« Mot de passe oublié » sur l\'écran de connexion).</div>' +
+      fld('mfa-email','Adresse e-mail', email, 'email') +
+      '<button id="mfa-emsave" style="margin-top:2px;padding:11px 16px;border:none;border-radius:10px;background:var(--gold,#b8902f);color:#fff;font-weight:700;cursor:pointer">Enregistrer mon e-mail</button>' +
+      '<div id="mfa-emsg" style="font-size:12.5px;margin-top:8px"></div>' +
+      '<hr style="border:none;border-top:1px solid var(--line,#e7e3d8);margin:20px 0"/>' +
+      '<div style="font-weight:700;margin-bottom:10px">Changer mon mot de passe</div>' +
+      fld('mfa-cur','Mot de passe actuel', '', 'password') +
+      row(fld('mfa-new','Nouveau mot de passe (6 caractères min.)', '', 'password'), fld('mfa-new2','Confirmer', '', 'password')) +
+      '<button id="mfa-pass" style="margin-top:4px;padding:11px 16px;border:none;border-radius:10px;background:var(--gold,#b8902f);color:#fff;font-weight:700;cursor:pointer">Changer le mot de passe</button>' +
+      '<div id="mfa-pmsg" style="font-size:12.5px;margin-top:8px"></div>';
+    return card;
+  }
+  function wireAdmin(){
+    var emsave = document.getElementById('mfa-emsave');
+    if (emsave) emsave.addEventListener('click', function(){
+      var m = document.getElementById('mfa-emsg');
+      var v = (val('mfa-email') || '').trim();
+      var re = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (v && !re.test(v)) { m.style.color = '#b4452f'; m.textContent = 'E-mail invalide.'; return; }
+      m.style.color = '#8a8475'; m.textContent = 'Enregistrement...';
+      fetch('/api/account/me', { method:'POST', headers:H(), body: JSON.stringify({ email: v }) })
+        .then(function(r){ return r.json().then(function(d){ return { ok:r.ok, d:d }; }); })
+        .then(function(x){ m.style.color = x.ok ? '#3f7d4f' : '#b4452f'; m.textContent = x.ok ? 'E-mail enregistré.' : ((x.d && x.d.error) || 'Erreur'); })
+        .catch(function(){ m.style.color = '#b4452f'; m.textContent = 'Erreur réseau'; });
+    });
+    var pass = document.getElementById('mfa-pass');
+    if (pass) pass.addEventListener('click', function(){
+      var pm = document.getElementById('mfa-pmsg');
+      if (val('mfa-new') !== val('mfa-new2')) { pm.style.color = '#b4452f'; pm.textContent = 'Les deux mots de passe ne correspondent pas'; return; }
+      if ((val('mfa-new') || '').length < 6) { pm.style.color = '#b4452f'; pm.textContent = 'Nouveau mot de passe trop court (6 minimum)'; return; }
+      pm.style.color = '#8a8475'; pm.textContent = 'Modification...';
+      fetch('/api/account/me', { method:'POST', headers:H(), body: JSON.stringify({ currentPassword:val('mfa-cur'), newPassword:val('mfa-new') }) })
+        .then(function(r){ return r.json().then(function(d){ return { ok:r.ok, d:d }; }); })
+        .then(function(x){ pm.style.color = x.ok ? '#3f7d4f' : '#b4452f'; pm.textContent = x.ok ? 'Mot de passe changé.' : ((x.d && x.d.error) || 'Erreur');
+          if (x.ok) { ['mfa-cur','mfa-new','mfa-new2'].forEach(function(i){ var e = document.getElementById(i); if (e) e.value = ''; }); } })
+        .catch(function(){ pm.style.color = '#b4452f'; pm.textContent = 'Erreur réseau'; });
+    });
+  }
   function inject(){
     var u = ses();
-    if (!u || !u.token || u.role !== 'manager') return;
+    if (!u || !u.token) return;
     var host = document.getElementById('moncompte-body');
     if (!host) return;                                   // uniquement sur la vue « Mon compte »
     if (document.getElementById('kt-myfiche')) return;   // deja injecte
-    fetch('/api/my-boutique', { headers:H() })
-      .then(function(r){ return r.ok ? r.json() : null; })
-      .then(function(d){
-        var host2 = document.getElementById('moncompte-body');
-        if (!host2 || document.getElementById('kt-myfiche')) return;
-        host2.innerHTML = '';
-        host2.appendChild(build(d || {}));
-        wire();
-      }).catch(function(){});
+    if (u.role === 'manager') {
+      fetch('/api/my-boutique', { headers:H() })
+        .then(function(r){ return r.ok ? r.json() : null; })
+        .then(function(d){
+          var host2 = document.getElementById('moncompte-body');
+          if (!host2 || document.getElementById('kt-myfiche')) return;
+          host2.innerHTML = ''; host2.appendChild(build(d || {})); wire();
+        }).catch(function(){});
+    } else if (u.role === 'admin') {
+      fetch('/api/account/me', { headers:H() })
+        .then(function(r){ return r.ok ? r.json() : null; })
+        .then(function(d){
+          var host2 = document.getElementById('moncompte-body');
+          if (!host2 || document.getElementById('kt-myfiche')) return;
+          host2.innerHTML = ''; host2.appendChild(buildAdmin(d || {})); wireAdmin();
+        }).catch(function(){});
+    }
   }
   setInterval(inject, 1000);
   document.addEventListener('click', function(){ setTimeout(inject, 350); });

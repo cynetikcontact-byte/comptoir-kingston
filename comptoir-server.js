@@ -145,8 +145,8 @@ function rebuildAccounts() {
   for (const k of Object.keys(credentials)) delete credentials[k];
   accounts = { admin: { name: 'Lenny K.', role: 'admin', boutiqueId: null } };
   { const p = process.env.COMPTOIR_PASS_ADMIN;
-    if (p) credentials.admin = { hash: hashPass(p) };
-    else if (adminCred && adminCred.salt) credentials.admin = { stored: adminCred };
+    if (adminCred && adminCred.salt) credentials.admin = { stored: adminCred };   // mot de passe choisi dans « Mon compte » : prioritaire
+    else if (p) credentials.admin = { hash: hashPass(p) };                        // sinon COMPTOIR_PASS_ADMIN (mot de passe initial d'amorçage)
     else { credentials.admin = { hash: hashPass(DEFAULT_PASS), isDefault: true }; usingDefaultPass = true; } }
   for (const id of boutiqueIds()) {
     const b = boutiques[id];
@@ -1907,6 +1907,40 @@ const server = http.createServer(async (req, res) => {
       rebuildAccounts();
       persist();
       return send(res, 200, { ok: true });
+    }
+
+    // « Mon compte » du compte connecte (surtout l'ADMIN reseau) : lire/modifier l'e-mail de recuperation et le mot de passe.
+    // L'e-mail se change sans re-saisir le mot de passe ; le mot de passe exige le mot de passe actuel.
+    if (path === '/api/account/me') {
+      const uname = user.role === 'admin' ? 'admin' : user.boutiqueId;
+      if (!uname || !credentials[uname]) return send(res, 400, { error: 'Compte inconnu' });
+      const curEmail = () => user.role === 'admin' ? adminEmail : ((boutiques[uname] && boutiques[uname].email) || '');
+      if (req.method === 'GET') {
+        const label = user.role === 'admin' ? (accounts.admin ? accounts.admin.name : 'Admin réseau') : ((boutiques[uname] && boutiques[uname].label) || uname);
+        return send(res, 200, { role: user.role, boutiqueId: user.boutiqueId || null, label: label, email: curEmail(), login: uname });
+      }
+      const body = await readJson(req);
+      let passwordChanged = false;
+      const wantsPw = body && body.newPassword != null && String(body.newPassword) !== '';
+      if (wantsPw) {
+        if (!checkPass(uname, (body && body.currentPassword) || '')) return send(res, 403, { error: 'Mot de passe actuel incorrect' });
+        const nw = String(body.newPassword);
+        if (nw.length < 6) return send(res, 400, { error: 'Nouveau mot de passe : 6 caractères minimum.' });
+        if (nw.toLowerCase() === DEFAULT_PASS) return send(res, 400, { error: 'Choisis un mot de passe différent de celui par défaut.' });
+        if (user.role === 'admin') { adminCred = makeStoredPass(nw); }
+        else { if (!boutiques[uname]) return send(res, 404, { error: 'Compte inconnu' }); boutiques[uname].cred = makeStoredPass(nw); boutiques[uname].mustChangePw = false; }
+        passwordChanged = true;
+      }
+      if (body && body.email != null) {
+        const em = String(body.email).trim();
+        if (em && !ktValidEmail(em)) return send(res, 400, { error: 'E-mail invalide.' });
+        if (user.role === 'admin') adminEmail = em;
+        else if (boutiques[uname]) boutiques[uname].email = em;
+      }
+      if (!wantsPw && !(body && body.email != null)) return send(res, 400, { error: 'Rien à modifier.' });
+      rebuildAccounts();
+      persist();
+      return send(res, 200, { ok: true, email: curEmail(), passwordChanged: passwordChanged });
     }
 
     if ((req.method === 'GET' || req.method === 'POST') && path === '/api/my-boutique') {
