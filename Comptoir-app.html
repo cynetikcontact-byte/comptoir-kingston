@@ -1591,7 +1591,7 @@ function setPayMode(m){ PAY_MODE=(m==='auto')?'auto':'manuel'; try{ localStorage
       var s=b.seller||{}; var sirenOk=s.siren&&s.siren!=='000000000';
       var idtag=sirenOk?'<span class="tag tag-ok">SIREN '+esc(s.siren)+'</span>':'<span class="tag tag-low">SIREN à renseigner</span>';
       var passtag=b.motDePasseDefini?'<span class="tag tag-ok">accès défini</span>':'<span class="tag tag-low">mot de passe par défaut</span>';
-      var emailtag=b.email?'<span class="tag tag-ok">e-mail lié</span>':'<span class="tag tag-low">e-mail non lié</span>';
+      var emailtag=b.email?'<span class="tag tag-ok">✉ '+esc(b.email)+'</span>':'<span class="tag tag-low">e-mail non lié</span>';
       var pendtag=b.pending?'<span class="tag tag-low">1ʳᵉ connexion en attente</span>':'';
       return '<div class="card" style="padding:16px;margin-bottom:12px">'+
         '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap">'+
@@ -1623,9 +1623,19 @@ function setPayMode(m){ PAY_MODE=(m==='auto')?'auto':'manuel'; try{ localStorage
       ff('fr-id','Identifiant court','lyon')+ff('fr-label','Nom de la boutique','KINGSTON Lyon')+ff('fr-name','Raison sociale (entité légale)','KINGSTON LYON SARL')+
       ff('fr-siren','SIREN','123 456 789')+ff('fr-vat','N° TVA','FR12123456789')+ff('fr-pass','Mot de passe manager','••••••••','password')+
       ff('fr-address','Adresse','10 rue de la République')+ff('fr-zip','Code postal','69002')+ff('fr-city','Ville','Lyon')+
+      ff('fr-email','E-mail du franchisé (récupération mot de passe)','contact@boutique.fr','email')+
       '</div>'+
       '<button class="btn btn-gold" data-act="addfranch" style="margin-top:12px">Enregistrer la franchise</button>'+
-      '<div class="muted" style="font-size:12px;margin-top:8px">L’identifiant court sert dans les adresses (ex. /borne?boutique=<b>lyon</b>) et de préfixe aux factures. Laisse le mot de passe vide pour ne pas le changer.</div>'+
+      '<div class="muted" style="font-size:12px;margin-top:8px">L’identifiant court sert dans les adresses (ex. /borne?boutique=<b>lyon</b>) et de préfixe aux factures. Laisse le mot de passe vide pour ne pas le changer. L’e-mail sert au franchisé pour récupérer son mot de passe.</div>'+
+      '</div>'+
+      '<div class="card" style="padding:16px;margin-bottom:18px">'+
+      '<div style="font-family:var(--serif);font-size:16px;margin-bottom:6px">Diagnostic e-mail</div>'+
+      '<div class="muted" style="font-size:12px;margin-bottom:10px">Envoie un e-mail de test pour vérifier que l’envoi (Brevo) fonctionne — c’est ce qui achemine les codes « mot de passe oublié ». Le résultat exact s’affiche en dessous.</div>'+
+      '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">'+
+      '<input id="mailtest-to" type="email" placeholder="ton@email.fr" style="flex:1;min-width:200px;padding:9px 12px;border:1px solid var(--line);border-radius:9px;box-sizing:border-box"/>'+
+      '<button class="btn btn-gold" data-act="test-email">Tester l’envoi</button>'+
+      '</div>'+
+      '<div id="mailtest-res" style="font-size:12.5px;margin-top:10px;line-height:1.5"></div>'+
       '</div>'+
       '<div id="franch-body"><div class="muted" style="padding:14px">Chargement…</div></div>'+
       '<div class="net-note" style="margin-top:14px">'+crown('#b8902f')+' Chaque franchise est isolée : son manager ne voit que sa boutique, ses ventes sont numérotées et totalisées séparément, et ses factures portent SON SIREN. Toi (admin réseau) gardes la vue d’ensemble.</div>';
@@ -2489,11 +2499,28 @@ function setPayMode(m){ PAY_MODE=(m==='auto')?'auto':'manuel'; try{ localStorage
       return;
     }
     if(a==='copy-installer'){ var cu=el.getAttribute('data-url')||''; var tid=el.getAttribute('data-target')||'pont-installer-cmd'; if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(cu).then(function(){toast('Copié ✓');},function(){toast('Copie impossible');});}else{var cinp=document.getElementById(tid);if(cinp){cinp.select();try{document.execCommand('copy');toast('Copié ✓');}catch(e){toast('Copie impossible');}}} return; }
+    if(a==='test-email'){
+      if(!API.on){toast('Connecte-toi au serveur');return;}
+      var _to=((document.getElementById('mailtest-to')||{}).value||'').trim();
+      var _res=document.getElementById('mailtest-res');
+      var _re=/^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if(!_re.test(_to)){if(_res){_res.style.color='#c0594a';_res.textContent='Indique une adresse e-mail valide.';}return;}
+      el.disabled=true;el.textContent='Envoi…';
+      if(_res){_res.style.color='#8a8475';_res.textContent='Envoi en cours…';}
+      apiPost('/api/admin/test-email',{to:_to}).then(function(d){
+        el.disabled=false;el.textContent='Tester l’envoi';
+        if(!_res)return;
+        if(d&&d.ok){_res.style.color='#3f7d4f';_res.innerHTML='✅ Envoyé à <b>'+esc(_to)+'</b> depuis <b>'+esc(d.from||'')+'</b>. Regarde ta boîte de réception <b>et tes spams</b>. Si rien n’arrive, l’adresse expéditrice n’est pas validée dans Brevo.';}
+        else{_res.style.color='#c0594a';_res.innerHTML='❌ Échec de l’envoi : '+esc((d&&d.error)||'inconnu')+((d&&d.code)?' <span class="muted">('+esc(d.code)+(d.status?(' / HTTP '+d.status):'')+')</span>':'');}
+      }).catch(function(e){el.disabled=false;el.textContent='Tester l’envoi';if(_res){_res.style.color='#c0594a';_res.textContent='Échec : '+((e&&e.message)||e);}});
+      return;
+    }
     if(a==='addfranch'){
       if(!API.on){toast('Connecte-toi au serveur');return;}
       var gv=function(id){return ((document.getElementById(id)||{}).value||'').trim();};
       var body={id:gv('fr-id'),label:gv('fr-label'),name:gv('fr-name'),siren:gv('fr-siren'),vat:gv('fr-vat'),address:gv('fr-address'),zip:gv('fr-zip'),city:gv('fr-city')};
       var pw=gv('fr-pass'); if(pw)body.password=pw;
+      var em=gv('fr-email'); if(em){var _re=/^[^\s@]+@[^\s@]+\.[^\s@]+$/;if(!_re.test(em)){toast('E-mail du franchisé invalide');return;}body.email=em;}
       if(!body.id&&!body.label){toast('Indique au moins un identifiant ou un nom de boutique');return;}
       apiPost('/api/boutiques',body).then(function(d){franchData.loading=false;franchData.loaded=false;loadFranchises();if(d&&d.tempPassword){showTempPass((d.boutique&&d.boutique.label)||body.label||body.id,(d.boutique&&d.boutique.id)||body.id,d.tempPassword);}else{toast('Franchise « '+((d.boutique&&d.boutique.label)||body.label||body.id)+' » enregistrée');}}).catch(function(e){toast('Échec : '+(e.message||e));});
       return;
@@ -2530,7 +2557,7 @@ function setPayMode(m){ PAY_MODE=(m==='auto')?'auto':'manuel'; try{ localStorage
     if(a==='editfranch'){
       var bb=(franchData.list||[]).filter(function(x){return x.id===el.getAttribute('data-id');})[0];if(!bb)return;var s=bb.seller||{};
       var sv=function(id,v){var n=document.getElementById(id);if(n)n.value=v||'';};
-      sv('fr-id',bb.id);sv('fr-label',bb.label);sv('fr-name',s.name);sv('fr-siren',s.siren==='000000000'?'':s.siren);sv('fr-vat',s.vat);sv('fr-address',s.address);sv('fr-zip',s.zip);sv('fr-city',s.city);sv('fr-pass','');
+      sv('fr-id',bb.id);sv('fr-label',bb.label);sv('fr-name',s.name);sv('fr-siren',s.siren==='000000000'?'':s.siren);sv('fr-vat',s.vat);sv('fr-address',s.address);sv('fr-zip',s.zip);sv('fr-city',s.city);sv('fr-email',bb.email);sv('fr-pass','');
       window.scrollTo(0,0);toast('Modifie les champs puis « Enregistrer la franchise »');return;
     }
     if(a==='delfranch'){

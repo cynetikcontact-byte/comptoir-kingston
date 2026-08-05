@@ -1874,6 +1874,18 @@ const server = http.createServer(async (req, res) => {
       return send(res, 200, { token: token, name: a.name, role: a.role, boutiqueId: a.boutiqueId, label: (boutiques[id].label || id), impersonating: true });
     }
 
+    // Diagnostic e-mail : envoie un e-mail de test et renvoie le resultat EXACT de Brevo (pour comprendre pourquoi un envoi echoue). Admin uniquement.
+    if (req.method === 'POST' && path === '/api/admin/test-email') {
+      if (user.role !== 'admin') return send(res, 403, { error: 'Réservé à l\'administrateur réseau' });
+      const body = await readJson(req);
+      const to = String((body && body.to) || '').trim();
+      if (!ktValidEmail(to)) return send(res, 400, { error: 'Indique une adresse e-mail valide.' });
+      const html = '<div style="font-family:Arial,Helvetica,sans-serif;max-width:480px;margin:0 auto;color:#1a1a1a"><div style="background:#161310;color:#e6c884;padding:20px 24px;border-radius:14px 14px 0 0"><div style="font-size:22px;font-weight:800;letter-spacing:.12em">KINGSTON</div></div><div style="border:1px solid #ece7df;border-top:none;border-radius:0 0 14px 14px;padding:22px 24px"><p style="font-size:15px">Test d\'envoi réussi ✓</p><p style="color:#555;font-size:14px">Si tu reçois cet e-mail, la configuration d\'envoi de KINGTOOLS fonctionne : tes franchisés pourront recevoir leur code de réinitialisation de mot de passe.</p></div></div>';
+      const r = await sendMail(to, 'Test d\'envoi KINGTOOLS', html);
+      if (r.ok) return send(res, 200, { ok: true, to: to, from: MAIL_FROM, fromName: MAIL_FROM_NAME });
+      return send(res, 200, { ok: false, code: r.code || null, status: r.status || null, error: r.error || 'Échec inconnu', from: MAIL_FROM });
+    }
+
     // Changer SON PROPRE mot de passe (tout compte connecte). Sert au « mot de passe obligatoire a la 1re connexion ».
     if (req.method === 'POST' && path === '/api/account/password') {
       const body = await readJson(req);
