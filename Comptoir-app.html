@@ -2425,6 +2425,7 @@ function setPayMode(m){ PAY_MODE=(m==='auto')?'auto':'manuel'; try{ localStorage
     }
     if(a==='forgot-open'){
       var _su=(document.getElementById('lg-user')||{}).value||'';
+      if(!_su&&st.user)_su=(st.user.role==='admin')?'admin':(st.user.boutiqueId||'');   // depuis « Mon compte » : compte pre-rempli
       openModal('<div class="modal-h">Mot de passe oublié</div><div class="modal-b">'+
         '<div class="muted" style="font-size:13px;line-height:1.5;margin-bottom:12px">Indique ton compte : on t\'envoie un code à 6 chiffres par e-mail pour choisir un nouveau mot de passe.</div>'+
         '<label style="display:block;font-size:13px;margin:0 0 6px">Compte ou e-mail</label>'+
@@ -2452,7 +2453,7 @@ function setPayMode(m){ PAY_MODE=(m==='auto')?'auto':'manuel'; try{ localStorage
       el.disabled=true;el.textContent='Validation…';
       fetch((API.base||'')+'/api/account/reset',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({identifier:_id2,code:_code,newPassword:_nw})})
         .then(function(r){return r.json().then(function(d){if(!r.ok)throw new Error(d.error||'Échec');return d;});})
-        .then(function(){closeModal();toast('Mot de passe réinitialisé · connecte-toi');var lp=document.getElementById('lg-pass');if(lp){lp.value='';lp.focus();}})
+        .then(function(){closeModal();if(st.user){clearSession();st.user=null;st.client=null;st.cart=[];API.on=false;API.token='';render();toast('Mot de passe changé · reconnecte-toi avec ton nouveau mot de passe');}else{toast('Mot de passe réinitialisé · connecte-toi');var lp=document.getElementById('lg-pass');if(lp){lp.value='';lp.focus();}}})
         .catch(function(e){if(_er2){_er2.style.color='#e0917a';_er2.textContent=(e&&e.message)||'Échec';}el.disabled=false;el.textContent='Valider le nouveau mot de passe';});
       return;
     }
@@ -3158,6 +3159,7 @@ function setPayMode(m){ PAY_MODE=(m==='auto')?'auto':'manuel'; try{ localStorage
       row(fld('mf-new','Nouveau mot de passe (6 caractères min.)', '', 'password'), fld('mf-new2','Confirmer', '', 'password')) +
       '<button id="mf-pass" style="margin-top:4px;padding:11px 16px;border:none;border-radius:10px;background:var(--gold,#b8902f);color:#fff;font-weight:700;cursor:pointer">Changer le mot de passe</button>' +
       '<div id="mf-pmsg" style="font-size:12.5px;margin-top:8px"></div>' +
+      '<div style="margin-top:6px"><a id="mf-forgot" data-act="forgot-open" style="cursor:pointer;font-size:12.5px;color:var(--gold,#b8902f);text-decoration:underline">Mot de passe actuel oublié ? Recevoir un code par e-mail</a></div>' +
       '<hr style="border:none;border-top:1px solid var(--line,#e7e3d8);margin:20px 0"/>' +
       '<div style="font-weight:700;margin-bottom:4px">Ma fiche (facturation)</div>' +
       '<div style="font-size:12.5px;color:#8a8475;margin-bottom:12px">Ces informations apparaissent sur tes factures.</div>' +
@@ -3203,6 +3205,11 @@ function setPayMode(m){ PAY_MODE=(m==='auto')?'auto':'manuel'; try{ localStorage
           if (x.ok) { ['mf-cur','mf-new','mf-new2'].forEach(function(i){ var e = document.getElementById(i); if (e) e.value = ''; }); } })
         .catch(function(){ pm.style.color = '#b4452f'; pm.textContent = 'Erreur réseau'; });
     });
+    var fg = document.getElementById('mf-forgot');
+    if (fg) fg.addEventListener('click', function(ev){
+      var em = (val('mf-email') || '').trim();
+      if (!em) { ev.preventDefault(); ev.stopPropagation(); var pm = document.getElementById('mf-pmsg'); if (pm) { pm.style.color = '#b4452f'; pm.textContent = 'Renseigne et enregistre d\'abord ton e-mail de récupération (tout en haut de cette page).'; } }
+    });
   }
   // --- Carte ADMIN : e-mail de connexion + changement de mot de passe (pas de fiche de facturation) ---
   function buildAdmin(d){
@@ -3222,7 +3229,8 @@ function setPayMode(m){ PAY_MODE=(m==='auto')?'auto':'manuel'; try{ localStorage
       fld('mfa-cur','Mot de passe actuel', '', 'password') +
       row(fld('mfa-new','Nouveau mot de passe (6 caractères min.)', '', 'password'), fld('mfa-new2','Confirmer', '', 'password')) +
       '<button id="mfa-pass" style="margin-top:4px;padding:11px 16px;border:none;border-radius:10px;background:var(--gold,#b8902f);color:#fff;font-weight:700;cursor:pointer">Changer le mot de passe</button>' +
-      '<div id="mfa-pmsg" style="font-size:12.5px;margin-top:8px"></div>';
+      '<div id="mfa-pmsg" style="font-size:12.5px;margin-top:8px"></div>' +
+      '<div style="margin-top:6px"><a id="mfa-forgot" data-act="forgot-open" style="cursor:pointer;font-size:12.5px;color:var(--gold,#b8902f);text-decoration:underline">Mot de passe actuel oublié ? Recevoir un code par e-mail</a></div>';
     return card;
   }
   function wireAdmin(){
@@ -3249,6 +3257,11 @@ function setPayMode(m){ PAY_MODE=(m==='auto')?'auto':'manuel'; try{ localStorage
         .then(function(x){ pm.style.color = x.ok ? '#3f7d4f' : '#b4452f'; pm.textContent = x.ok ? 'Mot de passe changé.' : ((x.d && x.d.error) || 'Erreur');
           if (x.ok) { ['mfa-cur','mfa-new','mfa-new2'].forEach(function(i){ var e = document.getElementById(i); if (e) e.value = ''; }); } })
         .catch(function(){ pm.style.color = '#b4452f'; pm.textContent = 'Erreur réseau'; });
+    });
+    var fga = document.getElementById('mfa-forgot');
+    if (fga) fga.addEventListener('click', function(ev){
+      var em = (val('mfa-email') || '').trim();
+      if (!em) { ev.preventDefault(); ev.stopPropagation(); var pm = document.getElementById('mfa-pmsg'); if (pm) { pm.style.color = '#b4452f'; pm.textContent = 'Renseigne et enregistre d\'abord ton e-mail (en haut de cette page) : le code y sera envoyé.'; } }
     });
   }
   function inject(){
