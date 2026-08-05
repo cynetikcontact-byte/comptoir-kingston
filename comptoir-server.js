@@ -128,6 +128,19 @@ let accounts = {};
 const credentials = {};
 let usingDefaultPass = false;
 let adminCred = null;   // mot de passe admin PERSISTE (defini via /api/account/password) ; sinon COMPTOIR_PASS_ADMIN, sinon defaut
+let adminEmail = '';    // e-mail de recuperation de l'admin reseau (optionnel, renseigne a la 1re connexion)
+const resetCodes = {};  // { compte: { stored:{salt,hash}, exp, tries, email } } — codes de reinitialisation par e-mail (ephemeres, en memoire)
+const recentSales = {}; // idempotence encaissement : { saleKey: { status, json, exp } } — evite les doublons (double-clic caisse, renvoi reseau)
+function pruneRecentSales(){ const now = Date.now(); for (const k in recentSales) { if (recentSales[k].exp < now) delete recentSales[k]; } }
+function genTempPass() {
+  // Mot de passe temporaire lisible : sans caracteres ambigus (0/O, 1/l/I), 9 caracteres, garanti maj+min+2 chiffres.
+  const U = 'ABCDEFGHJKLMNPQRSTUVWXYZ', L = 'abcdefghijkmnpqrstuvwxyz', D = '23456789', ALL = U + L + D;
+  const pk = (s) => s[crypto.randomInt(s.length)];
+  const out = [pk(U), pk(L), pk(D), pk(D)];
+  for (let i = 0; i < 5; i++) out.push(pk(ALL));
+  for (let i = out.length - 1; i > 0; i--) { const j = crypto.randomInt(i + 1); const t = out[i]; out[i] = out[j]; out[j] = t; }
+  return out.join('');
+}
 function rebuildAccounts() {
   for (const k of Object.keys(credentials)) delete credentials[k];
   accounts = { admin: { name: 'Lenny K.', role: 'admin', boutiqueId: null } };
@@ -140,7 +153,7 @@ function rebuildAccounts() {
     accounts[id] = { name: 'Manager ' + (b.label || id), role: 'manager', boutiqueId: id };
     const envp = process.env['COMPTOIR_PASS_' + id.toUpperCase()];
     if (envp) credentials[id] = { hash: hashPass(envp) };
-    else if (b.cred && b.cred.salt) credentials[id] = { stored: b.cred };
+    else if (b.cred && b.cred.salt) credentials[id] = { stored: b.cred, isDefault: !!b.mustChangePw };
     else { credentials[id] = { hash: hashPass(DEFAULT_PASS), isDefault: true }; usingDefaultPass = true; }
   }
 }
@@ -511,7 +524,7 @@ function persist() {
       // Écriture ATOMIQUE : fichier temporaire puis renommage -> jamais de fichier tronqué en cas de coupure.
       // NB : fiscalKey n'est PLUS écrite ici (stockée à part, fichier protégé).
       const tmp = DATA_FILE + '.tmp';
-      fs.writeFileSync(tmp, JSON.stringify({ v: 1, savedAt: new Date().toISOString(), pointsPerEuro: POINTS_PER_EURO, hideBaseCatalog, customProducts, stock, boutiques, invoiceSeq, lastHash, invoices, orderSeq, orders, fiscalEvents, fiscalSeq, lastFiscalSig, clotureSeq, gtPerpetuel, gtPerpetuelAvoirs, seqByB, gtByB, gtAvoirsByB, royaltiesRates, royaltiesStatus, clotureSeqByB, supplyOrders, supplySeq, stockMoves, proRate, pontDevices, sessions, proProducts, lastProSync, proLots, entreprise, adminCred }), 'utf8');
+      fs.writeFileSync(tmp, JSON.stringify({ v: 1, savedAt: new Date().toISOString(), pointsPerEuro: POINTS_PER_EURO, hideBaseCatalog, customProducts, stock, boutiques, invoiceSeq, lastHash, invoices, orderSeq, orders, fiscalEvents, fiscalSeq, lastFiscalSig, clotureSeq, gtPerpetuel, gtPerpetuelAvoirs, seqByB, gtByB, gtAvoirsByB, royaltiesRates, royaltiesStatus, clotureSeqByB, supplyOrders, supplySeq, stockMoves, proRate, pontDevices, sessions, proProducts, lastProSync, proLots, entreprise, adminCred, adminEmail }), 'utf8');
       fs.renameSync(tmp, DATA_FILE);
     } catch (e) { console.error('Persistance impossible :', e.message); }
   }, 200);
@@ -522,6 +535,7 @@ function loadPersisted() {
     if (!fs.existsSync(DATA_FILE)) return;
     const d = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
     if (d.adminCred && typeof d.adminCred === 'object') adminCred = d.adminCred;   // mot de passe admin persiste (avant rebuildAccounts)
+    if (typeof d.adminEmail === 'string') adminEmail = d.adminEmail;               // e-mail de recuperation admin
     if (typeof d.pointsPerEuro === 'number') { POINTS_PER_EURO = d.pointsPerEuro; if (loyalty) loyalty.pointsPerEuro = POINTS_PER_EURO; }
     if (typeof d.hideBaseCatalog === 'boolean') hideBaseCatalog = d.hideBaseCatalog;
     if (Array.isArray(d.customProducts)) { customProducts = d.customProducts; customProducts.forEach(ensureStock); }
@@ -880,6 +894,41 @@ function sendInvoiceEmail(toEmail, inv) {
   });
 }
 
+/* ---- Reinitialisation de mot de passe par e-mail (reutilise Brevo) ---- */
+function maskEmail(e){ e=String(e||''); var at=e.indexOf('@'); if(at<1) return '***'; var u=e.slice(0,at), d=e.slice(at+1); var mu=(u.length<=2)?(u[0]+'*'):(u.slice(0,2)+'***'); var dot=d.lastIndexOf('.'); var md=(dot>0)?(d[0]+'***'+d.slice(dot)):(d[0]+'***'); return mu+'@'+md; }
+function resolveAccountByIdent(ident){
+  ident = String(ident || '').trim().toLowerCase(); if (!ident) return null;
+  if (ident === 'admin') return { uname: 'admin', email: adminEmail };
+  if (boutiques[ident]) return { uname: ident, email: boutiques[ident].email || '' };
+  for (const id of boutiqueIds()) { const b = boutiques[id]; if (b.email && String(b.email).toLowerCase() === ident) return { uname: id, email: b.email }; }
+  if (adminEmail && adminEmail.toLowerCase() === ident) return { uname: 'admin', email: adminEmail };
+  return null;
+}
+function sendMail(toEmail, subject, htmlContent) {
+  return new Promise(function (resolve) {
+    if (!MAIL_KEY) return resolve({ ok: false, code: 'NO_KEY', error: 'Service email non configuré (BREVO_API_KEY manquante dans Coolify).' });
+    if (!MAIL_FROM) return resolve({ ok: false, code: 'NO_FROM', error: 'Expediteur non configuré (COMPTOIR_MAIL_FROM manquant dans Coolify).' });
+    var https = require('https');
+    var payload = JSON.stringify({ sender: { name: MAIL_FROM_NAME, email: MAIL_FROM }, to: [{ email: toEmail }], subject: subject, htmlContent: htmlContent });
+    var rq = https.request({ hostname: 'api.brevo.com', path: '/v3/smtp/email', method: 'POST', headers: { 'api-key': MAIL_KEY, 'content-type': 'application/json', 'accept': 'application/json', 'content-length': Buffer.byteLength(payload) } }, function (r) {
+      var d = ''; r.on('data', function (c) { d += c; }); r.on('end', function () { if (r.statusCode >= 200 && r.statusCode < 300) resolve({ ok: true }); else { var msg = ''; try { msg = JSON.parse(d).message || d; } catch (e) { msg = d; } resolve({ ok: false, code: 'PROVIDER', status: r.statusCode, error: 'Brevo: ' + String(msg).slice(0, 160) }); } });
+    });
+    rq.on('error', function (e) { resolve({ ok: false, code: 'NET', error: 'Erreur reseau email: ' + e.message }); });
+    rq.write(payload); rq.end();
+  });
+}
+function resetEmailHtml(code, who) {
+  var E = function (x) { return String(x == null ? '' : x).replace(/&/g, '&amp;').replace(/</g, '&lt;'); };
+  return '<div style="font-family:Arial,Helvetica,sans-serif;max-width:480px;margin:0 auto;color:#1a1a1a">'
+    + '<div style="background:#161310;color:#e6c884;padding:20px 24px;border-radius:14px 14px 0 0"><div style="font-size:22px;font-weight:800;letter-spacing:.12em">KINGSTON</div><div style="color:#cdbf9f;font-size:12px;margin-top:2px">KINGTOOLS · Comptoir</div></div>'
+    + '<div style="border:1px solid #ece7df;border-top:none;border-radius:0 0 14px 14px;padding:22px 24px">'
+    + '<p style="margin:0 0 12px;font-size:15px">Bonjour,</p>'
+    + '<p style="margin:0 0 8px;color:#555;font-size:14px">Voici le code pour réinitialiser le mot de passe de votre accès KINGTOOLS (' + E(who) + ') :</p>'
+    + '<div style="text-align:center;margin:18px 0"><span style="display:inline-block;background:#f6f1e7;border:1px solid #e6c884;border-radius:12px;padding:14px 22px;font-size:30px;font-weight:800;letter-spacing:10px;color:#161310">' + E(code) + '</span></div>'
+    + '<p style="margin:0 0 4px;color:#777;font-size:12.5px">Ce code est valable 15 minutes. Saisissez-le dans KINGTOOLS puis choisissez votre nouveau mot de passe.</p>'
+    + '<p style="margin:8px 0 0;color:#999;font-size:12px">Si vous n\'êtes pas à l\'origine de cette demande, ignorez cet e-mail : votre mot de passe reste inchangé.</p>'
+    + '</div></div>';
+}
 function royaltiesRateFor(boutiqueId){ var r=royaltiesRates[boutiqueId]; return (typeof r==='number')?r:6; }
 function royaltiesRec(ym, boutiqueId){ var m=royaltiesStatus[ym]||{}; return m[boutiqueId]||{status:'a_payer',declaredAt:null,validatedAt:null}; }
 function royaltiesSetStatus(ym, boutiqueId, patch){ if(!royaltiesStatus[ym]) royaltiesStatus[ym]={}; var cur=royaltiesStatus[ym][boutiqueId]||{status:'a_payer',declaredAt:null,validatedAt:null}; royaltiesStatus[ym][boutiqueId]=Object.assign({},cur,patch); persist(); }
@@ -1124,6 +1173,49 @@ const server = http.createServer(async (req, res) => {
     const a = accounts[uname];
     const mustChangePassword = !!(credentials[uname] && credentials[uname].isDefault);
     return send(res, 200, { token: token, name: a.name, role: a.role, boutiqueId: a.boutiqueId, mustChangePassword: mustChangePassword });
+  }
+
+  // ---- Mot de passe oublie (PUBLIC) : demande d'un code a 6 chiffres envoye par e-mail ----
+  if (req.method === 'POST' && path === '/api/account/forgot') {
+    const gate = loginThrottle(req);
+    if (gate.blocked) { res.setHeader('Retry-After', String(gate.retry)); return send(res, 429, { error: 'Trop de demandes. Réessaie dans ' + Math.ceil(gate.retry / 60) + ' min.' }); }
+    const body = await readJson(req);
+    const acc = resolveAccountByIdent(body && body.identifier);
+    let hint = null;
+    if (acc && acc.email && ktValidEmail(acc.email)) {
+      const code = String(crypto.randomInt(0, 1000000)).padStart(6, '0');
+      resetCodes[acc.uname] = { stored: makeStoredPass(code), exp: Date.now() + 15 * 60 * 1000, tries: 0, email: acc.email };
+      const who = acc.uname === 'admin' ? 'Admin réseau' : ('Boutique ' + ((boutiques[acc.uname] && boutiques[acc.uname].label) || acc.uname));
+      hint = maskEmail(acc.email);
+      sendMail(acc.email, 'Code de réinitialisation KINGTOOLS', resetEmailHtml(code, who)).then(function (r) { if (!r.ok) console.error('Envoi code reinit echoue:', r.error || r.code); }, function () {});
+    }
+    loginOk(gate.ip);
+    return send(res, 200, { ok: true, sentHint: hint });   // hint = e-mail masque si un compte correspond ; null sinon
+  }
+
+  // ---- Reinitialisation (PUBLIC) : code + nouveau mot de passe ----
+  if (req.method === 'POST' && path === '/api/account/reset') {
+    const gate = loginThrottle(req);
+    if (gate.blocked) { res.setHeader('Retry-After', String(gate.retry)); return send(res, 429, { error: 'Trop de tentatives. Réessaie dans ' + Math.ceil(gate.retry / 60) + ' min.' }); }
+    const body = await readJson(req);
+    const acc = resolveAccountByIdent(body && body.identifier);
+    const code = String((body && body.code) || '').trim();
+    const nw = String((body && body.newPassword) || '');
+    const rc = acc && resetCodes[acc.uname];
+    if (!rc || rc.exp < Date.now()) { if (acc && resetCodes[acc.uname]) delete resetCodes[acc.uname]; loginFail(gate.ip); return send(res, 400, { error: 'Code expiré ou invalide. Redemande un nouveau code.' }); }
+    if (rc.tries >= 5) { delete resetCodes[acc.uname]; loginFail(gate.ip); return send(res, 429, { error: 'Trop d\'essais sur ce code. Redemande un nouveau code.' }); }
+    rc.tries++;
+    if (!verifyStoredPass(rc.stored, code)) { loginFail(gate.ip); return send(res, 400, { error: 'Code incorrect.' }); }
+    if (nw.length < 6) return send(res, 400, { error: 'Nouveau mot de passe : 6 caractères minimum.' });
+    if (nw.toLowerCase() === DEFAULT_PASS) return send(res, 400, { error: 'Choisis un mot de passe différent de celui par défaut.' });
+    if (acc.uname === 'admin') { adminCred = makeStoredPass(nw); }
+    else { if (!boutiques[acc.uname]) return send(res, 404, { error: 'Compte inconnu' }); boutiques[acc.uname].cred = makeStoredPass(nw); boutiques[acc.uname].mustChangePw = false; }
+    delete resetCodes[acc.uname];
+    for (const t of Object.keys(sessions)) { const s = sessions[t]; if (s && ((acc.uname === 'admin' && s.role === 'admin' && !s.boutiqueId) || s.boutiqueId === acc.uname)) delete sessions[t]; }
+    rebuildAccounts();
+    persist();
+    loginOk(gate.ip);
+    return send(res, 200, { ok: true });
   }
 
   // ---- Installateur AUTO du pont (libre-service) : source du pont + installateur pre-rempli par jeton ----
@@ -1563,6 +1655,10 @@ const server = http.createServer(async (req, res) => {
 
     if (req.method === 'POST' && path === '/api/sales') {
       const body = await readJson(req);
+      // SECURITE anti-double-paiement : si cette vente (meme cle) a deja ete encaissee, on renvoie le MEME resultat sans creer de 2e vente.
+      const _saleKey = body && body.saleKey ? String(body.saleKey).slice(0, 80) : '';
+      if (_saleKey) { pruneRecentSales(); const _prev = recentSales[_saleKey]; if (_prev) return send(res, _prev.status, _prev.json); }
+      const finish = (status, jsonObj) => { if (_saleKey) recentSales[_saleKey] = { status: status, json: jsonObj, exp: Date.now() + 2 * 60 * 1000 }; return send(res, status, jsonObj); };
       if (PG) {
         const out = await PG.recordSale(user, { items: body.items || [], customerEmail: body.customerRef, payment: body.payment || 'Carte Monetico', boutiqueId: body.boutiqueId });
         let fidelite = 'client au comptoir';
@@ -1571,7 +1667,7 @@ const server = http.createServer(async (req, res) => {
           fidelite = { membre: body.customerRef, pointsGagnes: Math.round(out.facture.total * POINTS_PER_EURO), nouveauSolde: r.points };
         }
         const lignes = out.lignes.map((l) => ({ produit: l.label, detail: l.grams ? l.grams + ' g' : (l.qty + ' x'), prix: l.price }));
-        return send(res, 201, { facture: out.facture, lignes: lignes, fidelite: fidelite });
+        return finish(201, { facture: out.facture, lignes: lignes, fidelite: fidelite });
       }
       const bId = user.role === 'admin' ? (body.boutiqueId || 'aix') : user.boutiqueId;
       const items = Array.isArray(body.items) ? body.items : [];
@@ -1640,7 +1736,7 @@ const server = http.createServer(async (req, res) => {
         } catch (e) { fidErreur = String(e.message || e); console.error('Fidelite caisse :', fidErreur); }
       }
 
-      return send(res, 201, {
+      return finish(201, {
         facture: { numero: inv.num, total: inv.total, date: inv.date, boutique: bId, empreinte: inv.hash.slice(0, 16) + '...' },
         lignes: lines.map((l) => ({ produit: l.produit, detail: l.detail, prix: l.prix })),
         montants: { brut: brut, remise: remise, totalTTC: total, totalHT: tva.totalHT, totalTVA: tva.totalTVA, ventilationTVA: tva.ventilation },
@@ -1691,7 +1787,7 @@ const server = http.createServer(async (req, res) => {
       const all = boutiqueIds().map((id) => {
         const b = boutiques[id];
         const hasPass = !!(process.env['COMPTOIR_PASS_' + id.toUpperCase()] || (b.cred && b.cred.salt));
-        return { id: id, label: b.label || id, prefix: b.prefix || id.toUpperCase().slice(0, 4), seller: b.seller || SELLER_DEFAULT, motDePasseDefini: hasPass };
+        return { id: id, label: b.label || id, prefix: b.prefix || id.toUpperCase().slice(0, 4), seller: b.seller || SELLER_DEFAULT, motDePasseDefini: hasPass, email: b.email || '', pending: !!b.mustChangePw };
       });
       const list = user.role === 'admin' ? all : all.filter((b) => b.id === user.boutiqueId);
       return send(res, 200, { boutiques: list });
@@ -1724,12 +1820,20 @@ const server = http.createServer(async (req, res) => {
       };
       if (ex.cred) rec.cred = ex.cred;                                   // conserver le mot de passe existant
       if (b.password) rec.cred = makeStoredPass(b.password);             // (re)definir le mot de passe manager
+      if (ex.email) rec.email = ex.email;                                // conserver l'e-mail rattache
+      if (ex.mustChangePw) rec.mustChangePw = true;                      // conserver l'etat « 1re connexion en attente »
+      if (b.email != null) { const _em = String(b.email).trim(); if (_em && !ktValidEmail(_em)) return send(res, 400, { error: 'E-mail invalide.' }); rec.email = _em; }
+      let tempPassword = null;
+      if (b.password) { tempPassword = String(b.password); rec.mustChangePw = true; }                              // rec.cred deja defini ci-dessus : mot de passe temporaire a changer
+      else if (b.regenPassword || (!boutiques[id] && !rec.cred)) { tempPassword = genTempPass(); rec.cred = makeStoredPass(tempPassword); rec.mustChangePw = true; }   // nouveau compte / reinitialisation : mot de passe temporaire genere
       boutiques[id] = rec;
       if (!stock[id]) stock[id] = {};                                    // stock de la boutique
       fb(id);                                                            // etat fiscal de la boutique
       rebuildAccounts();                                                 // compte manager cree/mis a jour
       persist();
-      return send(res, 200, { ok: true, boutique: { id: id, label: rec.label, prefix: rec.prefix, seller: rec.seller, motDePasseDefini: !!(rec.cred || process.env['COMPTOIR_PASS_' + id.toUpperCase()]) } });
+      const resp = { ok: true, boutique: { id: id, label: rec.label, prefix: rec.prefix, seller: rec.seller, email: rec.email || '', motDePasseDefini: !!(rec.cred || process.env['COMPTOIR_PASS_' + id.toUpperCase()]), pending: !!rec.mustChangePw } };
+      if (tempPassword) resp.tempPassword = tempPassword;   // affiche UNE seule fois a l'admin, a communiquer au franchise
+      return send(res, 200, resp);
     }
 
     // Supprimer une franchise (OPERATION SENSIBLE) : admin reseau uniquement, avec confirmation explicite.
@@ -1765,8 +1869,15 @@ const server = http.createServer(async (req, res) => {
       const nw = String((body && body.newPassword) || '');
       if (nw.length < 6) return send(res, 400, { error: 'Nouveau mot de passe : 6 caractères minimum.' });
       if (nw.toLowerCase() === DEFAULT_PASS) return send(res, 400, { error: 'Choisis un mot de passe différent de celui par défaut.' });
-      if (user.role === 'admin') { adminCred = makeStoredPass(nw); }
-      else { if (!boutiques[uname]) return send(res, 404, { error: 'Boutique inconnue' }); boutiques[uname].cred = makeStoredPass(nw); }
+      if (user.role === 'admin') {
+        adminCred = makeStoredPass(nw);
+        if (body && body.email != null) { const em = String(body.email).trim(); if (em) { if (!ktValidEmail(em)) return send(res, 400, { error: 'E-mail invalide.' }); adminEmail = em; } }
+      } else {
+        if (!boutiques[uname]) return send(res, 404, { error: 'Boutique inconnue' });
+        const em = String((body && body.email) || boutiques[uname].email || '').trim();
+        if (!ktValidEmail(em)) return send(res, 400, { error: 'E-mail valide requis (pour récupérer ton mot de passe en cas d\'oubli).' });
+        boutiques[uname].cred = makeStoredPass(nw); boutiques[uname].email = em; boutiques[uname].mustChangePw = false;
+      }
       rebuildAccounts();
       persist();
       return send(res, 200, { ok: true });

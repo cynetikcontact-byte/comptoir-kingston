@@ -608,13 +608,20 @@ table.tbl tr:hover td{background:#faf9f5;}
       API.on=true;render();loadLoyaltyRate();loadCompany();toast('Connecté au serveur — fidélité et produits en direct');
     }).catch(function(){API.on=false;});
   }
+  var _paying=false;   // SECURITE anti-double-encaissement : bloque un 2e envoi tant qu'un paiement est en cours
   function finalizeSaleApi(method){
+    if(_paying)return;                         // un encaissement est deja en cours -> on ignore ce clic (double-tap / clic fantome)
+    if(!st.cart.length)return;
+    _paying=true;
+    if(!st.payKey)st.payKey=(Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,10));  // cle d'idempotence de CET encaissement
+    var _btn=document.querySelector('[data-act=payok]'); if(_btn){_btn.disabled=true;_btn.style.opacity='.6';_btn.textContent='Encaissement…';}
     var items=st.cart.map(function(l){return l.productId==='libre'?{productId:'libre',price:l.price,name:l.name}:l.grams?{productId:l.productId,grams:l.grams}:(l.packQty?{productId:l.productId,packQty:l.packQty,count:l.qty||1}:{productId:l.productId,qty:l.qty||1});});
-    var payload={items:items,payment:method};
+    var payload={items:items,payment:method,saleKey:st.payKey};
     if(st.client&&st.client.email)payload.customerRef=st.client.email;
     if(st.coupon){payload.couponEur=st.coupon.e;payload.couponPoints=st.coupon.p;}
     else if(st.redeemPts)payload.usePoints=st.redeemPts;
     apiPost('/api/sales',payload).then(function(r){
+      _paying=false;st.payKey=null;   // encaissement termine avec succes : on libere la garde et la cle
       var f=r.facture||{};var fid=r.fidelite;var m=r.montants||{};
       var rcLines=(r.lignes||[]).map(function(l){return {name:l.produit,detail:l.detail,price:l.prix};});
       var lines=rcLines.map(function(l){return '<div style="display:flex;justify-content:space-between;padding:5px 0;font-size:13px"><span>'+esc(l.name)+' <span class="muted">'+esc(l.detail||'')+'</span></span><b>'+eur(l.price)+'</b></div>';}).join('');
@@ -630,7 +637,7 @@ table.tbl tr:hover td{background:#faf9f5;}
       openModal('<div class="modal-h">Paiement accepté (serveur)</div><div class="modal-b"><div style="text-align:center;margin-bottom:14px"><div style="width:54px;height:54px;border-radius:50%;background:var(--green);color:#fff;display:flex;align-items:center;justify-content:center;font-size:28px;margin:0 auto 10px">✓</div><div class="muted" style="font-size:12px">Facture '+f.numero+' · '+method+' · empreinte '+(f.empreinte||'')+'</div></div>'+lines+((m.remise>0)?'<div style="display:flex;justify-content:space-between;font-size:13px;color:#7a5f1e;padding:4px 0"><span>Remise points</span><b>−'+eur(m.remise)+'</b></div>':'')+'<div style="display:flex;justify-content:space-between;border-top:1px solid var(--line);margin-top:8px;padding-top:10px;font-family:var(--serif);font-size:19px;font-weight:700"><span>Total</span><span>'+eur(f.total)+'</span></div>'+fidHtml+'<div style="display:flex;gap:8px;margin-top:16px;flex-wrap:wrap"><button class="btn" style="flex:1;min-width:110px" data-act="printticket">🧾 Ticket</button><button class="btn" style="flex:1;min-width:110px" data-act="facture" data-num="'+f.numero+'">📄 Facture</button><button class="btn" style="flex:1;min-width:110px" data-act="kt-emailfac" data-num="'+f.numero+'" data-email="'+((st.lastReceipt&&st.lastReceipt.mail)||'')+'">✉️ Email</button><button class="btn btn-gold" style="flex:1;min-width:110px" data-act="closemodal">Nouveau</button></div></div>');
       render();
       if(companyInfo.factureAuto){setTimeout(function(){openFacture(f.numero);},350);}
-    }).catch(function(e){toast(/insuffisant/i.test(e.message||'')?'⛔ Stock insuffisant — réapprovisionne le produit avant de vendre.':'Erreur serveur : '+(e.message||e));});
+    }).catch(function(e){_paying=false;var _b=document.querySelector('[data-act=payok]');if(_b){_b.disabled=false;_b.style.opacity='1';_b.textContent='Réessayer';}toast(/insuffisant/i.test(e.message||'')?'⛔ Stock insuffisant — réapprovisionne le produit avant de vendre.':'Erreur serveur : '+(e.message||e));});
   }
   var addCat='Fleurs';
 
@@ -647,6 +654,7 @@ table.tbl tr:hover td{background:#faf9f5;}
       '<div class="fld" style="margin-bottom:16px"><label>Mot de passe</label><input id="lg-pass" type="password" placeholder="mot de passe"/></div>'+
       '<button class="btn btn-gold" style="width:100%" data-act="login">Se connecter</button>'+
       '<div id="lg-err" style="font-size:12px;margin-top:10px;text-align:center;color:#e0917a"></div>'+
+      '<div style="text-align:center;margin-top:12px"><a href="#" data-act="forgot-open" style="font-size:12.5px;color:#8a7a52;text-decoration:underline;cursor:pointer">Mot de passe oublié ?</a></div>'+
       
       '</div></div>';
     ktLoadLoginAccounts();
@@ -693,15 +701,42 @@ table.tbl tr:hover td{background:#faf9f5;}
   function crown(c){return '<svg width="16" height="12" viewBox="0 0 26 20" aria-hidden="true" style="vertical-align:-1px"><path d="M2 17 L4 6 L9 12 L13 4 L17 12 L22 6 L24 17 Z" fill="'+(c||'#d8b252')+'"/></svg>';}
   function forcePwModal(ukey,currentPass,d){
     window.__fpw={ukey:ukey,cur:currentPass,d:d};
+    var isMgr = d && d.role && d.role!=='admin';
     openModal('<div class="modal-h">Sécurise ton accès</div><div class="modal-b">'+
-      '<div class="muted" style="font-size:13px;line-height:1.55;margin-bottom:12px">Ce compte utilise encore le mot de passe par défaut. Pour la sécurité de ta boutique, choisis un mot de passe personnel avant de continuer.</div>'+
+      '<div class="muted" style="font-size:13px;line-height:1.55;margin-bottom:12px">Première connexion : choisis ton mot de passe personnel'+(isMgr?' et renseigne ton e-mail — il servira à récupérer ton mot de passe en cas d\'oubli.':'.')+'</div>'+
+      '<label style="display:block;font-size:13px;margin:0 0 6px">E-mail '+(isMgr?'<span class="muted">(obligatoire)</span>':'<span class="muted">(optionnel — pour la récupération)</span>')+'</label>'+
+      '<input id="fpw-email" type="email" autocomplete="email" placeholder="ton@email.fr" style="width:100%;padding:10px;border:1px solid var(--line);border-radius:8px;box-sizing:border-box;font-size:15px;margin-bottom:10px"/>'+
       '<label style="display:block;font-size:13px;margin:0 0 6px">Nouveau mot de passe <span class="muted">(6 caractères min.)</span></label>'+
       '<input id="fpw-new" type="password" autocomplete="new-password" style="width:100%;padding:10px;border:1px solid var(--line);border-radius:8px;box-sizing:border-box;font-size:15px;margin-bottom:10px"/>'+
       '<label style="display:block;font-size:13px;margin:0 0 6px">Confirme le mot de passe</label>'+
       '<input id="fpw-confirm" type="password" autocomplete="new-password" style="width:100%;padding:10px;border:1px solid var(--line);border-radius:8px;box-sizing:border-box;font-size:15px"/>'+
       '<div id="fpw-err" class="muted" style="font-size:12.5px;min-height:16px;margin-top:8px"></div>'+
       '<button class="btn btn-gold" data-act="fpw-go" style="width:100%;margin-top:6px">Enregistrer et continuer</button></div>');
-    setTimeout(function(){var e=document.getElementById('fpw-new');var c=document.getElementById('fpw-confirm');if(e)e.focus();if(c)c.addEventListener('keydown',function(ev){if(ev.key==='Enter'){var b=document.querySelector('[data-act=fpw-go]');if(b)b.click();}});},60);
+    setTimeout(function(){var e=document.getElementById('fpw-email')||document.getElementById('fpw-new');if(e)e.focus();var c=document.getElementById('fpw-confirm');if(c)c.addEventListener('keydown',function(ev){if(ev.key==='Enter'){var b=document.querySelector('[data-act=fpw-go]');if(b)b.click();}});},60);
+  }
+  function showTempPass(label,id,pw){
+    openModal('<div class="modal-h">Compte créé ✓</div><div class="modal-b">'+
+      '<div style="font-size:14px;margin-bottom:10px">Franchise <b>'+esc(label)+'</b> <span class="muted">(identifiant '+esc(id)+')</span>.</div>'+
+      '<div class="muted" style="font-size:13px;line-height:1.5;margin-bottom:10px">Voici son <b>mot de passe temporaire</b>. Communique-le au franchisé : à sa première connexion, il devra le changer et renseigner son e-mail.</div>'+
+      '<div style="display:flex;gap:8px;align-items:center;background:var(--gold-soft);border:1px solid var(--gold);border-radius:10px;padding:12px;margin-bottom:6px">'+
+      '<code style="flex:1;font-size:21px;font-weight:800;letter-spacing:2px;color:#161310">'+esc(pw)+'</code>'+
+      '<button class="btn" data-act="copytemp" data-pw="'+esc(pw)+'">Copier</button></div>'+
+      '<div class="muted" style="font-size:11.5px;margin-bottom:12px">⚠️ Note-le maintenant : pour des raisons de sécurité, il ne sera plus réaffiché.</div>'+
+      '<button class="btn btn-gold" data-act="closemodal" style="width:100%">C\'est noté</button></div>');
+  }
+  function resetShowStep2(ident,hint){
+    openModal('<div class="modal-h">Réinitialiser le mot de passe</div><div class="modal-b">'+
+      '<div class="muted" style="font-size:13px;line-height:1.5;margin-bottom:12px">'+(hint?('Un code a été envoyé à <b>'+esc(hint)+'</b>. '):'Si un compte correspond, un code a été envoyé par e-mail. ')+'Saisis le code à 6 chiffres et ton nouveau mot de passe.</div>'+
+      '<label style="display:block;font-size:13px;margin:0 0 6px">Code reçu par e-mail</label>'+
+      '<input id="rs-code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="123456" style="width:100%;padding:10px;border:1px solid var(--line);border-radius:8px;box-sizing:border-box;font-size:20px;letter-spacing:6px;text-align:center;margin-bottom:10px"/>'+
+      '<label style="display:block;font-size:13px;margin:0 0 6px">Nouveau mot de passe <span class="muted">(6 min.)</span></label>'+
+      '<input id="rs-new" type="password" autocomplete="new-password" style="width:100%;padding:10px;border:1px solid var(--line);border-radius:8px;box-sizing:border-box;font-size:15px;margin-bottom:10px"/>'+
+      '<label style="display:block;font-size:13px;margin:0 0 6px">Confirme</label>'+
+      '<input id="rs-cf" type="password" autocomplete="new-password" style="width:100%;padding:10px;border:1px solid var(--line);border-radius:8px;box-sizing:border-box;font-size:15px"/>'+
+      '<div id="rs-err" class="muted" style="font-size:12.5px;min-height:16px;margin-top:8px"></div>'+
+      '<button class="btn btn-gold" data-act="reset-go" data-ident="'+esc(ident)+'" style="width:100%;margin-top:6px">Valider le nouveau mot de passe</button>'+
+      '<div style="text-align:center;margin-top:10px"><a href="#" data-act="forgot-open" style="font-size:12px;color:#8a7a52;text-decoration:underline">Renvoyer un code</a></div></div>');
+    setTimeout(function(){var e=document.getElementById('rs-code');if(e)e.focus();},60);
   }
   function toast(m){toastEl.textContent=m;toastEl.className='toast show';setTimeout(function(){toastEl.className='toast';},2200);}
   function esc(s){return (''+s).replace(/&/g,'&amp;').replace(/</g,'&lt;');}
@@ -1363,7 +1398,13 @@ function setPayMode(m){ PAY_MODE=(m==='auto')?'auto':'manuel'; try{ localStorage
     if(r.from&&!r.to)return 'Période affichée : depuis le '+frDate(r.from);
     return 'Période affichée : du '+frDate(r.from)+' au '+frDate(r.to);
   }
-  function jBoutique(){ return st.netScope?'':(st.boutiqueId||''); } // boutique active pour le Journal ('' = réseau)
+  function jBoutique(){ if(st.user&&st.user.role==='admin'){ return (st.jbtq&&st.jbtq!=='ALL')?st.jbtq:''; } return st.netScope?'':(st.boutiqueId||''); } // boutique active pour le Journal (admin : sélecteur ; '' = tout le réseau)
+  function jBtqSelector(){
+    var sel=st.jbtq||'ALL';
+    var out='<button class="toggle '+(sel==='ALL'?'on':'')+'" data-act="jbtq-sel" data-jb="ALL">Toutes</button> ';
+    out+=(journalData.btqs||[]).map(function(b){return '<button class="toggle '+(sel===b.id?'on':'')+'" data-act="jbtq-sel" data-jb="'+esc(b.id)+'">'+esc(b.label||b.id)+'</button>';}).join(' ');
+    return out;
+  }
   function jQS(){ var r=jRange(); var q=[]; if(r.from)q.push('from='+r.from); if(r.to)q.push('to='+r.to); var b=jBoutique(); if(b)q.push('boutique='+encodeURIComponent(b)); return q.length?'?'+q.join('&'):''; }
   function dlAuth(path,filename){
     if(!API.on){toast('Connecte le serveur d\'abord');return;}
@@ -1372,7 +1413,9 @@ function setPayMode(m){ PAY_MODE=(m==='auto')?'auto':'manuel'; try{ localStorage
       .catch(function(){toast('Export indisponible (serveur ?)');});
   }
   function loadJournal(){
-    if(!API.on)return; journalData.loading=true; var qs=jQS();
+    if(!API.on)return;
+    if(st.user&&st.user.role==='admin'&&journalData.btqs===undefined){ journalData.btqs=[]; apiGet('/api/network/overview').then(function(d){ journalData.btqs=(d&&d.boutiques)||[]; if(st.view==='journal')render(); }).catch(function(){ journalData.btqs=undefined; }); }
+    journalData.loading=true; var qs=jQS();
     Promise.all([apiGet('/api/journal'+qs),apiGet('/api/journal/stats'+qs)]).then(function(res){
       journalData.ventes=(res[0]&&res[0].ventes)||[]; journalData.stats=res[1]; journalData.loading=false; journalData.loaded=true;
       if(st.view==='journal')renderJournalBody();
@@ -1414,7 +1457,7 @@ function setPayMode(m){ PAY_MODE=(m==='auto')?'auto':'manuel'; try{ localStorage
     function pb(k,l){return '<button class="btn'+(P===k?' btn-gold':'')+'" data-act="jperiod" data-p="'+k+'" style="padding:7px 13px">'+l+'</button>';}
     return '<div class="vhead"><div><h1>Journal des ventes</h1><p>Toutes les ventes borne + caisse, en direct. Chiffres du jour, meilleures ventes et exports pour ta comptable (facturation électronique).</p></div>'+
       '<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn" data-act="jcsv">Export comptable (CSV)</button><button class="btn" data-act="jereport">Résumé e-reporting</button></div></div>'+
-      '<div style="display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap;align-items:center">'+pb('today','Aujourd’hui')+pb('7','7 jours')+pb('30','30 jours')+pb('all','Tout')+
+      (st.user&&st.user.role==='admin'?'<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:10px"><span class="muted" style="font-size:12px;margin-right:4px">Boutique :</span>'+jBtqSelector()+'</div>':'')+'<div style="display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap;align-items:center">'+pb('today','Aujourd’hui')+pb('7','7 jours')+pb('30','30 jours')+pb('all','Tout')+
         '<span style="width:1px;height:24px;background:var(--line);margin:0 4px"></span>'+
         '<label class="muted" style="font-size:12px">Date précise</label>'+
         '<input type="date" id="jday" value="'+(st.jday||'')+'" style="padding:6px 9px;border:1px solid var(--line);border-radius:8px;font-size:13px"/>'+
@@ -1547,17 +1590,20 @@ function setPayMode(m){ PAY_MODE=(m==='auto')?'auto':'manuel'; try{ localStorage
       var s=b.seller||{}; var sirenOk=s.siren&&s.siren!=='000000000';
       var idtag=sirenOk?'<span class="tag tag-ok">SIREN '+esc(s.siren)+'</span>':'<span class="tag tag-low">SIREN à renseigner</span>';
       var passtag=b.motDePasseDefini?'<span class="tag tag-ok">accès défini</span>':'<span class="tag tag-low">mot de passe par défaut</span>';
+      var emailtag=b.email?'<span class="tag tag-ok">e-mail lié</span>':'<span class="tag tag-low">e-mail non lié</span>';
+      var pendtag=b.pending?'<span class="tag tag-low">1ʳᵉ connexion en attente</span>':'';
       return '<div class="card" style="padding:16px;margin-bottom:12px">'+
         '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap">'+
         '<div><div style="font-family:var(--serif);font-size:18px">'+esc(b.label||b.id)+'</div>'+
         '<div class="muted" style="font-size:12.5px;margin-top:2px">'+esc(s.name||'')+(s.city?' · '+esc(s.city):'')+' · préfixe factures <b>'+esc(b.prefix||'')+'</b></div></div>'+
-        '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:flex-start">'+idtag+passtag+'</div></div>'+
+        '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:flex-start">'+idtag+passtag+emailtag+pendtag+'</div></div>'+
         '<div style="margin-top:12px">'+
         franchUrlRow('Borne libre-service',base+'/borne?boutique='+encodeURIComponent(b.id))+
         franchUrlRow('Caisse / admin',base+'/')+
         franchUrlRow('Écran commandes',base+'/commande?boutique='+encodeURIComponent(b.id))+
         '</div>'+
         '<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn" data-act="editfranch" data-id="'+esc(b.id)+'">Modifier l’identité / le mot de passe</button>'+
+        '<button class="btn" data-act="resetfranchpw" data-id="'+esc(b.id)+'" data-label="'+esc(b.label||b.id)+'">Réinitialiser le mot de passe</button>'+
         '<button class="btn" data-act="delfranch" data-id="'+esc(b.id)+'" data-label="'+esc(b.label||b.id)+'" style="color:#c0594a;border-color:#e3b4ab">Supprimer</button></div>'+
         '</div>';
     }).join('')||'<div class="muted" style="padding:14px">Aucune boutique pour le moment. Ajoute ta première franchise ci-dessus.</div>';
@@ -2268,11 +2314,15 @@ function setPayMode(m){ PAY_MODE=(m==='auto')?'auto':'manuel'; try{ localStorage
       return;
     }
     if(a==='fpw-go'){
-      var ctx=window.__fpw||{};var nw=((document.getElementById('fpw-new')||{}).value)||'';var cf=((document.getElementById('fpw-confirm')||{}).value)||'';var er=document.getElementById('fpw-err');
+      var ctx=window.__fpw||{};var nw=((document.getElementById('fpw-new')||{}).value)||'';var cf=((document.getElementById('fpw-confirm')||{}).value)||'';var fem=((document.getElementById('fpw-email')||{}).value||'').trim();var er=document.getElementById('fpw-err');
+      var isMgr=ctx.d&&ctx.d.role&&ctx.d.role!=='admin';var emailRe=/^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if(isMgr&&!emailRe.test(fem)){if(er){er.style.color='#e0917a';er.textContent='Renseigne un e-mail valide (pour récupérer ton mot de passe).';}return;}
+      if(fem&&!emailRe.test(fem)){if(er){er.style.color='#e0917a';er.textContent='E-mail invalide.';}return;}
       if(nw.length<6){if(er){er.style.color='#e0917a';er.textContent='6 caractères minimum.';}return;}
       if(nw!==cf){if(er){er.style.color='#e0917a';er.textContent='Les deux mots de passe ne correspondent pas.';}return;}
       el.disabled=true;el.textContent='Enregistrement…';
-      apiPost('/api/account/password',{currentPassword:ctx.cur,newPassword:nw}).then(function(){
+      var _pl={currentPassword:ctx.cur,newPassword:nw};if(fem)_pl.email=fem;
+      apiPost('/api/account/password',_pl).then(function(){
         var d=ctx.d||{};var meta=ACCOUNTS[ctx.ukey]||{};
         st.user={name:d.name,role:d.role,roleLabel:meta.roleLabel||d.role,boutiqueId:d.boutiqueId,initials:meta.initials||'',token:d.token};
         st.boutique=d.boutiqueId?boutiqueName(d.boutiqueId):'Réseau (toutes boutiques)';
@@ -2280,6 +2330,40 @@ function setPayMode(m){ PAY_MODE=(m==='auto')?'auto':'manuel'; try{ localStorage
       }).catch(function(e){if(er){er.style.color='#e0917a';er.textContent=(e&&e.message)||'Erreur';}el.disabled=false;el.textContent='Enregistrer et continuer';});
       return;
     }
+    if(a==='forgot-open'){
+      var _su=(document.getElementById('lg-user')||{}).value||'';
+      openModal('<div class="modal-h">Mot de passe oublié</div><div class="modal-b">'+
+        '<div class="muted" style="font-size:13px;line-height:1.5;margin-bottom:12px">Indique ton compte : on t\'envoie un code à 6 chiffres par e-mail pour choisir un nouveau mot de passe.</div>'+
+        '<label style="display:block;font-size:13px;margin:0 0 6px">Compte ou e-mail</label>'+
+        '<input id="fg-ident" type="text" autocomplete="username" value="'+esc(_su)+'" placeholder="ton compte ou ton e-mail" style="width:100%;padding:10px;border:1px solid var(--line);border-radius:8px;box-sizing:border-box;font-size:15px"/>'+
+        '<div id="fg-err" class="muted" style="font-size:12.5px;min-height:16px;margin-top:8px"></div>'+
+        '<button class="btn btn-gold" data-act="forgot-send" style="width:100%;margin-top:6px">Envoyer le code</button></div>');
+      setTimeout(function(){var e=document.getElementById('fg-ident');if(e)e.focus();},60);
+      return;
+    }
+    if(a==='forgot-send'){
+      var _id=((document.getElementById('fg-ident')||{}).value||'').trim();var _er=document.getElementById('fg-err');
+      if(!_id){if(_er){_er.style.color='#e0917a';_er.textContent='Indique ton compte ou ton e-mail.';}return;}
+      el.disabled=true;el.textContent='Envoi…';
+      fetch((API.base||'')+'/api/account/forgot',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({identifier:_id})})
+        .then(function(r){return r.json().catch(function(){return{};});})
+        .then(function(d){resetShowStep2(_id,d&&d.sentHint);})
+        .catch(function(){if(_er){_er.style.color='#e0917a';_er.textContent='Erreur réseau, réessaie.';}el.disabled=false;el.textContent='Envoyer le code';});
+      return;
+    }
+    if(a==='reset-go'){
+      var _id2=el.getAttribute('data-ident')||'';var _code=((document.getElementById('rs-code')||{}).value||'').trim();var _nw=((document.getElementById('rs-new')||{}).value||'');var _cf=((document.getElementById('rs-cf')||{}).value||'');var _er2=document.getElementById('rs-err');
+      if(!/^\d{6}$/.test(_code)){if(_er2){_er2.style.color='#e0917a';_er2.textContent='Le code fait 6 chiffres.';}return;}
+      if(_nw.length<6){if(_er2){_er2.style.color='#e0917a';_er2.textContent='Mot de passe : 6 caractères minimum.';}return;}
+      if(_nw!==_cf){if(_er2){_er2.style.color='#e0917a';_er2.textContent='Les mots de passe ne correspondent pas.';}return;}
+      el.disabled=true;el.textContent='Validation…';
+      fetch((API.base||'')+'/api/account/reset',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({identifier:_id2,code:_code,newPassword:_nw})})
+        .then(function(r){return r.json().then(function(d){if(!r.ok)throw new Error(d.error||'Échec');return d;});})
+        .then(function(){closeModal();toast('Mot de passe réinitialisé · connecte-toi');var lp=document.getElementById('lg-pass');if(lp){lp.value='';lp.focus();}})
+        .catch(function(e){if(_er2){_er2.style.color='#e0917a';_er2.textContent=(e&&e.message)||'Échec';}el.disabled=false;el.textContent='Valider le nouveau mot de passe';});
+      return;
+    }
+    if(a==='copytemp'){var _pw=el.getAttribute('data-pw')||'';if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(_pw).then(function(){toast('Mot de passe copié ✓');},function(){toast('Copie impossible');});}else{toast('Copie non supportée sur ce navigateur');}return;}
     if(a==='logout'){clearSession();st.user=null;st.client=null;st.cart=[];API.on=false;API.token='';render();return;}
     if(a==='closemodal'){if(ev.target.classList.contains('modal-backdrop')){closeModal();}else if(!el.classList.contains('modal-backdrop')){closeModal();}return;}
     if(a==='poscat'){st.cat=el.getAttribute('data-c');st.posSearch='';render();return;}
@@ -2304,7 +2388,7 @@ function setPayMode(m){ PAY_MODE=(m==='auto')?'auto':'manuel'; try{ localStorage
     if(a==='unredeem'){st.redeemPts=0;render();return;}
     if(a==='applycoupon'){st.coupon={e:+el.getAttribute('data-e'),p:+el.getAttribute('data-p')};st.redeemPts=0;render();return;}
     if(a==='rmcoupon'){st.coupon=null;render();return;}
-    if(a==='pay'){if(!st.cart.length){toast('Le ticket est vide');return;}payModal(el.getAttribute('data-m'));return;}
+    if(a==='pay'){if(!st.cart.length){toast('Le ticket est vide');return;}st.payKey=(Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,10));payModal(el.getAttribute('data-m'));return;}
     if(a==='payok'){finalizeSale(el.getAttribute('data-m'));return;}
     if(a==='printticket'){printReceipt();return;}
     if(a==='facture'){openFacture(el.getAttribute('data-num'));return;}
@@ -2389,7 +2473,14 @@ function setPayMode(m){ PAY_MODE=(m==='auto')?'auto':'manuel'; try{ localStorage
       var body={id:gv('fr-id'),label:gv('fr-label'),name:gv('fr-name'),siren:gv('fr-siren'),vat:gv('fr-vat'),address:gv('fr-address'),zip:gv('fr-zip'),city:gv('fr-city')};
       var pw=gv('fr-pass'); if(pw)body.password=pw;
       if(!body.id&&!body.label){toast('Indique au moins un identifiant ou un nom de boutique');return;}
-      apiPost('/api/boutiques',body).then(function(d){toast('Franchise « '+((d.boutique&&d.boutique.label)||body.label||body.id)+' » enregistrée');franchData.loading=false;franchData.loaded=false;loadFranchises();}).catch(function(e){toast('Échec : '+(e.message||e));});
+      apiPost('/api/boutiques',body).then(function(d){franchData.loading=false;franchData.loaded=false;loadFranchises();if(d&&d.tempPassword){showTempPass((d.boutique&&d.boutique.label)||body.label||body.id,(d.boutique&&d.boutique.id)||body.id,d.tempPassword);}else{toast('Franchise « '+((d.boutique&&d.boutique.label)||body.label||body.id)+' » enregistrée');}}).catch(function(e){toast('Échec : '+(e.message||e));});
+      return;
+    }
+    if(a==='resetfranchpw'){
+      if(!API.on){toast('Connecte-toi au serveur');return;}
+      var _rid=el.getAttribute('data-id');var _rlabel=el.getAttribute('data-label')||_rid;
+      if(!confirm('Réinitialiser le mot de passe de « '+_rlabel+' » ?\nUn nouveau mot de passe temporaire sera généré (l\'ancien ne fonctionnera plus).'))return;
+      apiPost('/api/boutiques',{id:_rid,regenPassword:true}).then(function(d){franchData.loading=false;franchData.loaded=false;loadFranchises();if(d&&d.tempPassword){showTempPass((d.boutique&&d.boutique.label)||_rlabel,_rid,d.tempPassword);}else{toast('Mot de passe réinitialisé');}}).catch(function(e){toast('Échec : '+(e.message||e));});
       return;
     }
     if(a==='editfranch'){
@@ -2449,6 +2540,7 @@ function setPayMode(m){ PAY_MODE=(m==='auto')?'auto':'manuel'; try{ localStorage
     }
     if(a==='exportfec'){toast('Export FEC généré (démo)');return;}
     if(a==='jperiod'){st.jperiod=el.getAttribute('data-p');journalData.loaded=false;render();return;}
+    if(a==='jbtq-sel'){st.jbtq=el.getAttribute('data-jb');journalData.loaded=false;render();return;}
     if(a==='jday'){var dv=(document.getElementById('jday')||{}).value||'';if(!dv){toast('Choisis une date');return;}st.jday=dv;st.jperiod='day';journalData.loaded=false;render();return;}
     if(a==='jrange'){var jf=(document.getElementById('jfrom')||{}).value||'';var jt=(document.getElementById('jto')||{}).value||'';if(!jf&&!jt){toast('Choisis au moins une date');return;}st.jfrom=jf;st.jto=jt;st.jperiod='range';journalData.loaded=false;render();return;}
     if(a==='jcsv'){dlAuth('/api/journal/export.csv'+jQS(),'journal-kingston.csv');return;}
