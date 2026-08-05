@@ -524,10 +524,120 @@ function persist() {
       // Écriture ATOMIQUE : fichier temporaire puis renommage -> jamais de fichier tronqué en cas de coupure.
       // NB : fiscalKey n'est PLUS écrite ici (stockée à part, fichier protégé).
       const tmp = DATA_FILE + '.tmp';
-      fs.writeFileSync(tmp, JSON.stringify({ v: 1, savedAt: new Date().toISOString(), pointsPerEuro: POINTS_PER_EURO, hideBaseCatalog, customProducts, stock, boutiques, invoiceSeq, lastHash, invoices, orderSeq, orders, fiscalEvents, fiscalSeq, lastFiscalSig, clotureSeq, gtPerpetuel, gtPerpetuelAvoirs, seqByB, gtByB, gtAvoirsByB, royaltiesRates, royaltiesStatus, clotureSeqByB, supplyOrders, supplySeq, stockMoves, proRate, pontDevices, sessions, proProducts, lastProSync, proLots, entreprise, adminCred, adminEmail }), 'utf8');
+      fs.writeFileSync(tmp, JSON.stringify({ v: 1, savedAt: new Date().toISOString(), pointsPerEuro: POINTS_PER_EURO, hideBaseCatalog, customProducts, stock, boutiques, invoiceSeq, lastHash, invoices, orderSeq, orders, fiscalEvents, fiscalSeq, lastFiscalSig, clotureSeq, gtPerpetuel, gtPerpetuelAvoirs, seqByB, gtByB, gtAvoirsByB, royaltiesRates, royaltiesStatus, clotureSeqByB, supplyOrders, supplySeq, stockMoves, proRate, pontDevices, sessions, proProducts, lastProSync, proLots, entreprise, adminCred, adminEmail, backupState }), 'utf8');
       fs.renameSync(tmp, DATA_FILE);
     } catch (e) { console.error('Persistance impossible :', e.message); }
   }, 200);
+}
+
+// ---- Sauvegarde EXTERNALISEE (stockage compatible S3 : Scaleway, Cloudflare R2, Backblaze B2, AWS...) ----
+// Chaque nuit (et a la demande), le fichier de donnees + la cle de scellement partent vers un stockage
+// INDEPENDANT du serveur : si le VPS meurt, les ventes et factures (obligation legale) survivent.
+// Configuration par variables d'environnement (Coolify) :
+//   KT_BACKUP_S3_ENDPOINT  ex: s3.fr-par.scw.cloud   (http://... accepte pour les tests locaux)
+//   KT_BACKUP_S3_REGION    ex: fr-par
+//   KT_BACKUP_S3_BUCKET    ex: kingtools-sauvegardes
+//   KT_BACKUP_S3_KEY       identifiant de la cle d'acces
+//   KT_BACKUP_S3_SECRET    cle secrete
+//   KT_BACKUP_S3_PREFIX    optionnel (defaut kingtools/)
+const BK = {
+  endpoint: (process.env.KT_BACKUP_S3_ENDPOINT || '').trim(),
+  region: (process.env.KT_BACKUP_S3_REGION || 'fr-par').trim(),
+  bucket: (process.env.KT_BACKUP_S3_BUCKET || '').trim(),
+  key: (process.env.KT_BACKUP_S3_KEY || '').trim(),
+  secret: (process.env.KT_BACKUP_S3_SECRET || '').trim(),
+  prefix: (process.env.KT_BACKUP_S3_PREFIX || 'kingtools/').trim().replace(/^\/+/, '').replace(/\/?$/, '/'),
+};
+let backupState = { lastAt: 0, lastOkAt: 0, lastStatus: '', lastError: '', lastBytes: 0, lastKeys: [], lastTrigger: '' };
+let bkRunning = false;
+function bkConfigured() { return !!(BK.endpoint && BK.bucket && BK.key && BK.secret); }
+function bkParseEndpoint() {
+  let proto = 'https', host = BK.endpoint;
+  const m = /^(https?):\/\//.exec(host); if (m) { proto = m[1]; host = host.slice(m[0].length); }
+  host = host.replace(/\/+$/, '');
+  let port = proto === 'https' ? 443 : 80;
+  const pm = /^(.*):(\d+)$/.exec(host); if (pm) { host = pm[1]; port = Number(pm[2]); }
+  return { proto, host, port, hostHeader: host + ((proto === 'https' && port !== 443) || (proto === 'http' && port !== 80) ? ':' + port : '') };
+}
+function bkUriEncode(s) { return encodeURIComponent(s).replace(/[!'()*]/g, (c) => '%' + c.charCodeAt(0).toString(16).toUpperCase()); }
+// Signature AWS SigV4 (service s3) — implementation pure Node, en-tetes signes : host;x-amz-content-sha256;x-amz-date
+function bkSign(method, encPath, hostHeader, payloadHash, now) {
+  const amzDate = now.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');   // YYYYMMDDTHHMMSSZ
+  const date = amzDate.slice(0, 8);
+  const signedHeaders = 'host;x-amz-content-sha256;x-amz-date';
+  const canonicalHeaders = 'host:' + hostHeader + '\n' + 'x-amz-content-sha256:' + payloadHash + '\n' + 'x-amz-date:' + amzDate + '\n';
+  const canonicalRequest = method + '\n' + encPath + '\n' + '\n' + canonicalHeaders + '\n' + signedHeaders + '\n' + payloadHash;
+  const scope = date + '/' + BK.region + '/s3/aws4_request';
+  const stringToSign = 'AWS4-HMAC-SHA256\n' + amzDate + '\n' + scope + '\n' + crypto.createHash('sha256').update(canonicalRequest, 'utf8').digest('hex');
+  const hm = (k, s) => crypto.createHmac('sha256', k).update(s, 'utf8').digest();
+  const kSigning = hm(hm(hm(hm('AWS4' + BK.secret, date), BK.region), 's3'), 'aws4_request');
+  const signature = crypto.createHmac('sha256', kSigning).update(stringToSign, 'utf8').digest('hex');
+  return { amzDate, authorization: 'AWS4-HMAC-SHA256 Credential=' + BK.key + '/' + scope + ', SignedHeaders=' + signedHeaders + ', Signature=' + signature };
+}
+function bkPutObject(objectKey, body, contentType) {
+  return new Promise((resolve) => {
+    try {
+      const ep = bkParseEndpoint();
+      const encPath = ('/' + BK.bucket + '/' + objectKey).split('/').map(bkUriEncode).join('/');
+      const payloadHash = crypto.createHash('sha256').update(body).digest('hex');
+      const sig = bkSign('PUT', encPath, ep.hostHeader, payloadHash, new Date());
+      const mod = ep.proto === 'https' ? require('https') : require('http');
+      const rq = mod.request({
+        hostname: ep.host, port: ep.port, path: encPath, method: 'PUT',
+        headers: {
+          'Host': ep.hostHeader,
+          'Content-Type': contentType,
+          'Content-Length': body.length,
+          'x-amz-content-sha256': payloadHash,
+          'x-amz-date': sig.amzDate,
+          'Authorization': sig.authorization,
+        },
+      }, (r) => {
+        let d = ''; r.on('data', (c) => { d += c; });
+        r.on('end', () => {
+          if (r.statusCode >= 200 && r.statusCode < 300) resolve({ ok: true, key: objectKey });
+          else resolve({ ok: false, status: r.statusCode, error: 'Stockage: HTTP ' + r.statusCode + ' — ' + String(d).replace(/\s+/g, ' ').slice(0, 240) });
+        });
+      });
+      rq.setTimeout(25000, () => { try { rq.destroy(new Error('timeout')); } catch (e) {} });
+      rq.on('error', (e) => resolve({ ok: false, error: 'Reseau stockage: ' + e.message }));
+      rq.write(body); rq.end();
+    } catch (e) { resolve({ ok: false, error: 'Envoi impossible: ' + e.message }); }
+  });
+}
+// Enveloppe de sauvegarde : contenu COMPLET du fichier de donnees + cle de scellement fiscal (necessaire a une restauration).
+function bkBuildEnvelope() {
+  try {
+    if (PG) return { ok: false, error: 'Mode PostgreSQL : la sauvegarde se gère au niveau de la base de données.' };
+    if (!fs.existsSync(DATA_FILE)) return { ok: false, error: 'Aucun fichier de données à sauvegarder pour le moment.' };
+    const raw = fs.readFileSync(DATA_FILE, 'utf8');
+    const parsed = JSON.parse(raw);   // valide le JSON : on ne sauvegarde jamais un fichier corrompu sans le savoir
+    const env = { kingtools: 'sauvegarde', v: 1, exportedAt: new Date().toISOString(), dataFile: pathmod.basename(DATA_FILE), fiscalKey: fiscalKey || '', data: parsed };
+    return { ok: true, json: JSON.stringify(env) };
+  } catch (e) { return { ok: false, error: 'Lecture des données impossible : ' + e.message }; }
+}
+async function bkRun(trigger) {
+  if (!bkConfigured()) return { ok: false, error: 'Sauvegarde externe non configurée (variables KT_BACKUP_S3_* absentes).' };
+  if (bkRunning) return { ok: false, error: 'Une sauvegarde est déjà en cours.' };
+  bkRunning = true;
+  try {
+    backupState.lastAt = Date.now(); backupState.lastTrigger = trigger;
+    const env = bkBuildEnvelope();
+    if (!env.ok) { backupState.lastStatus = 'erreur'; backupState.lastError = env.error; persist(); return { ok: false, error: env.error }; }
+    const gz = require('zlib').gzipSync(Buffer.from(env.json, 'utf8'));
+    const d = new Date();
+    const keys = [BK.prefix + 'kingtools-derniere.json.gz', BK.prefix + 'kingtools-jour-' + String(d.getDate()).padStart(2, '0') + '.json.gz'];
+    if (d.getDate() === 1) keys.push(BK.prefix + 'kingtools-mois-' + String(d.getMonth() + 1).padStart(2, '0') + '.json.gz');
+    const done = [];
+    for (const k of keys) {
+      const r = await bkPutObject(k, gz, 'application/gzip');
+      if (!r.ok) { backupState.lastStatus = 'erreur'; backupState.lastError = r.error; persist(); return { ok: false, error: r.error, key: k }; }
+      done.push(k);
+    }
+    backupState.lastOkAt = Date.now(); backupState.lastStatus = 'ok'; backupState.lastError = ''; backupState.lastBytes = gz.length; backupState.lastKeys = done;
+    persist();
+    return { ok: true, bytes: gz.length, keys: done };
+  } finally { bkRunning = false; }
 }
 function loadPersisted() {
   if (PG) return;
@@ -536,6 +646,7 @@ function loadPersisted() {
     const d = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
     if (d.adminCred && typeof d.adminCred === 'object') adminCred = d.adminCred;   // mot de passe admin persiste (avant rebuildAccounts)
     if (typeof d.adminEmail === 'string') adminEmail = d.adminEmail;               // e-mail de recuperation admin
+    if (d.backupState && typeof d.backupState === 'object') backupState = Object.assign(backupState, d.backupState);   // etat de la sauvegarde externe
     if (typeof d.pointsPerEuro === 'number') { POINTS_PER_EURO = d.pointsPerEuro; if (loyalty) loyalty.pointsPerEuro = POINTS_PER_EURO; }
     if (typeof d.hideBaseCatalog === 'boolean') hideBaseCatalog = d.hideBaseCatalog;
     if (Array.isArray(d.customProducts)) { customProducts = d.customProducts; customProducts.forEach(ensureStock); }
@@ -1886,6 +1997,27 @@ const server = http.createServer(async (req, res) => {
       return send(res, 200, { ok: false, code: r.code || null, status: r.status || null, error: r.error || 'Échec inconnu', from: MAIL_FROM });
     }
 
+    // Sauvegardes : etat, declenchement manuel vers le stockage externe, telechargement local. Admin uniquement.
+    if (req.method === 'GET' && path === '/api/admin/backup') {
+      if (user.role !== 'admin') return send(res, 403, { error: 'Réservé à l\'administrateur réseau' });
+      let localData = null;
+      try { if (!PG && fs.existsSync(DATA_FILE)) { const st = fs.statSync(DATA_FILE); localData = { bytes: st.size, modifiedAt: st.mtime.toISOString() }; } } catch (e) {}
+      return send(res, 200, { configured: bkConfigured(), pg: !!PG, endpoint: bkConfigured() ? BK.endpoint : '', bucket: bkConfigured() ? BK.bucket : '', prefix: BK.prefix, running: bkRunning, state: backupState, localData: localData });
+    }
+    if (req.method === 'POST' && path === '/api/admin/backup/run') {
+      if (user.role !== 'admin') return send(res, 403, { error: 'Réservé à l\'administrateur réseau' });
+      const r = await bkRun('manuel');
+      return send(res, 200, r);
+    }
+    if (req.method === 'GET' && path === '/api/admin/backup/download') {
+      if (user.role !== 'admin') return send(res, 403, { error: 'Réservé à l\'administrateur réseau' });
+      const env = bkBuildEnvelope();
+      if (!env.ok) return send(res, 400, { error: env.error });
+      const name = 'kingtools-sauvegarde-' + new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-') + '.json';
+      res.writeHead(200, Object.assign({ 'content-type': 'application/json; charset=utf-8', 'content-disposition': 'attachment; filename="' + name + '"', 'cache-control': 'no-store' }, res._cors || COMMON_CORS));
+      return res.end(env.json);
+    }
+
     // Changer SON PROPRE mot de passe (tout compte connecte). Sert au « mot de passe obligatoire a la 1re connexion ».
     if (req.method === 'POST' && path === '/api/account/password') {
       const body = await readJson(req);
@@ -2773,6 +2905,24 @@ server.listen(PORT, () => {
   console.log('Comptoir API en ecoute sur http://localhost:' + PORT + '  | fidelite : ' + LOYALTY_MODE);
   console.log('Conformite caisse (NF525) : ' + fiscalEvents.length + ' evenement(s) scelle(s), Grand Total perpetuel = ' + gtPerpetuel.toFixed(2) + ' EUR.');
 });
+
+// Planificateur de sauvegarde externe : verification toutes les 30 min, envoi si la derniere
+// sauvegarde reussie date de plus de 24 h (donc ~1 envoi par jour, quel que soit l'horaire de redemarrage).
+if (!PG) {
+  const bkTick = () => {
+    try {
+      if (!bkConfigured() || bkRunning) return;
+      if (Date.now() - (backupState.lastOkAt || 0) < 24 * 3600 * 1000) return;
+      bkRun('auto').then((r) => {
+        if (r.ok) console.log('Sauvegarde externe OK (' + r.bytes + ' octets -> ' + r.keys.join(', ') + ')');
+        else console.error('Sauvegarde externe echouee :', r.error);
+      });
+    } catch (e) {}
+  };
+  setTimeout(bkTick, 90 * 1000);
+  setInterval(bkTick, 30 * 60 * 1000).unref();
+  if (!bkConfigured()) console.log('INFO : sauvegarde externe non configuree (KT_BACKUP_S3_*) — les donnees ne sont copiees nulle part hors du serveur.');
+}
 
 // Synchro catalogue WooCommerce (reassort « en direct ») : au demarrage (differee) puis toutes les heures.
 // Desactivable avec COMPTOIR_WOO_SYNC=0.

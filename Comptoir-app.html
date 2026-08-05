@@ -1304,8 +1304,24 @@ function setPayMode(m){ PAY_MODE=(m==='auto')?'auto':'manuel'; try{ localStorage
       var b=document.getElementById('loy-mode');if(b){var prod=/production/i.test((s&&s.mode)||'');b.className='tag '+(prod?'tag-ok':'tag-low');b.textContent=prod?'Relié à ton myCred (réel)':'Mode démo (points fictifs)';}
     }).catch(function(){var b=document.getElementById('loy-mode');if(b){b.className='tag tag-low';b.textContent='Serveur injoignable';}});
   }
+  function loadBkStatus(){
+    if(!API.on||!(st.user&&st.user.role==='admin'))return;
+    apiGet('/api/admin/backup').then(function(d){
+      var el=document.getElementById('bk-status');if(!el)return;
+      if(d.pg){el.innerHTML='<span class="muted">Mode PostgreSQL : la sauvegarde se gère au niveau de la base de données.</span>';return;}
+      var last=d.state&&d.state.lastOkAt?new Date(d.state.lastOkAt):null;
+      var lastTxt=last?(last.toLocaleDateString('fr-FR')+' à '+last.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})):'jamais';
+      if(!d.configured){
+        el.innerHTML='<span class="tag tag-low">sauvegarde externe non configurée</span> <span class="muted">— aujourd\'hui tes données ne sont copiées nulle part en dehors du serveur. 5 variables à ajouter dans Coolify pour l\'activer (demande à Claude, il te guide).</span>';
+      }else{
+        var okTag=(d.state&&d.state.lastStatus==='ok')?'<span class="tag tag-ok">sauvegarde externe activée</span>':(d.state&&d.state.lastStatus==='erreur'?'<span class="tag tag-low">dernière tentative en échec</span>':'<span class="tag tag-low">en attente de la première sauvegarde</span>');
+        el.innerHTML=okTag+' <span class="muted">Destination : '+esc(d.bucket)+' · '+esc(d.endpoint)+' · Dernière réussie : '+lastTxt+((d.state&&d.state.lastError)?' · Détail : '+esc(d.state.lastError):'')+'</span>';
+      }
+    }).catch(function(){var el=document.getElementById('bk-status');if(el)el.innerHTML='<span class="muted">État indisponible.</span>';});
+  }
   function viewReglages(){
     setTimeout(payInit,0);setTimeout(loyInit,0);setTimeout(loadCompany,0);
+    if(st.user&&st.user.role==='admin')setTimeout(loadBkStatus,0);
     var apiStatus=API.on?'<span class="tag tag-ok">Connecté · '+API.base+'</span>':'<span class="tag tag-low">Hors ligne (données locales)</span>';
     return '<div class="vhead"><div><h1>Réglages</h1><p>Branche l\'application sur le vrai serveur Comptoir, et relie la fidélité à ton myCred.</p></div></div>'+
       '<div class="card" style="padding:18px;max-width:660px;margin-bottom:16px"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"><b style="font-family:var(--serif);font-size:16px">Connexion serveur</b>'+apiStatus+'</div>'+
@@ -1329,6 +1345,15 @@ function setPayMode(m){ PAY_MODE=(m==='auto')?'auto':'manuel'; try{ localStorage
         (st.user&&st.user.role==='admin' ? '<div style="border-top:1px solid var(--line);margin-top:14px;padding-top:12px"><div style="font-weight:700;font-size:13px;margin-bottom:4px">⚡ Installation automatique (recommandé)</div><div class="muted" style="font-size:11.5px;margin-bottom:10px">Choisis la boutique, génère son installateur et envoie le lien. La boutique le double-clique : le pont détecte le terminal et s\'appaire tout seul. Tu n\'as rien d\'autre à faire.</div><div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap"><div class="fld"><label>Boutique</label><select id="pont-auto-bq" style="padding:9px;border:1px solid var(--line);border-radius:8px">'+boutiqueOptions()+'</select></div><button class="btn btn-gold" data-act="pont-installer">Générer le lien d\'installation</button></div><div id="pont-installer-res" style="margin-top:10px"></div></div><div style="border-top:1px solid var(--line);margin-top:14px;padding-top:12px"><div style="font-weight:700;font-size:13px;margin-bottom:6px">Connexion manuelle (avancé / repli)</div><div class="muted" style="font-size:11.5px;margin-bottom:10px">Si l\'auto ne trouve pas le terminal : la page du pont (sur l\'ordi boutique) affiche un code à 6 lettres. Entre-le ici avec l\'IP du terminal.</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px"><div class="fld"><label>Boutique</label><select id="pont-bq" style="width:100%;padding:9px;border:1px solid var(--line);border-radius:8px">'+boutiqueOptions()+'</select></div><div class="fld"><label>Code du pont</label><input id="pont-code" placeholder="ex : K7M2Q4" style="width:100%;text-transform:uppercase"/></div><div class="fld"><label>IP du terminal</label><input id="pont-ip" placeholder="192.168.1.50" style="width:100%"/></div><div class="fld"><label>Port</label><input id="pont-port" value="8888" style="width:100%"/></div></div><div style="margin-top:8px"><button class="btn btn-gold" data-act="claim-pont">Connecter ce pont</button></div><div id="pont-code-res" style="margin-top:10px"></div></div>' : '')+
       '</div>'+
       (st.user&&st.user.role==='admin'?('<div class="card" style="padding:18px;max-width:660px;margin-top:16px"><div style="margin-bottom:12px"><b style="font-family:var(--serif);font-size:16px">Identité de l\'entreprise (sur les factures)</b><div class="muted" style="font-size:12px;margin-top:3px">Apparaît sur chaque facture client. À renseigner une fois.</div></div><div class="fld" style="margin-bottom:10px"><label>Dénomination sociale</label><input id="co-denom" value="'+esc(companyInfo.denomination||'')+'" placeholder="KINGSTON SARL"/></div><div class="fld" style="margin-bottom:10px"><label>Adresse</label><input id="co-adresse" value="'+esc(companyInfo.adresse||'')+'" placeholder="12 cours Mirabeau"/></div><div style="display:flex;gap:12px;margin-bottom:10px;flex-wrap:wrap"><div class="fld" style="width:150px"><label>Code postal</label><input id="co-cp" value="'+esc(companyInfo.codePostal||'')+'" placeholder="13290"/></div><div class="fld" style="flex:1;min-width:180px"><label>Ville</label><input id="co-ville" value="'+esc(companyInfo.ville||'')+'" placeholder="Aix-en-Provence"/></div></div><div style="display:flex;gap:12px;margin-bottom:10px;flex-wrap:wrap"><div class="fld" style="flex:1;min-width:200px"><label>SIRET</label><input id="co-siret" value="'+esc(companyInfo.siret||'')+'" placeholder="123 456 789 00012"/></div><div class="fld" style="flex:1;min-width:200px"><label>N° TVA intracommunautaire</label><input id="co-tva" value="'+esc(companyInfo.tva||'')+'" placeholder="FR12345678901"/></div></div><div style="display:flex;gap:12px;margin-bottom:10px;flex-wrap:wrap"><div class="fld" style="flex:1;min-width:140px"><label>Prénom</label><input id="co-prenom" value="'+esc(companyInfo.contactPrenom||'')+'"/></div><div class="fld" style="flex:1;min-width:140px"><label>Nom</label><input id="co-nom" value="'+esc(companyInfo.contactNom||'')+'"/></div><div class="fld" style="flex:1;min-width:150px"><label>Téléphone</label><input id="co-tel" value="'+esc(companyInfo.telephone||'')+'" placeholder="06 12 34 56 78"/></div></div><label style="display:flex;align-items:center;gap:8px;font-size:13px;margin:4px 0 12px;cursor:pointer"><input type="checkbox" id="co-auto" '+(companyInfo.factureAuto?'checked':'')+'/> Imprimer une facture automatiquement après chaque vente</label><div style="display:flex;align-items:center;gap:10px"><button class="btn btn-gold" data-act="savecompany">Enregistrer l\'identité</button><span id="co-res"></span></div></div>'):'')+
+      (st.user&&st.user.role==='admin'?('<div class="card" id="bk-card" style="padding:18px;max-width:660px;margin-top:16px">'+
+        '<div style="margin-bottom:10px"><b style="font-family:var(--serif);font-size:16px">Sauvegardes des données</b><div class="muted" style="font-size:12px;margin-top:3px">Ventes, factures, comptes, stock — copie automatique chaque nuit vers un stockage indépendant du serveur, et téléchargement manuel quand tu veux.</div></div>'+
+        '<div id="bk-status" class="muted" style="font-size:12.5px;margin-bottom:12px;line-height:1.5">Chargement…</div>'+
+        '<div style="display:flex;gap:8px;flex-wrap:wrap">'+
+        '<button class="btn btn-gold" data-act="bk-run">Sauvegarder maintenant (externe)</button>'+
+        '<button class="btn" data-act="bk-download">Télécharger une sauvegarde</button>'+
+        '</div>'+
+        '<div id="bk-msg" style="font-size:12.5px;margin-top:10px;line-height:1.5"></div>'+
+      '</div>'):'')+
       '<div class="net-note" style="margin-top:16px">'+crown('#b8902f')+' Connecté au serveur, la caisse lit les vrais produits/stocks et chaque vente passe par le moteur (facture chaînée + points myCred). Hors ligne, l\'app fonctionne sur ses données de démonstration.</div>';
   }
 
@@ -2500,6 +2525,35 @@ function setPayMode(m){ PAY_MODE=(m==='auto')?'auto':'manuel'; try{ localStorage
       return;
     }
     if(a==='copy-installer'){ var cu=el.getAttribute('data-url')||''; var tid=el.getAttribute('data-target')||'pont-installer-cmd'; if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(cu).then(function(){toast('Copié ✓');},function(){toast('Copie impossible');});}else{var cinp=document.getElementById(tid);if(cinp){cinp.select();try{document.execCommand('copy');toast('Copié ✓');}catch(e){toast('Copie impossible');}}} return; }
+    if(a==='bk-run'){
+      if(!API.on){toast('Connecte-toi au serveur');return;}
+      var _bm=document.getElementById('bk-msg');
+      el.disabled=true;el.textContent='Sauvegarde en cours…';
+      if(_bm){_bm.style.color='#8a8475';_bm.textContent='Envoi vers le stockage externe…';}
+      apiPost('/api/admin/backup/run',{}).then(function(d){
+        el.disabled=false;el.textContent='Sauvegarder maintenant (externe)';
+        if(_bm){if(d&&d.ok){_bm.style.color='#3f7d4f';_bm.textContent='✅ Sauvegarde externe réussie ('+Math.max(1,Math.round((d.bytes||0)/1024))+' Ko envoyés).';}else{_bm.style.color='#c0594a';_bm.textContent='❌ '+((d&&d.error)||'Échec inconnu');}}
+        loadBkStatus();
+      }).catch(function(e){el.disabled=false;el.textContent='Sauvegarder maintenant (externe)';if(_bm){_bm.style.color='#c0594a';_bm.textContent='❌ '+((e&&e.message)||e);}});
+      return;
+    }
+    if(a==='bk-download'){
+      if(!API.on){toast('Connecte-toi au serveur');return;}
+      var _bm2=document.getElementById('bk-msg');
+      if(_bm2){_bm2.style.color='#8a8475';_bm2.textContent='Préparation du fichier…';}
+      fetch((API.base||'')+'/api/admin/backup/download',{headers:apiHeaders()})
+        .then(function(r){
+          if(!r.ok)return r.json().catch(function(){return{};}).then(function(d){throw new Error(d.error||('HTTP '+r.status));});
+          var cd=r.headers.get('content-disposition')||'';var fm=/filename="([^"]+)"/.exec(cd);
+          return r.blob().then(function(b){return {b:b,name:(fm&&fm[1])||'kingtools-sauvegarde.json'};});
+        })
+        .then(function(x){
+          var url=URL.createObjectURL(x.b);var aEl=document.createElement('a');aEl.href=url;aEl.download=x.name;document.body.appendChild(aEl);aEl.click();aEl.remove();URL.revokeObjectURL(url);
+          if(_bm2){_bm2.style.color='#3f7d4f';_bm2.textContent='✅ Sauvegarde téléchargée ('+x.name+') — garde-la précieusement, elle contient aussi la clé de scellement fiscal.';}
+        })
+        .catch(function(e){if(_bm2){_bm2.style.color='#c0594a';_bm2.textContent='❌ '+((e&&e.message)||e);}});
+      return;
+    }
     if(a==='test-email'){
       if(!API.on){toast('Connecte-toi au serveur');return;}
       var _to=((document.getElementById('mailtest-to')||{}).value||'').trim();
