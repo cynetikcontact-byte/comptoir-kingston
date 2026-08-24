@@ -2346,6 +2346,9 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'POST' && path === '/api/admin/reset') {
       if (user.role !== 'admin') return send(res, 403, { error: 'Reserve a l administrateur reseau' });
       if (PG) return send(res, 501, { error: 'Indisponible en mode PostgreSQL' });
+      // CONFORMITE (art. 286, I-3° bis du CGI — inalterabilite) : la remise a zero est VERROUILLEE en production.
+      // Elle ne sert qu'avant le lancement reel (donnees de test) et exige la variable d'environnement COMPTOIR_ALLOW_RESET=1.
+      if (process.env.COMPTOIR_ALLOW_RESET !== '1') return send(res, 403, { error: 'Remise à zéro désactivée en production (inaltérabilité des données de caisse). Réservée à la phase de test via COMPTOIR_ALLOW_RESET=1.' });
       let body = {}; try { body = await readJson(req); } catch (e) {}
       if (!body || body.confirm !== 'REMISE-A-ZERO') return send(res, 400, { error: 'Confirmation requise', confirmAttendu: 'REMISE-A-ZERO' });
       // 1) Sauvegarde horodatée AVANT toute modification — si elle échoue, on n'efface RIEN.
