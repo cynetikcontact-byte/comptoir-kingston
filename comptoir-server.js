@@ -234,6 +234,43 @@ const PRO_WP_KEY = process.env.COMPTOIR_PRO_KEY || '';
 let proProducts = [];                 // catalogue de gros importe de kingbase.fr (SEPARE du catalogue retail)
 let proLots = {};                     // n0 de lot par produit de gros (defini par l'admin) -> apparait sur la facture kingbase du franchise
 let lastProSync = 0, proSyncing = false;
+// ---- STOCK GROSSISTE (Basecamp / kingbase.fr) : la reference est GEREE DANS KINGTOOLS par l'admin,
+// visible par les franchises (quantites dispo), decrementee a chaque commande, poussee vers le site. ----
+let proStock = {};        // { productId: quantite dispo chez le grossiste (u ou g selon le produit) }
+let proBuyPrice = {};     // { productId: prix d'ACHAT grossiste en € } — CONFIDENTIEL : admin uniquement
+let proStockPush = { lastOkAt: 0, lastAt: 0, lastError: '', lastCount: 0 };   // etat des envois vers kingbase (Woo REST)
+const PRO_WC_KEY = process.env.COMPTOIR_PRO_WC_KEY || '';
+const PRO_WC_SECRET = process.env.COMPTOIR_PRO_WC_SECRET || '';
+function proPushConfigured() { return !!(PRO_WP_URL && PRO_WC_KEY && PRO_WC_SECRET); }
+// Pousse les quantites KINGTOOLS (reference) vers WooCommerce kingbase. Produits a l'unite lies (wooId)
+// uniquement : les produits au gramme restent suivis dans KINGTOOLS (Woo compte des unites, pas des grammes).
+async function pushProStockToWoo(ids) {
+  proStockPush.lastAt = Date.now();
+  if (!proPushConfigured()) { proStockPush.lastError = 'non configuré (ajouter COMPTOIR_PRO_WC_KEY et COMPTOIR_PRO_WC_SECRET dans Coolify)'; return { ok: false, code: 'NO_CREDS', error: proStockPush.lastError }; }
+  const auth = 'Basic ' + Buffer.from(PRO_WC_KEY + ':' + PRO_WC_SECRET).toString('base64');
+  const targets = (Array.isArray(ids) && ids.length ? ids : Object.keys(proStock))
+    .map((id) => proProducts.find((p) => p.id === id))
+    .filter((p) => p && p.wooId != null && p.unit !== 'g' && proStock[p.id] != null);
+  let okCount = 0, lastErr = '';
+  for (const p of targets) {
+    try {
+      const ctl = new AbortController(); const tm = setTimeout(() => ctl.abort(), 15000);
+      const r = await fetch(PRO_WP_URL + '/wp-json/wc/v3/products/' + p.wooId, {
+        method: 'PUT', signal: ctl.signal,
+        headers: { 'Authorization': auth, 'content-type': 'application/json' },
+        body: JSON.stringify({ manage_stock: true, stock_quantity: Math.max(0, Math.floor(proStock[p.id])) }),
+      });
+      clearTimeout(tm);
+      if (r.ok) okCount++;
+      else { const t = await r.text().catch(() => ''); lastErr = 'HTTP ' + r.status + ' — ' + String(t).replace(/\s+/g, ' ').slice(0, 160); }
+    } catch (e) { lastErr = 'réseau : ' + ((e && e.message) || e); }
+  }
+  proStockPush.lastCount = okCount;
+  if (lastErr) proStockPush.lastError = lastErr; else { proStockPush.lastError = ''; if (targets.length) proStockPush.lastOkAt = Date.now(); }
+  persist();
+  return { ok: !lastErr, pushed: okCount, of: targets.length, error: lastErr || undefined };
+}
+function schedulePushProStock(ids) { setTimeout(() => { pushProStockToWoo(ids).catch(() => {}); }, 50); }
 function findProProduct(id) { return proProducts.find((p) => p.id === id) || findProduct(id); }
 async function syncProCatalog() {
   if (PG || !PRO_WP_URL) return { error: 'pas de site grossiste configure' };
@@ -525,7 +562,7 @@ function persist() {
       // Écriture ATOMIQUE : fichier temporaire puis renommage -> jamais de fichier tronqué en cas de coupure.
       // NB : fiscalKey n'est PLUS écrite ici (stockée à part, fichier protégé).
       const tmp = DATA_FILE + '.tmp';
-      fs.writeFileSync(tmp, JSON.stringify({ v: 1, savedAt: new Date().toISOString(), pointsPerEuro: POINTS_PER_EURO, hideBaseCatalog, customProducts, stock, boutiques, invoiceSeq, lastHash, invoices, orderSeq, orders, fiscalEvents, fiscalSeq, lastFiscalSig, clotureSeq, gtPerpetuel, gtPerpetuelAvoirs, seqByB, gtByB, gtAvoirsByB, royaltiesRates, royaltiesStatus, clotureSeqByB, supplyOrders, supplySeq, stockMoves, proRate, pontDevices, sessions, proProducts, lastProSync, proLots, entreprise, adminCred, adminEmail, backupState }), 'utf8');
+      fs.writeFileSync(tmp, JSON.stringify({ v: 1, savedAt: new Date().toISOString(), pointsPerEuro: POINTS_PER_EURO, hideBaseCatalog, customProducts, stock, boutiques, invoiceSeq, lastHash, invoices, orderSeq, orders, fiscalEvents, fiscalSeq, lastFiscalSig, clotureSeq, gtPerpetuel, gtPerpetuelAvoirs, seqByB, gtByB, gtAvoirsByB, royaltiesRates, royaltiesStatus, clotureSeqByB, supplyOrders, supplySeq, stockMoves, proRate, pontDevices, sessions, proProducts, lastProSync, proLots, proStock, proBuyPrice, proStockPush, entreprise, adminCred, adminEmail, backupState }), 'utf8');
       fs.renameSync(tmp, DATA_FILE);
     } catch (e) { console.error('Persistance impossible :', e.message); }
   }, 200);
@@ -648,6 +685,9 @@ function loadPersisted() {
     if (d.adminCred && typeof d.adminCred === 'object') adminCred = d.adminCred;   // mot de passe admin persiste (avant rebuildAccounts)
     if (typeof d.adminEmail === 'string') adminEmail = d.adminEmail;               // e-mail de recuperation admin
     if (d.backupState && typeof d.backupState === 'object') backupState = Object.assign(backupState, d.backupState);   // etat de la sauvegarde externe
+    if (d.proStock && typeof d.proStock === 'object') proStock = d.proStock;                 // stock grossiste (Basecamp/kingbase)
+    if (d.proBuyPrice && typeof d.proBuyPrice === 'object') proBuyPrice = d.proBuyPrice;     // prix d'achat grossiste (admin)
+    if (d.proStockPush && typeof d.proStockPush === 'object') proStockPush = Object.assign(proStockPush, d.proStockPush);
     if (typeof d.pointsPerEuro === 'number') { POINTS_PER_EURO = d.pointsPerEuro; if (loyalty) loyalty.pointsPerEuro = POINTS_PER_EURO; }
     if (typeof d.hideBaseCatalog === 'boolean') hideBaseCatalog = d.hideBaseCatalog;
     if (Array.isArray(d.customProducts)) { customProducts = d.customProducts; customProducts.forEach(ensureStock); }
@@ -2562,7 +2602,9 @@ const server = http.createServer(async (req, res) => {
       const list = src.map((p) => {
         const pi = proUnitInfo(p);
         const retail = p.unit === 'g' ? ((p.tiers && p.tiers[0]) ? p.tiers[0][1] : 0) : (p.price || 0);
-        return { id: p.id, name: p.name, cat: p.cat, img: p.img || '', unit: p.unit, pro: pi ? pi.price : null, proUnit: pi ? pi.unit : 'u', step: pi ? pi.step : 1, retail: usePro ? null : retail, lot: proLots[p.id] || '' };
+        const row = { id: p.id, name: p.name, cat: p.cat, img: p.img || '', unit: p.unit, pro: pi ? pi.price : null, proUnit: pi ? pi.unit : 'u', step: pi ? pi.step : 1, retail: usePro ? null : retail, lot: proLots[p.id] || '', stock: (proStock[p.id] != null ? proStock[p.id] : null) };
+        if (user.role === 'admin' && proBuyPrice[p.id] != null) row.buyPrice = proBuyPrice[p.id];   // prix d'achat : ADMIN uniquement
+        return row;
       });
       const wooOrdersUrl = PRO_WP_URL + '/wp-admin/edit.php?post_type=shop_order';
       return send(res, 200, { rate: usePro ? 1 : proRate, products: list, source: usePro ? 'kingbase' : 'retail', lastSync: usePro ? lastProSync : lastWooSync, autoSync: true, wooOrdersUrl: wooOrdersUrl, wooLive: !!proConnector });
@@ -2585,6 +2627,45 @@ const server = http.createServer(async (req, res) => {
       persist();
       return send(res, 200, { ok: true, productId: pid, lot: lot });
     }
+    // ---- STOCK & PRIX GROSSISTE (Basecamp / kingbase.fr) : gestion ADMIN dans KINGTOOLS (reference) ----
+    if (req.method === 'GET' && path === '/api/pro/stock') {
+      if (user.role !== 'admin') return send(res, 403, { error: 'Réservé à l\'administrateur réseau' });
+      let vAchat = 0, vGros = 0;
+      const rows = proProducts.map((p) => {
+        const pi = proUnitInfo(p);
+        const stq = proStock[p.id] != null ? proStock[p.id] : null;
+        const bp = proBuyPrice[p.id] != null ? proBuyPrice[p.id] : null;
+        if (stq != null && bp != null) vAchat += stq * bp;
+        if (stq != null && pi.price != null) vGros += stq * pi.price;
+        return { id: p.id, name: p.name, cat: p.cat, img: p.img || '', unit: p.unit, wooId: p.wooId || null, proPrice: pi.price, buyPrice: bp, stock: stq, lot: proLots[p.id] || '' };
+      });
+      return send(res, 200, { products: rows, valeurAchat: Math.round(vAchat * 100) / 100, valeurGros: Math.round(vGros * 100) / 100, push: { configured: proPushConfigured(), state: proStockPush }, site: PRO_WP_URL });
+    }
+    if (req.method === 'POST' && path === '/api/pro/stock') {
+      if (user.role !== 'admin') return send(res, 403, { error: 'Réservé à l\'administrateur réseau' });
+      const b = await readJson(req);
+      const pid = String(b.productId || '').slice(0, 80);
+      const p = proProducts.find((x) => x.id === pid);
+      if (!p) return send(res, 404, { error: 'Produit de gros inconnu — synchronise d\'abord le catalogue kingbase.' });
+      let changedStock = false;
+      if (b.stock !== undefined) {
+        if (b.stock === null || b.stock === '') { if (proStock[pid] != null) { delete proStock[pid]; changedStock = true; } }
+        else { const q = Math.floor(Number(b.stock)); if (!(q >= 0)) return send(res, 400, { error: 'Quantité invalide.' }); proStock[pid] = q; changedStock = true; }
+      }
+      if (b.delta !== undefined) { const dq = Math.floor(Number(b.delta) || 0); proStock[pid] = Math.max(0, (proStock[pid] || 0) + dq); changedStock = true; }
+      if (b.buyPrice !== undefined) {
+        if (b.buyPrice === null || b.buyPrice === '') delete proBuyPrice[pid];
+        else { const bpv = Math.round(Number(b.buyPrice) * 100) / 100; if (!(bpv >= 0)) return send(res, 400, { error: 'Prix d\'achat invalide.' }); proBuyPrice[pid] = bpv; }
+      }
+      persist();
+      if (changedStock) schedulePushProStock([pid]);
+      return send(res, 200, { ok: true, productId: pid, stock: proStock[pid] != null ? proStock[pid] : null, buyPrice: proBuyPrice[pid] != null ? proBuyPrice[pid] : null });
+    }
+    if (req.method === 'POST' && path === '/api/pro/stock/push') {
+      if (user.role !== 'admin') return send(res, 403, { error: 'Réservé à l\'administrateur réseau' });
+      const r = await pushProStockToWoo(null);
+      return send(res, 200, Object.assign({ configured: proPushConfigured() }, r));
+    }
     if (req.method === 'POST' && path === '/api/pro/orders') {
       if (user.role !== 'admin' && user.role !== 'manager') return send(res, 403, { error: 'Réservé au personnel' });
       const b = await readJson(req);
@@ -2599,6 +2680,10 @@ const server = http.createServer(async (req, res) => {
         items.push({ productId: p.id, name: p.name, unit: pi.unit, qty: qty, unitPrice: pi.price, lineTotal: lineTotal, lot: proLots[p.id] || '' });
       }
       if (!items.length) return send(res, 400, { error: 'Commande de réassort vide' });
+      // STOCK GROSSISTE : refuse la commande si les quantites depassent le disponible (produits suivis).
+      const manque = [];
+      for (const it of items) { const dispo = proStock[it.productId]; if (dispo != null && it.qty > dispo) manque.push(it.name + ' (' + dispo + ' ' + it.unit + ' dispo)'); }
+      if (manque.length) return send(res, 409, { error: 'Stock grossiste insuffisant — ' + manque.join(' · ') });
       total = Math.round(total * 100) / 100;
       // Adresse de LIVRAISON saisie par le franchise (obligatoire cote app). Le grossiste (kingbase) en a besoin
       // pour expedier ; elle alimente l'adresse d'expedition de la commande WooCommerce.
@@ -2612,7 +2697,13 @@ const server = http.createServer(async (req, res) => {
       // Statut 'attente' : la commande N'EST PAS validee/transmise au reseau tant que le franchise n'a pas paye.
       // Elle bascule en 'envoyee' (validee) automatiquement quand le paiement Woo est detecte (voir GET ci-dessous).
       const o = { id: supplySeq, numero: 'PRO-' + String(supplySeq).padStart(4, '0'), boutiqueId: bId, items: items, total: total, status: 'attente', ts: Date.now(), by: user.name || null, ship: ship };
-      supplySeq++; supplyOrders.push(o); persist();
+      supplySeq++; supplyOrders.push(o);
+      // RESERVATION : decremente immediatement le stock grossiste (restaure si la commande est annulee).
+      const touchedIds = [];
+      for (const it of items) { if (proStock[it.productId] != null) { proStock[it.productId] = Math.max(0, proStock[it.productId] - it.qty); touchedIds.push(it.productId); } }
+      if (touchedIds.length) o.stockDebited = true;
+      persist();
+      if (touchedIds.length) schedulePushProStock(touchedIds);
       // Reflet WooCommerce sur kingbase.fr (site grossiste) : creer une vraie commande (statut pending,
       // PAYABLE par le franchise) que l'admin gere dans Woo. NON bloquant : si kingbase est injoignable /
       // cle absente, la commande de reassort reste valide dans Comptoir.
@@ -2645,6 +2736,11 @@ const server = http.createServer(async (req, res) => {
             } catch (e) { o.wooStatusAt = Date.now(); }
           }));
           persist();
+          // Apres detection d'un paiement, re-pousse les quantites de reference vers kingbase :
+          // Woo decremente aussi de son cote au paiement, l'envoi ABSOLU depuis KINGTOOLS realigne tout.
+          const paidIds = [];
+          toRefresh.forEach((o) => { if (o.wooPaid && o.status !== 'attente') (o.items || []).forEach((it) => { if (proStock[it.productId] != null && paidIds.indexOf(it.productId) < 0) paidIds.push(it.productId); }); });
+          if (paidIds.length) schedulePushProStock(paidIds);
         }
       }
       const list = supplyOrders.filter((o) => user.role === 'admin' ? true : o.boutiqueId === user.boutiqueId).slice().sort((a, b) => b.id - a.id);
@@ -2657,7 +2753,15 @@ const server = http.createServer(async (req, res) => {
       if (!o) return send(res, 404, { error: 'Commande introuvable' });
       if (user.role !== 'admin' && o.boutiqueId !== user.boutiqueId) return send(res, 403, { error: 'Accès refusé' });
       if (o.status !== 'attente') return send(res, 400, { error: 'Seule une commande non payée peut être annulée' });
-      o.status = 'annulee'; o.canceledAt = Date.now(); persist();
+      o.status = 'annulee'; o.canceledAt = Date.now();
+      // RESTAURATION : une commande annulee rend ses quantites au stock grossiste.
+      if (o.stockDebited) {
+        const backIds = [];
+        for (const it of (o.items || [])) { if (proStock[it.productId] != null) { proStock[it.productId] += it.qty; backIds.push(it.productId); } }
+        o.stockDebited = false;
+        if (backIds.length) schedulePushProStock(backIds);
+      }
+      persist();
       return send(res, 200, { ok: true, order: o });
     }
     if (req.method === 'POST' && path === '/api/pro/config') {

@@ -1707,8 +1707,9 @@ function setPayMode(m){ PAY_MODE=(m==='auto')?'auto':'manuel'; try{ localStorage
   function loadPro(){
     if(!API.on||proData.loading)return; proData.loading=true;
     var calls=[ apiGet('/api/pro/catalog').catch(function(){return {products:[]};}), apiGet('/api/pro/orders').catch(function(){return {orders:[]};}),
-      (st.user.role==='admin'?apiGet('/api/network/overview').catch(function(){return {boutiques:[]};}):Promise.resolve({boutiques:[]})) ];
-    Promise.all(calls).then(function(r){ proData.catalog=(r[0]&&r[0].products)||[]; proData.rate=(r[0]&&r[0].rate)||proData.rate; proData.lastSync=(r[0]&&r[0].lastSync)||0; proData.wooOrdersUrl=(r[0]&&r[0].wooOrdersUrl)||''; proData.wooLive=!!(r[0]&&r[0].wooLive); proData.source=(r[0]&&r[0].source)||'retail'; proData.orders=(r[1]&&r[1].orders)||[]; netData.boutiques=(r[2]&&r[2].boutiques)||[]; netData.totalATraiter=(r[2]&&r[2].totalATraiter)||0; setProBadge(netData.totalATraiter); proData.loaded=true; proData.loading=false; if(st.view==='pro'){ renderNetwork(); renderProCat(); renderProOrders(); var ws=document.getElementById('woo-sync'); if(ws)ws.innerHTML=wooSyncLabel(); var wol=document.getElementById('woo-orders-link'); if(wol&&proData.wooOrdersUrl)wol.href=proData.wooOrdersUrl; } })
+      (st.user.role==='admin'?apiGet('/api/network/overview').catch(function(){return {boutiques:[]};}):Promise.resolve({boutiques:[]})),
+      (st.user.role==='admin'?apiGet('/api/pro/stock').catch(function(){return null;}):Promise.resolve(null)) ];
+    Promise.all(calls).then(function(r){ proData.catalog=(r[0]&&r[0].products)||[]; proData.rate=(r[0]&&r[0].rate)||proData.rate; proData.lastSync=(r[0]&&r[0].lastSync)||0; proData.wooOrdersUrl=(r[0]&&r[0].wooOrdersUrl)||''; proData.wooLive=!!(r[0]&&r[0].wooLive); proData.source=(r[0]&&r[0].source)||'retail'; proData.orders=(r[1]&&r[1].orders)||[]; netData.boutiques=(r[2]&&r[2].boutiques)||[]; netData.totalATraiter=(r[2]&&r[2].totalATraiter)||0; proData.stockMgr=r[3]||null; setProBadge(netData.totalATraiter); proData.loaded=true; proData.loading=false; if(st.view==='pro'){ renderNetwork(); renderProStockMgr(); renderProCat(); renderProOrders(); var ws=document.getElementById('woo-sync'); if(ws)ws.innerHTML=wooSyncLabel(); var wol=document.getElementById('woo-orders-link'); if(wol&&proData.wooOrdersUrl)wol.href=proData.wooOrdersUrl; } })
     .catch(function(){ proData.loading=false; proData.loaded=true; });
   }
   function wooSyncLabel(){ var site=(proData.source==='kingbase')?'kingbase.fr':'WooCommerce'; if(!proData.lastSync) return '↻ Lié à '+site+' — synchro auto chaque heure'; var d=new Date(proData.lastSync); var hh=('0'+d.getHours()).slice(-2)+':'+('0'+d.getMinutes()).slice(-2); var sameDay=(new Date()).toDateString()===d.toDateString(); return '✓ Synchronisé depuis '+site+' · '+(sameDay?('dernière synchro '+hh):('le '+d.toLocaleDateString('fr-FR')))+' · auto chaque heure'; }
@@ -1745,12 +1746,63 @@ function setPayMode(m){ PAY_MODE=(m==='auto')?'auto':'manuel'; try{ localStorage
     var lineTot=(q>0&&p.pro!=null)?'<div class="pro-linetot">= '+eur2(p.pro*q)+'</div>':'';
     var remove=q>0?'<button type="button" class="pro-remove" data-act="pro-clear" data-id="'+esc(p.id)+'">retirer</button>':'';
     var lotRow=(st.user&&st.user.role==='admin')?'<div style="margin-top:8px"><input class="pro-lot-f" data-id="'+esc(p.id)+'" value="'+esc(p.lot||'')+'" placeholder="N° de lot (sur facture)" title="Visible sur la facture kingbase du franchisé" style="width:100%;box-sizing:border-box;padding:7px 9px;border:1px dashed var(--gold);border-radius:9px;font-size:12.5px;background:var(--gold-soft);color:#1a1410"/></div>':(p.lot?'<div class="muted" style="font-size:11px;margin-top:6px">Lot : '+esc(p.lot)+'</div>':'');
+    var dispo='';
+    if(p.stock!=null){
+      dispo = p.stock>0
+        ? '<div style="margin-top:3px"><span class="tag tag-ok" style="font-size:10.5px">dispo grossiste : '+p.stock+' '+u+'</span></div>'
+        : '<div style="margin-top:3px"><span class="tag tag-low" style="font-size:10.5px">rupture grossiste</span></div>';
+    }
+    var buyLine=(st.user&&st.user.role==='admin'&&p.buyPrice!=null)?'<div class="muted" style="font-size:11px;margin-top:2px">achat : '+eur2(p.buyPrice)+'/'+u+(p.pro!=null?(' · marge '+eur2(p.pro-p.buyPrice)):'')+'</div>':'';
     return '<div class="card pro-card'+(q>0?' inpanier':'')+'">'+ph+
       '<div style="font-weight:800;margin-top:8px;line-height:1.2">'+esc(p.name)+'</div>'+
       '<div class="muted" style="font-size:12px">'+esc(p.cat)+' · '+price+'</div>'+
+      dispo+buyLine+
       lotRow+stepper+hint+lineTot+remove+'</div>';
   }
   function proRefreshBar(){ var bar=document.getElementById('pro-bar'); if(!bar)return; var n=proCartLineCount(); bar.innerHTML=n?('<div style="margin-right:auto;font-size:13.5px"><b>'+n+' produit'+(n>1?'s':'')+'</b> au panier · <b>'+eur2(proCartTotal())+'</b></div><button class="btn btn-gold" data-act="pro-order">Voir le panier ›</button>'):'<span class="muted">Choisis des quantités ci-dessus pour commander.</span>'; }
+  // Plafonne une quantite au stock grossiste disponible (produits suivis). Retourne la valeur corrigee.
+  function proCapQty(pid,val){
+    var p=(proData.catalog||[]).find(function(x){return x.id===pid;});
+    val=Math.max(0,Math.floor(Number(val)||0));
+    if(p&&p.stock!=null&&val>p.stock){ toast(p.stock>0?('Stock grossiste : '+p.stock+' '+(p.proUnit==='g'?'g':'u')+' maximum'):'Rupture chez le grossiste'); return p.stock; }
+    return val;
+  }
+  // ----- Gestion ADMIN du stock grossiste (Basecamp / kingbase.fr) -----
+  function renderProStockMgr(){
+    var el=document.getElementById('pro-stockmgr'); if(!el)return;
+    var d=proData.stockMgr;
+    if(!d){ el.innerHTML='<div class="muted" style="padding:6px">Indisponible pour le moment.</div>'; return; }
+    var push=d.push||{}; var pstate=push.state||{};
+    var pushLine;
+    if(!push.configured){
+      pushLine='<span class="tag tag-low">envoi vers le site : non configuré</span> <span class="muted" style="font-size:12px">— le stock vit dans KINGTOOLS (dispo + décrément OK). Pour pousser AUSSI les quantités vers kingbase.fr : WooCommerce → Réglages → Avancé → API REST → créer une clé Lecture/écriture, puis ajouter COMPTOIR_PRO_WC_KEY et COMPTOIR_PRO_WC_SECRET dans Coolify.</span>';
+    }else{
+      var lastok=pstate.lastOkAt?new Date(pstate.lastOkAt):null;
+      pushLine=pstate.lastError
+        ? '<span class="tag tag-low">dernier envoi en échec</span> <span class="muted" style="font-size:12px">'+esc(pstate.lastError)+'</span>'
+        : '<span class="tag tag-ok">synchro kingbase active</span> <span class="muted" style="font-size:12px">'+(lastok?('dernier envoi le '+lastok.toLocaleDateString('fr-FR')+' à '+lastok.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})):'aucun envoi pour le moment')+'</span>';
+    }
+    var rows=(d.products||[]).map(function(p){
+      var u=(p.unit==='g'?'g':'u');
+      var marge=(p.buyPrice!=null&&p.proPrice!=null)?(Math.round((p.proPrice-p.buyPrice)*100)/100):null;
+      var margeTxt=marge!=null
+        ? '<b style="color:'+(marge>=0?'#2e7d4f':'#b4452f')+'">'+eur2(marge)+'</b>'+(p.buyPrice>0?'<span class="muted" style="font-size:11px"> ('+Math.round(marge/p.buyPrice*100)+'%)</span>':'')
+        : '<span class="muted">—</span>';
+      var lien=(p.unit==='g')?'<span class="muted" style="font-size:10.5px">suivi KINGTOOLS</span>':(p.wooId?'<span class="muted" style="font-size:10.5px">lié au site</span>':'<span class="tag tag-low" style="font-size:10px">non lié au site</span>');
+      return '<tr>'+
+        '<td><b>'+esc(p.name)+'</b><div class="muted" style="font-size:11px">'+esc(p.cat||'')+' · '+lien+'</div></td>'+
+        '<td style="white-space:nowrap"><input class="pbuy-f" data-id="'+esc(p.id)+'" type="number" step="0.01" min="0" value="'+(p.buyPrice!=null?p.buyPrice:'')+'" placeholder="—" style="width:88px;padding:6px 8px;border:1px solid var(--line);border-radius:8px"/> €/'+u+'</td>'+
+        '<td style="white-space:nowrap">'+(p.proPrice!=null?(eur2(p.proPrice)+'/'+u):'<span class="muted">à définir</span>')+'</td>'+
+        '<td style="white-space:nowrap">'+margeTxt+'</td>'+
+        '<td style="white-space:nowrap"><input class="pstk-f" data-id="'+esc(p.id)+'" type="number" step="1" min="0" value="'+(p.stock!=null?p.stock:'')+'" placeholder="—" style="width:88px;padding:6px 8px;border:1px solid var(--line);border-radius:8px"/> '+u+'</td>'+
+        '<td style="text-align:right"><button class="btn" data-act="prostock-save" data-id="'+esc(p.id)+'" style="padding:6px 12px">Enregistrer</button></td>'+
+      '</tr>';
+    }).join('')||'<tr><td colspan="6" class="muted" style="padding:12px">Catalogue de gros vide — clique « Synchroniser maintenant » pour importer kingbase.fr.</td></tr>';
+    el.innerHTML='<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px">'+pushLine+'<span style="flex:1"></span>'+(push.configured?'<button class="btn" data-act="prostock-push">Pousser tout le stock vers kingbase</button>':'')+'</div>'+
+      '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px"><span class="tag">valeur du stock au prix d\'achat : <b>'+eur2(d.valeurAchat||0)+'</b></span><span class="tag">au prix de gros : <b>'+eur2(d.valeurGros||0)+'</b></span></div>'+
+      '<table class="tbl"><thead><tr><th>Produit</th><th>Prix d\'achat</th><th>Prix de gros</th><th>Marge</th><th>Stock grossiste</th><th></th></tr></thead><tbody>'+rows+'</tbody></table>'+
+      '<div class="muted" style="font-size:11.5px;margin-top:8px">Le prix d\'achat n\'est visible que par toi (jamais par les franchisés). Laisse le stock vide pour ne pas suivre un produit. Chaque commande franchisé décrémente automatiquement ce stock — et le rend si elle est annulée avant paiement.</div>';
+  }
   function renderProCat(){
     var el=document.getElementById('pro-cat'); if(!el)return;
     el.innerHTML=proData.catalog.length?proData.catalog.map(proCard).join(''):'<div class="muted" style="padding:16px">Catalogue vide — importe d\'abord ton catalogue.</div>';
@@ -1901,7 +1953,8 @@ function setPayMode(m){ PAY_MODE=(m==='auto')?'auto':'manuel'; try{ localStorage
     setTimeout(loadPro,0);
     var who = st.user.role==='admin' ? 'Commande pour tes boutiques et suis les commandes de tes franchisés.' : 'Commande ton stock au réseau. À la réception, clique « Commande reçue » : le stock entre automatiquement dans ta boutique (avec n° de lot).';
     return '<div class="vhead"><div><h1>Réassort pro <span class="tag tag-ok" style="vertical-align:middle">stock au réseau</span></h1><p>'+who+'</p></div></div>'+
-      (st.user.role==='admin'?'<h3 style="font-family:var(--serif);margin:4px 0 10px">Vue réseau — toutes les boutiques</h3><div id="pro-net" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:12px"><div class="muted" style="padding:16px">Chargement…</div></div>':'')+
+      (st.user.role==='admin'?'<h3 style="font-family:var(--serif);margin:4px 0 10px">Vue réseau — toutes les boutiques</h3><div id="pro-net" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:12px"><div class="muted" style="padding:16px">Chargement…</div></div>'+
+      '<h3 style="font-family:var(--serif);margin:22px 0 10px">📦 Stock &amp; prix grossiste <span class="tag tag-ok" style="vertical-align:middle;font-size:11px">Basecamp · kingbase.fr</span></h3><div id="pro-stockmgr" class="card" style="padding:14px"><div class="muted" style="padding:6px">Chargement…</div></div>':'')+
       '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin:22px 0 12px"><h3 style="font-family:var(--serif);margin:0">Catalogue de gros</h3>'+(st.user.role==='admin'?'<div style="display:flex;align-items:center;gap:10px;margin-left:auto;flex-wrap:wrap"><span id="woo-sync" class="tag tag-ok" style="font-weight:600">↻ Lié à WooCommerce</span><button class="btn" data-act="woo-sync">Synchroniser maintenant</button><button class="btn" data-act="pro-newprod">+ Nouveau produit entrant</button></div>':'')+'</div>'+
       '<div id="pro-cat" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:14px"></div>'+
       '<div id="pro-bar" style="position:sticky;bottom:0;background:#fbfaf6;border-top:1px solid var(--line);padding:14px 4px;margin-top:14px;display:flex;align-items:center;justify-content:flex-end"></div>'+
@@ -2540,11 +2593,26 @@ function setPayMode(m){ PAY_MODE=(m==='auto')?'auto':'manuel'; try{ localStorage
     if(a==='fiscverify'){fiscalData.loading=false;loadFiscal();toast('Vérification de l’intégrité…');return;}
     if(a==='fiscarchive'){exportArchive();return;}
     if(a==='pro-set'){ proSetQty(el.getAttribute('data-id'), +el.getAttribute('data-q')||0); renderProCat(); return; }
-    if(a==='pro-step'){ var psid=el.getAttribute('data-id'); proSetQty(psid, proQty(psid)+(+el.getAttribute('data-d')||0)); renderProCat(); return; }
+    if(a==='pro-step'){ var psid=el.getAttribute('data-id'); proSetQty(psid, proCapQty(psid, proQty(psid)+(+el.getAttribute('data-d')||0))); renderProCat(); return; }
+    if(a==='prostock-save'){
+      if(!API.on){toast('Connecte-toi au serveur');return;}
+      var _sid=el.getAttribute('data-id');
+      var _bEl=document.querySelector('.pbuy-f[data-id="'+_sid+'"]'); var _sEl=document.querySelector('.pstk-f[data-id="'+_sid+'"]');
+      var _body={productId:_sid, buyPrice:(_bEl&&_bEl.value!==''?parseFloat(_bEl.value):null), stock:(_sEl&&_sEl.value!==''?parseInt(_sEl.value,10):null)};
+      el.disabled=true;
+      apiPost('/api/pro/stock',_body).then(function(){el.disabled=false;toast('Stock grossiste enregistré');proData.loaded=false;proData.loading=false;loadPro();}).catch(function(e){el.disabled=false;toast('Échec : '+(e.message||e));});
+      return;
+    }
+    if(a==='prostock-push'){
+      if(!API.on){toast('Connecte-toi au serveur');return;}
+      el.disabled=true;el.textContent='Envoi vers kingbase…';
+      apiPost('/api/pro/stock/push',{}).then(function(d){el.disabled=false;el.textContent='Pousser tout le stock vers kingbase';toast((d&&d.ok)?('✅ Stock envoyé au site ('+(d.pushed||0)+'/'+(d.of||0)+' produit'+((d.of||0)>1?'s':'')+')'):('❌ '+((d&&d.error)||'Échec')));proData.loaded=false;proData.loading=false;loadPro();}).catch(function(e){el.disabled=false;el.textContent='Pousser tout le stock vers kingbase';toast('Échec : '+(e.message||e));});
+      return;
+    }
     if(a==='pro-clear'){ var pid2=el.getAttribute('data-id'); if(st.proCart)delete st.proCart[pid2]; renderProCat(); return; }
     if(a==='woo-sync'){ if(!API.on){toast('Connecte-toi au serveur');return;} el.disabled=true; var wss=document.getElementById('woo-sync'); if(wss)wss.textContent='Synchronisation…'; var isKb=(proData.source==='kingbase'); var p=isKb?apiPost('/api/pro/sync',{}):apiPost('/api/products/import-site',{boutiqueId:(st.user&&st.user.boutiqueId)||'aix'}); p.then(function(d){ toast(isKb?('Catalogue kingbase synchronisé : '+(d.count||0)+' produits'):('Catalogue WooCommerce synchronisé : '+(d.created||0)+' ajouté(s), '+(d.updated||0)+' mis à jour')); proData.loaded=false;proData.loading=false; if(!isKb)reloadProducts(); loadPro(); el.disabled=false; }).catch(function(e){ if(wss)wss.textContent='Échec de synchro'; toast('Échec : '+(e.message||e)); el.disabled=false; }); return; }
     if(a==='pro-order'){ if(!API.on)return; if(!proCartCount()){toast('Choisis des quantités à commander');return;} openProCartModal(); return; }
-    if(a==='pro-cart-inc'){ var iid=el.getAttribute('data-id'); var ist=+el.getAttribute('data-step')||1; st.proCart=st.proCart||{}; st.proCart[iid]=(st.proCart[iid]||0)+ist; openProCartModal(); renderProCat(); return; }
+    if(a==='pro-cart-inc'){ var iid=el.getAttribute('data-id'); var ist=+el.getAttribute('data-step')||1; st.proCart=st.proCart||{}; st.proCart[iid]=proCapQty(iid,(st.proCart[iid]||0)+ist); if(!st.proCart[iid])delete st.proCart[iid]; openProCartModal(); renderProCat(); return; }
     if(a==='pro-cart-dec'){ var did=el.getAttribute('data-id'); var dst=+el.getAttribute('data-step')||1; st.proCart=st.proCart||{}; var nv=(st.proCart[did]||0)-dst; if(nv>0)st.proCart[did]=nv; else delete st.proCart[did]; if(proCartCount())openProCartModal();else closeModal(); renderProCat(); return; }
     if(a==='pro-cart-del'){ var ddid=el.getAttribute('data-id'); if(st.proCart)delete st.proCart[ddid]; if(proCartCount())openProCartModal();else closeModal(); renderProCat(); return; }
     if(a==='pro-order-confirm'){ if(!API.on)return; var pit=[]; for(var pk in (st.proCart||{})) if(st.proCart[pk]>0) pit.push({productId:pk,qty:st.proCart[pk]}); if(!pit.length){toast('Ton panier est vide');return;} if(!proShipOk()){toast('Renseigne ton adresse de livraison (nom, adresse, code postal, ville)');var ff=document.querySelector('.ship-f');if(ff)ff.focus();return;} var sh2=proShipGet(); try{localStorage.setItem('kt_ship',JSON.stringify(sh2));}catch(e){} var cbtn=el; cbtn.textContent='Envoi…'; cbtn.setAttribute('disabled','disabled'); apiPost('/api/pro/orders',{items:pit,ship:sh2}).then(function(d){st.proCart={};proData.loaded=false;proData.loading=false;loadPro();if(d&&d.order)openProPayModal(d.order);else{closeModal();toast('Commande créée');}}).catch(function(e){toast('Échec : '+(e.message||e));if(cbtn){cbtn.textContent='Valider et payer ›';cbtn.removeAttribute('disabled');}}); return; }
@@ -2762,7 +2830,7 @@ function setPayMode(m){ PAY_MODE=(m==='auto')?'auto':'manuel'; try{ localStorage
     if(e.target&&e.target.id==='cm-search'){ var q=e.target.value; clearTimeout(custSearchTimer); custSearchTimer=setTimeout(function(){loadClientSearch(q);},250); return; }
     if(e.target&&e.target.id==='fid-search'){ st.fidQ=e.target.value; clearTimeout(custSearchTimer); custSearchTimer=setTimeout(loadFidelite,250); return; }
     if(e.target&&e.target.id==='tpe-mode'){ tpeToggle(); return; }
-    if(e.target&&e.target.classList&&e.target.classList.contains('pro-qty')){ proSetQty(e.target.getAttribute('data-pid'), e.target.value); proRefreshBar(); var pc=e.target.closest&&e.target.closest('.pro-card'); if(pc)pc.classList.toggle('inpanier', proQty(e.target.getAttribute('data-pid'))>0); return; }
+    if(e.target&&e.target.classList&&e.target.classList.contains('pro-qty')){ var _qpid=e.target.getAttribute('data-pid'); var _qv=proCapQty(_qpid, e.target.value); if(String(_qv)!==String(e.target.value)&&e.target.value!=='')e.target.value=_qv||''; proSetQty(_qpid, _qv); proRefreshBar(); var pc=e.target.closest&&e.target.closest('.pro-card'); if(pc)pc.classList.toggle('inpanier', proQty(_qpid)>0); return; }
     if(e.target&&e.target.classList&&e.target.classList.contains('ship-f')){ proShipGet(); st.proShip[e.target.getAttribute('data-k')]=e.target.value; return; }
   });
   document.body.addEventListener('change',function(e){ if(e.target&&e.target.id==='tpe-mode'){ tpeToggle(); } if(e.target&&e.target.id==='pay-mode'){ setPayMode(e.target.value); } if(e.target&&e.target.classList&&e.target.classList.contains('pro-qty')){ proSetQty(e.target.getAttribute('data-pid'), e.target.value); renderProCat(); } if(e.target&&e.target.classList&&e.target.classList.contains('pro-lot-f')){ var lid=e.target.getAttribute('data-id'); var lv=(e.target.value||'').trim(); apiPost('/api/pro/lots',{productId:lid,lot:lv}).then(function(){ var it=(proData.catalog||[]).filter(function(x){return x.id===lid;})[0]; if(it)it.lot=lv; toast(lv?('Lot « '+lv+' » enregistré sur '+((it&&it.name)||'le produit')):'Lot retiré'); }).catch(function(err){toast('Échec : '+(err.message||err));}); } });
