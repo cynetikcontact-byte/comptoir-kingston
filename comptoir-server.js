@@ -238,29 +238,63 @@ let lastProSync = 0, proSyncing = false;
 // visible par les franchises (quantites dispo), decrementee a chaque commande, poussee vers le site. ----
 let proStock = {};        // { productId: quantite dispo chez le grossiste (u ou g selon le produit) }
 let proBuyPrice = {};     // { productId: prix d'ACHAT grossiste en € } — CONFIDENTIEL : admin uniquement
+let proSellPrice = {};    // { productId: prix de VENTE aux franchises en € } — override admin, prime sur le prix du site et survit aux synchros
 let proStockPush = { lastOkAt: 0, lastAt: 0, lastError: '', lastCount: 0 };   // etat des envois vers kingbase (Woo REST)
 const PRO_WC_KEY = process.env.COMPTOIR_PRO_WC_KEY || '';
 const PRO_WC_SECRET = process.env.COMPTOIR_PRO_WC_SECRET || '';
 function proPushConfigured() { return !!(PRO_WP_URL && PRO_WC_KEY && PRO_WC_SECRET); }
-// Pousse les quantites KINGTOOLS (reference) vers WooCommerce kingbase. Produits a l'unite lies (wooId)
-// uniquement : les produits au gramme restent suivis dans KINGTOOLS (Woo compte des unites, pas des grammes).
+// Pousse les quantites ET les prix de vente KINGTOOLS (reference) vers WooCommerce kingbase.
+// Produits a l'unite lies (wooId) uniquement : les produits au gramme restent suivis dans KINGTOOLS
+// (Woo compte des unites, pas des grammes ; leurs prix sont geres par variations sur le site).
+async function wooFetch(url, opts, ms) {
+  const ctl = new AbortController(); const tm = setTimeout(() => ctl.abort(), ms || 15000);
+  try { return await fetch(url, Object.assign({ signal: ctl.signal }, opts || {})); } finally { clearTimeout(tm); }
+}
+// Le prix de gros dans KINGTOOLS est le prix AFFICHE du site (Store API). Woo, lui, attend le prix
+// tel que SAISI (HT ou TTC selon la config de la boutique). On mesure le rapport affiche/saisi sur le
+// produit lui-meme juste avant l'envoi, pour pousser la bonne valeur quel que soit le reglage TVA.
+async function wooDisplayRatio(p, auth) {
+  try {
+    const rs = await wooFetch(PRO_WP_URL + '/wp-json/wc/store/v1/products/' + p.wooId, null, 10000);
+    if (!rs.ok) return null;
+    const sj = await rs.json();
+    const mu = (sj && sj.prices && sj.prices.currency_minor_unit) || 2;
+    const disp = Number(sj && sj.prices && sj.prices.price) / Math.pow(10, mu);
+    const rr = await wooFetch(PRO_WP_URL + '/wp-json/wc/v3/products/' + p.wooId, { headers: { 'Authorization': auth } }, 10000);
+    if (!rr.ok) return null;
+    const rj = await rr.json();
+    const ent = Number((rj && (rj.price || rj.regular_price)) || 0);
+    if (!(disp > 0) || !(ent > 0)) return null;
+    const ratio = disp / ent;
+    if (!(ratio > 0.5 && ratio < 2)) return null;          // valeur aberrante -> on ne pousse pas le prix
+    return (Math.abs(ratio - 1) < 0.005) ? 1 : ratio;       // prix saisis TTC (cas courant) -> envoi tel quel
+  } catch (e) { return null; }
+}
 async function pushProStockToWoo(ids) {
   proStockPush.lastAt = Date.now();
   if (!proPushConfigured()) { proStockPush.lastError = 'non configuré (ajouter COMPTOIR_PRO_WC_KEY et COMPTOIR_PRO_WC_SECRET dans Coolify)'; return { ok: false, code: 'NO_CREDS', error: proStockPush.lastError }; }
   const auth = 'Basic ' + Buffer.from(PRO_WC_KEY + ':' + PRO_WC_SECRET).toString('base64');
-  const targets = (Array.isArray(ids) && ids.length ? ids : Object.keys(proStock))
+  const wanted = (Array.isArray(ids) && ids.length) ? ids : Object.keys(proStock).concat(Object.keys(proSellPrice));
+  const seen = {};
+  const targets = wanted
+    .filter((id) => { if (seen[id]) return false; seen[id] = 1; return true; })
     .map((id) => proProducts.find((p) => p.id === id))
-    .filter((p) => p && p.wooId != null && p.unit !== 'g' && proStock[p.id] != null);
+    .filter((p) => p && p.wooId != null && p.unit !== 'g' && (proStock[p.id] != null || proSellPrice[p.id] != null));
   let okCount = 0, lastErr = '';
   for (const p of targets) {
     try {
-      const ctl = new AbortController(); const tm = setTimeout(() => ctl.abort(), 15000);
-      const r = await fetch(PRO_WP_URL + '/wp-json/wc/v3/products/' + p.wooId, {
-        method: 'PUT', signal: ctl.signal,
+      const body = {};
+      if (proStock[p.id] != null) { body.manage_stock = true; body.stock_quantity = Math.max(0, Math.floor(proStock[p.id])); }
+      if (proSellPrice[p.id] != null) {
+        const ratio = await wooDisplayRatio(p, auth);
+        if (ratio != null) body.regular_price = String(Math.round((proSellPrice[p.id] / ratio) * 100) / 100);
+      }
+      if (!Object.keys(body).length) continue;
+      const r = await wooFetch(PRO_WP_URL + '/wp-json/wc/v3/products/' + p.wooId, {
+        method: 'PUT',
         headers: { 'Authorization': auth, 'content-type': 'application/json' },
-        body: JSON.stringify({ manage_stock: true, stock_quantity: Math.max(0, Math.floor(proStock[p.id])) }),
+        body: JSON.stringify(body),
       });
-      clearTimeout(tm);
       if (r.ok) okCount++;
       else { const t = await r.text().catch(() => ''); lastErr = 'HTTP ' + r.status + ' — ' + String(t).replace(/\s+/g, ' ').slice(0, 160); }
     } catch (e) { lastErr = 'réseau : ' + ((e && e.message) || e); }
@@ -491,9 +525,11 @@ function pontInstallerScript(base, token) {
   ].join('\n');
 }
 function proUnitInfo(p) {
-  // Prix de gros fixé MANUELLEMENT par l'admin (p.proPrice). Tant qu'il n'est pas defini -> price=null
+  // Prix de gros : l'OVERRIDE admin (proSellPrice, regle depuis « Stock & prix grossiste ») prime sur le
+  // prix synchronise depuis le site (p.proPrice). Tant que rien n'est defini -> price=null
   // (le franchise commande quand meme ses quantites ; le prix sera ajoute plus tard).
-  return { unit: p.unit === 'g' ? 'g' : 'u', step: p.unit === 'g' ? 25 : 10, price: (typeof p.proPrice === 'number' ? p.proPrice : null) };
+  const ov = proSellPrice[p.id];
+  return { unit: p.unit === 'g' ? 'g' : 'u', step: p.unit === 'g' ? 25 : 10, price: (typeof ov === 'number' ? ov : (typeof p.proPrice === 'number' ? p.proPrice : null)) };
 }
 
 const invoices = [];
@@ -562,7 +598,7 @@ function persist() {
       // Écriture ATOMIQUE : fichier temporaire puis renommage -> jamais de fichier tronqué en cas de coupure.
       // NB : fiscalKey n'est PLUS écrite ici (stockée à part, fichier protégé).
       const tmp = DATA_FILE + '.tmp';
-      fs.writeFileSync(tmp, JSON.stringify({ v: 1, savedAt: new Date().toISOString(), pointsPerEuro: POINTS_PER_EURO, hideBaseCatalog, customProducts, stock, boutiques, invoiceSeq, lastHash, invoices, orderSeq, orders, fiscalEvents, fiscalSeq, lastFiscalSig, clotureSeq, gtPerpetuel, gtPerpetuelAvoirs, seqByB, gtByB, gtAvoirsByB, royaltiesRates, royaltiesStatus, clotureSeqByB, supplyOrders, supplySeq, stockMoves, proRate, pontDevices, sessions, proProducts, lastProSync, proLots, proStock, proBuyPrice, proStockPush, entreprise, adminCred, adminEmail, backupState }), 'utf8');
+      fs.writeFileSync(tmp, JSON.stringify({ v: 1, savedAt: new Date().toISOString(), pointsPerEuro: POINTS_PER_EURO, hideBaseCatalog, customProducts, stock, boutiques, invoiceSeq, lastHash, invoices, orderSeq, orders, fiscalEvents, fiscalSeq, lastFiscalSig, clotureSeq, gtPerpetuel, gtPerpetuelAvoirs, seqByB, gtByB, gtAvoirsByB, royaltiesRates, royaltiesStatus, clotureSeqByB, supplyOrders, supplySeq, stockMoves, proRate, pontDevices, sessions, proProducts, lastProSync, proLots, proStock, proBuyPrice, proSellPrice, proStockPush, entreprise, adminCred, adminEmail, backupState }), 'utf8');
       fs.renameSync(tmp, DATA_FILE);
     } catch (e) { console.error('Persistance impossible :', e.message); }
   }, 200);
@@ -687,6 +723,7 @@ function loadPersisted() {
     if (d.backupState && typeof d.backupState === 'object') backupState = Object.assign(backupState, d.backupState);   // etat de la sauvegarde externe
     if (d.proStock && typeof d.proStock === 'object') proStock = d.proStock;                 // stock grossiste (Basecamp/kingbase)
     if (d.proBuyPrice && typeof d.proBuyPrice === 'object') proBuyPrice = d.proBuyPrice;     // prix d'achat grossiste (admin)
+    if (d.proSellPrice && typeof d.proSellPrice === 'object') proSellPrice = d.proSellPrice; // prix de vente aux franchises (override admin)
     if (d.proStockPush && typeof d.proStockPush === 'object') proStockPush = Object.assign(proStockPush, d.proStockPush);
     if (typeof d.pointsPerEuro === 'number') { POINTS_PER_EURO = d.pointsPerEuro; if (loyalty) loyalty.pointsPerEuro = POINTS_PER_EURO; }
     if (typeof d.hideBaseCatalog === 'boolean') hideBaseCatalog = d.hideBaseCatalog;
@@ -2637,29 +2674,51 @@ const server = http.createServer(async (req, res) => {
         const bp = proBuyPrice[p.id] != null ? proBuyPrice[p.id] : null;
         if (stq != null && bp != null) vAchat += stq * bp;
         if (stq != null && pi.price != null) vGros += stq * pi.price;
-        return { id: p.id, name: p.name, cat: p.cat, img: p.img || '', unit: p.unit, wooId: p.wooId || null, proPrice: pi.price, buyPrice: bp, stock: stq, lot: proLots[p.id] || '' };
+        return { id: p.id, name: p.name, cat: p.cat, img: p.img || '', unit: p.unit, wooId: p.wooId || null, proPrice: pi.price, sitePrice: (typeof p.proPrice === 'number' ? p.proPrice : null), sellOverride: proSellPrice[p.id] != null, buyPrice: bp, stock: stq, lot: proLots[p.id] || '' };
       });
       return send(res, 200, { products: rows, valeurAchat: Math.round(vAchat * 100) / 100, valeurGros: Math.round(vGros * 100) / 100, push: { configured: proPushConfigured(), state: proStockPush }, site: PRO_WP_URL });
     }
     if (req.method === 'POST' && path === '/api/pro/stock') {
       if (user.role !== 'admin') return send(res, 403, { error: 'Réservé à l\'administrateur réseau' });
       const b = await readJson(req);
-      const pid = String(b.productId || '').slice(0, 80);
-      const p = proProducts.find((x) => x.id === pid);
-      if (!p) return send(res, 404, { error: 'Produit de gros inconnu — synchronise d\'abord le catalogue kingbase.' });
-      let changedStock = false;
-      if (b.stock !== undefined) {
-        if (b.stock === null || b.stock === '') { if (proStock[pid] != null) { delete proStock[pid]; changedStock = true; } }
-        else { const q = Math.floor(Number(b.stock)); if (!(q >= 0)) return send(res, 400, { error: 'Quantité invalide.' }); proStock[pid] = q; changedStock = true; }
+      // Une ligne (productId + champs) ou un LOT de lignes (items:[...]) pour « Tout enregistrer ».
+      const reqs = Array.isArray(b.items) ? b.items : [b];
+      if (!reqs.length) return send(res, 400, { error: 'Rien à enregistrer.' });
+      // 1) VALIDATION complete avant toute ecriture (un lot est applique en entier, ou pas du tout).
+      const num = (v) => Math.round(Number(v) * 100) / 100;
+      for (const it of reqs) {
+        const pid = String((it && it.productId) || '').slice(0, 80);
+        const p = proProducts.find((x) => x.id === pid);
+        if (!p) return send(res, 404, { error: 'Produit de gros inconnu (' + (pid || '?') + ') — synchronise d\'abord le catalogue kingbase.' });
+        if (it.stock !== undefined && it.stock !== null && it.stock !== '' && !(Math.floor(Number(it.stock)) >= 0)) return send(res, 400, { error: 'Quantité invalide (' + p.name + ').' });
+        if (it.buyPrice !== undefined && it.buyPrice !== null && it.buyPrice !== '' && !(num(it.buyPrice) >= 0)) return send(res, 400, { error: 'Prix d\'achat invalide (' + p.name + ').' });
+        if (it.sellPrice !== undefined && it.sellPrice !== null && it.sellPrice !== '' && !(num(it.sellPrice) >= 0)) return send(res, 400, { error: 'Prix de vente invalide (' + p.name + ').' });
       }
-      if (b.delta !== undefined) { const dq = Math.floor(Number(b.delta) || 0); proStock[pid] = Math.max(0, (proStock[pid] || 0) + dq); changedStock = true; }
-      if (b.buyPrice !== undefined) {
-        if (b.buyPrice === null || b.buyPrice === '') delete proBuyPrice[pid];
-        else { const bpv = Math.round(Number(b.buyPrice) * 100) / 100; if (!(bpv >= 0)) return send(res, 400, { error: 'Prix d\'achat invalide.' }); proBuyPrice[pid] = bpv; }
+      // 2) APPLICATION
+      const pushIds = []; const results = [];
+      for (const it of reqs) {
+        const pid = String(it.productId).slice(0, 80);
+        let touched = false;
+        if (it.stock !== undefined) {
+          if (it.stock === null || it.stock === '') { if (proStock[pid] != null) { delete proStock[pid]; touched = true; } }
+          else { proStock[pid] = Math.floor(Number(it.stock)); touched = true; }
+        }
+        if (it.delta !== undefined) { const dq = Math.floor(Number(it.delta) || 0); proStock[pid] = Math.max(0, (proStock[pid] || 0) + dq); touched = true; }
+        if (it.buyPrice !== undefined) {
+          if (it.buyPrice === null || it.buyPrice === '') delete proBuyPrice[pid];
+          else proBuyPrice[pid] = num(it.buyPrice);
+        }
+        if (it.sellPrice !== undefined) {
+          if (it.sellPrice === null || it.sellPrice === '') { if (proSellPrice[pid] != null) { delete proSellPrice[pid]; touched = true; } }
+          else { const spv = num(it.sellPrice); if (proSellPrice[pid] !== spv) touched = true; proSellPrice[pid] = spv; }
+        }
+        if (touched && pushIds.indexOf(pid) < 0) pushIds.push(pid);
+        results.push({ productId: pid, stock: proStock[pid] != null ? proStock[pid] : null, buyPrice: proBuyPrice[pid] != null ? proBuyPrice[pid] : null, sellPrice: proSellPrice[pid] != null ? proSellPrice[pid] : null });
       }
       persist();
-      if (changedStock) schedulePushProStock([pid]);
-      return send(res, 200, { ok: true, productId: pid, stock: proStock[pid] != null ? proStock[pid] : null, buyPrice: proBuyPrice[pid] != null ? proBuyPrice[pid] : null });
+      if (pushIds.length) schedulePushProStock(pushIds);
+      const first = results[0] || {};
+      return send(res, 200, Array.isArray(b.items) ? { ok: true, saved: results.length, results: results } : Object.assign({ ok: true }, first));
     }
     if (req.method === 'POST' && path === '/api/pro/stock/push') {
       if (user.role !== 'admin') return send(res, 403, { error: 'Réservé à l\'administrateur réseau' });

@@ -1782,26 +1782,82 @@ function setPayMode(m){ PAY_MODE=(m==='auto')?'auto':'manuel'; try{ localStorage
         ? '<span class="tag tag-low">dernier envoi en échec</span> <span class="muted" style="font-size:12px">'+esc(pstate.lastError)+'</span>'
         : '<span class="tag tag-ok">synchro kingbase active</span> <span class="muted" style="font-size:12px">'+(lastok?('dernier envoi le '+lastok.toLocaleDateString('fr-FR')+' à '+lastok.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})):'aucun envoi pour le moment')+'</span>';
     }
-    var rows=(d.products||[]).map(function(p){
-      var u=(p.unit==='g'?'g':'u');
-      var marge=(p.buyPrice!=null&&p.proPrice!=null)?(Math.round((p.proPrice-p.buyPrice)*100)/100):null;
-      var margeTxt=marge!=null
-        ? '<b style="color:'+(marge>=0?'#2e7d4f':'#b4452f')+'">'+eur2(marge)+'</b>'+(p.buyPrice>0?'<span class="muted" style="font-size:11px"> ('+Math.round(marge/p.buyPrice*100)+'%)</span>':'')
-        : '<span class="muted">—</span>';
-      var lien=(p.unit==='g')?'<span class="muted" style="font-size:10.5px">suivi KINGTOOLS</span>':(p.wooId?'<span class="muted" style="font-size:10.5px">lié au site</span>':'<span class="tag tag-low" style="font-size:10px">non lié au site</span>');
-      return '<tr>'+
-        '<td><b>'+esc(p.name)+'</b><div class="muted" style="font-size:11px">'+esc(p.cat||'')+' · '+lien+'</div></td>'+
-        '<td style="white-space:nowrap"><input class="pbuy-f" data-id="'+esc(p.id)+'" type="number" step="0.01" min="0" value="'+(p.buyPrice!=null?p.buyPrice:'')+'" placeholder="—" style="width:88px;padding:6px 8px;border:1px solid var(--line);border-radius:8px"/> €/'+u+'</td>'+
-        '<td style="white-space:nowrap">'+(p.proPrice!=null?(eur2(p.proPrice)+'/'+u):'<span class="muted">à définir</span>')+'</td>'+
-        '<td style="white-space:nowrap">'+margeTxt+'</td>'+
-        '<td style="white-space:nowrap"><input class="pstk-f" data-id="'+esc(p.id)+'" type="number" step="1" min="0" value="'+(p.stock!=null?p.stock:'')+'" placeholder="—" style="width:88px;padding:6px 8px;border:1px solid var(--line);border-radius:8px"/> '+u+'</td>'+
-        '<td style="text-align:right"><button class="btn" data-act="prostock-save" data-id="'+esc(p.id)+'" style="padding:6px 12px">Enregistrer</button></td>'+
-      '</tr>';
-    }).join('')||'<tr><td colspan="6" class="muted" style="padding:12px">Catalogue de gros vide — clique « Synchroniser maintenant » pour importer kingbase.fr.</td></tr>';
-    el.innerHTML='<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px">'+pushLine+'<span style="flex:1"></span>'+(push.configured?'<button class="btn" data-act="prostock-push">Pousser tout le stock vers kingbase</button>':'')+'</div>'+
-      '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px"><span class="tag">valeur du stock au prix d\'achat : <b>'+eur2(d.valeurAchat||0)+'</b></span><span class="tag">au prix de gros : <b>'+eur2(d.valeurGros||0)+'</b></span></div>'+
-      '<table class="tbl"><thead><tr><th>Produit</th><th>Prix d\'achat</th><th>Prix de gros</th><th>Marge</th><th>Stock grossiste</th><th></th></tr></thead><tbody>'+rows+'</tbody></table>'+
-      '<div class="muted" style="font-size:11.5px;margin-top:8px">Le prix d\'achat n\'est visible que par toi (jamais par les franchisés). Laisse le stock vide pour ne pas suivre un produit. Chaque commande franchisé décrémente automatiquement ce stock — et le rend si elle est annulée avant paiement.</div>';
+    var rows=(d.products||[]).map(proStockRowHTML).join('')||'<tr><td colspan="6" class="muted" style="padding:12px">Catalogue de gros vide — clique « Synchroniser maintenant » pour importer kingbase.fr.</td></tr>';
+    var margePot=Math.round(((d.valeurGros||0)-(d.valeurAchat||0))*100)/100;
+    el.innerHTML='<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px">'+pushLine+'<span style="flex:1"></span>'+(push.configured?'<button class="btn" data-act="prostock-push">Pousser stock + prix vers kingbase</button>':'')+'</div>'+
+      '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px;align-items:center"><span class="tag">valeur du stock au prix d\'achat : <b id="pstk-vach">'+eur2(d.valeurAchat||0)+'</b></span><span class="tag">au prix de vente : <b id="pstk-vgros">'+eur2(d.valeurGros||0)+'</b></span><span class="tag '+(margePot>=0?'tag-ok':'tag-low')+'" id="pstk-vmarge-tag">marge potentielle : <b id="pstk-vmarge">'+eur2(margePot)+'</b></span><span style="flex:1"></span><button class="btn primary" data-act="prostock-saveall" style="padding:7px 14px">💾 Tout enregistrer</button></div>'+
+      '<div style="overflow-x:auto"><table class="tbl"><thead><tr><th>Produit</th><th>Prix d\'achat</th><th>Prix de vente franchisé</th><th>Marge</th><th>Stock grossiste (− / +)</th><th></th></tr></thead><tbody>'+rows+'</tbody></table></div>'+
+      '<div class="muted" style="font-size:11.5px;margin-top:8px">Le prix d\'achat et la marge ne sont visibles que par toi (jamais par les franchisés). Le prix de vente est celui payé par les franchisés — modifié ici, il s\'applique immédiatement aux commandes et est poussé vers kingbase.fr quand la synchro est active. Les boutons − / + ajoutent ou retirent du stock immédiatement ; « Tout enregistrer » applique d\'un coup toutes les cases modifiées. Laisse le stock vide pour ne pas suivre un produit.</div>';
+  }
+  function proStockRowHTML(p){
+    var inpSt='padding:6px 8px;border:1px solid var(--line);border-radius:8px';
+    var u=(p.unit==='g'?'g':'u');
+    var stepQ=(p.unit==='g'?25:1);
+    var marge=(p.buyPrice!=null&&p.proPrice!=null)?(Math.round((p.proPrice-p.buyPrice)*100)/100):null;
+    var margeTxt=marge!=null
+      ? '<b style="color:'+(marge>=0?'#2e7d4f':'#b4452f')+'">'+eur2(marge)+'</b>'+(p.buyPrice>0?'<span class="muted" style="font-size:11px"> ('+Math.round(marge/p.buyPrice*100)+'%)</span>':'')
+      : '<span class="muted">—</span>';
+    var lien=(p.unit==='g')?'<span class="muted" style="font-size:10.5px">suivi KINGTOOLS</span>':(p.wooId?'<span class="muted" style="font-size:10.5px">lié au site</span>':'<span class="tag tag-low" style="font-size:10px">non lié au site</span>');
+    var sellHint=p.sellOverride
+      ? '<div class="muted" style="font-size:10.5px;margin-top:2px">prix modifié'+(p.sitePrice!=null?(' · site : '+eur2(p.sitePrice)):'')+' · <a href="#" data-act="prostock-resetsell" data-id="'+esc(p.id)+'" title="Revenir au prix du site">↺ prix du site</a></div>'
+      : '';
+    return '<tr data-prow="'+esc(p.id)+'">'+
+      '<td><b>'+esc(p.name)+'</b><div class="muted" style="font-size:11px">'+esc(p.cat||'')+' · '+lien+'</div></td>'+
+      '<td style="white-space:nowrap"><input class="pbuy-f" data-id="'+esc(p.id)+'" data-orig="'+(p.buyPrice!=null?p.buyPrice:'')+'" type="number" step="0.01" min="0" value="'+(p.buyPrice!=null?p.buyPrice:'')+'" placeholder="—" style="width:84px;'+inpSt+'"/> €/'+u+'</td>'+
+      '<td style="white-space:nowrap"><input class="psell-f" data-id="'+esc(p.id)+'" data-orig="'+(p.proPrice!=null?p.proPrice:'')+'" type="number" step="0.01" min="0" value="'+(p.proPrice!=null?p.proPrice:'')+'" placeholder="—" style="width:84px;'+inpSt+'"/> €/'+u+sellHint+'</td>'+
+      '<td style="white-space:nowrap">'+margeTxt+'</td>'+
+      '<td style="white-space:nowrap"><button class="btn" data-act="prostock-adj" data-id="'+esc(p.id)+'" data-d="-'+stepQ+'" title="Retirer '+stepQ+' '+u+' (immédiat)" style="padding:6px 10px">−</button> <input class="pstk-f" data-id="'+esc(p.id)+'" data-orig="'+(p.stock!=null?p.stock:'')+'" type="number" step="1" min="0" value="'+(p.stock!=null?p.stock:'')+'" placeholder="—" style="width:76px;'+inpSt+';text-align:center"/> <button class="btn" data-act="prostock-adj" data-id="'+esc(p.id)+'" data-d="'+stepQ+'" title="Ajouter '+stepQ+' '+u+' (immédiat)" style="padding:6px 10px">+</button> '+u+'</td>'+
+      '<td style="text-align:right"><button class="btn" data-act="prostock-save" data-id="'+esc(p.id)+'" style="padding:6px 12px">Enregistrer</button></td>'+
+    '</tr>';
+  }
+  // Valeur d'un champ si elle a change par rapport a data-orig (undefined = inchange, null = vide).
+  function proStockFieldChange(elm){
+    if(!elm)return undefined;
+    var o=elm.getAttribute('data-orig'); var ov=(o===''||o==null)?null:parseFloat(o);
+    var nv=(elm.value==='')?null:parseFloat(elm.value);
+    if(nv!=null&&!isFinite(nv))nv=null;
+    if(nv===ov)return undefined;
+    if(nv!=null&&ov!=null&&Math.abs(nv-ov)<0.005)return undefined;
+    return nv;
+  }
+  function proStockRowChanges(pid){
+    var ch={productId:pid}, any=false;
+    var v=proStockFieldChange(document.querySelector('.pbuy-f[data-id="'+pid+'"]')); if(v!==undefined){ch.buyPrice=v;any=true;}
+    v=proStockFieldChange(document.querySelector('.psell-f[data-id="'+pid+'"]')); if(v!==undefined){ch.sellPrice=v;any=true;}
+    var kEl=document.querySelector('.pstk-f[data-id="'+pid+'"]'); v=proStockFieldChange(kEl); if(v!==undefined){ch.stock=(v==null?null:Math.floor(v));any=true;}
+    return any?ch:null;
+  }
+  function proStockTotalsRefresh(){
+    var d=proData.stockMgr; if(!d)return;
+    var va=0,vg=0;
+    (d.products||[]).forEach(function(p){ if(p.stock!=null&&p.buyPrice!=null)va+=p.stock*p.buyPrice; if(p.stock!=null&&p.proPrice!=null)vg+=p.stock*p.proPrice; });
+    d.valeurAchat=Math.round(va*100)/100; d.valeurGros=Math.round(vg*100)/100;
+    var m=Math.round((d.valeurGros-d.valeurAchat)*100)/100;
+    var e1=document.getElementById('pstk-vach'); if(e1)e1.textContent=eur2(d.valeurAchat);
+    var e2=document.getElementById('pstk-vgros'); if(e2)e2.textContent=eur2(d.valeurGros);
+    var e3=document.getElementById('pstk-vmarge'); if(e3)e3.textContent=eur2(m);
+    var e4=document.getElementById('pstk-vmarge-tag'); if(e4){e4.classList.toggle('tag-ok',m>=0);e4.classList.toggle('tag-low',m<0);}
+  }
+  // Applique le resultat serveur {productId,stock,buyPrice,sellPrice} : donnees locales + ligne + catalogue.
+  function proStockApply(r,keepRowDom){
+    var d=proData.stockMgr; if(!d||!r||!r.productId)return;
+    var p=(d.products||[]).find(function(x){return x.id===r.productId;}); if(!p)return;
+    p.buyPrice=(r.buyPrice!=null?r.buyPrice:null);
+    p.stock=(r.stock!=null?r.stock:null);
+    p.sellOverride=(r.sellPrice!=null);
+    p.proPrice=(r.sellPrice!=null?r.sellPrice:(p.sitePrice!=null?p.sitePrice:null));
+    var c=(proData.catalog||[]).find(function(x){return x.id===r.productId;});
+    if(c){ c.stock=p.stock; c.pro=p.proPrice; if(st.user&&st.user.role==='admin'){ if(p.buyPrice!=null)c.buyPrice=p.buyPrice; else delete c.buyPrice; } }
+    var tr=document.querySelector('tr[data-prow="'+r.productId+'"]');
+    if(tr){
+      if(keepRowDom){
+        var kEl=tr.querySelector('.pstk-f'); if(kEl){kEl.value=(p.stock!=null?p.stock:'');kEl.setAttribute('data-orig',(p.stock!=null?p.stock:''));}
+      }else{
+        var tmp=document.createElement('tbody'); tmp.innerHTML=proStockRowHTML(p);
+        if(tmp.firstChild)tr.parentNode.replaceChild(tmp.firstChild,tr);
+      }
+    }
+    proStockTotalsRefresh(); renderProCat();
   }
   function renderProCat(){
     var el=document.getElementById('pro-cat'); if(!el)return;
@@ -2597,16 +2653,43 @@ function setPayMode(m){ PAY_MODE=(m==='auto')?'auto':'manuel'; try{ localStorage
     if(a==='prostock-save'){
       if(!API.on){toast('Connecte-toi au serveur');return;}
       var _sid=el.getAttribute('data-id');
-      var _bEl=document.querySelector('.pbuy-f[data-id="'+_sid+'"]'); var _sEl=document.querySelector('.pstk-f[data-id="'+_sid+'"]');
-      var _body={productId:_sid, buyPrice:(_bEl&&_bEl.value!==''?parseFloat(_bEl.value):null), stock:(_sEl&&_sEl.value!==''?parseInt(_sEl.value,10):null)};
+      var _body=proStockRowChanges(_sid);
+      if(!_body){toast('Aucun changement sur cette ligne');return;}
       el.disabled=true;
-      apiPost('/api/pro/stock',_body).then(function(){el.disabled=false;toast('Stock grossiste enregistré');proData.loaded=false;proData.loading=false;loadPro();}).catch(function(e){el.disabled=false;toast('Échec : '+(e.message||e));});
+      apiPost('/api/pro/stock',_body).then(function(r){el.disabled=false;proStockApply(r);toast('✅ Enregistré — appliqué partout');}).catch(function(e){el.disabled=false;toast('Échec : '+(e.message||e));});
+      return;
+    }
+    if(a==='prostock-saveall'){
+      if(!API.on){toast('Connecte-toi au serveur');return;}
+      var _items=[];
+      document.querySelectorAll('tr[data-prow]').forEach(function(tr){ var ch=proStockRowChanges(tr.getAttribute('data-prow')); if(ch)_items.push(ch); });
+      if(!_items.length){toast('Aucun changement à enregistrer');return;}
+      el.disabled=true;el.textContent='Enregistrement…';
+      apiPost('/api/pro/stock',{items:_items}).then(function(d){
+        el.disabled=false;el.textContent='💾 Tout enregistrer';
+        ((d&&d.results)||[]).forEach(function(r){proStockApply(r);});
+        toast('✅ '+_items.length+' produit'+(_items.length>1?'s':'')+' enregistré'+(_items.length>1?'s':'')+' — appliqué partout');
+      }).catch(function(e){el.disabled=false;el.textContent='💾 Tout enregistrer';toast('Échec : '+(e.message||e));});
+      return;
+    }
+    if(a==='prostock-adj'){
+      if(!API.on){toast('Connecte-toi au serveur');return;}
+      var _aid=el.getAttribute('data-id'); var _ad=+el.getAttribute('data-d')||0;
+      el.disabled=true;
+      apiPost('/api/pro/stock',{productId:_aid,delta:_ad}).then(function(r){el.disabled=false;proStockApply(r,true);toast((_ad>0?'+':'')+_ad+' → stock : '+(r.stock!=null?r.stock:'—'));}).catch(function(e){el.disabled=false;toast('Échec : '+(e.message||e));});
+      return;
+    }
+    if(a==='prostock-resetsell'){
+      if(ev&&ev.preventDefault)ev.preventDefault();
+      if(!API.on){toast('Connecte-toi au serveur');return;}
+      var _rid=el.getAttribute('data-id');
+      apiPost('/api/pro/stock',{productId:_rid,sellPrice:null}).then(function(r){proStockApply(r);toast('Prix de vente : retour au prix du site');}).catch(function(e){toast('Échec : '+(e.message||e));});
       return;
     }
     if(a==='prostock-push'){
       if(!API.on){toast('Connecte-toi au serveur');return;}
       el.disabled=true;el.textContent='Envoi vers kingbase…';
-      apiPost('/api/pro/stock/push',{}).then(function(d){el.disabled=false;el.textContent='Pousser tout le stock vers kingbase';toast((d&&d.ok)?('✅ Stock envoyé au site ('+(d.pushed||0)+'/'+(d.of||0)+' produit'+((d.of||0)>1?'s':'')+')'):('❌ '+((d&&d.error)||'Échec')));proData.loaded=false;proData.loading=false;loadPro();}).catch(function(e){el.disabled=false;el.textContent='Pousser tout le stock vers kingbase';toast('Échec : '+(e.message||e));});
+      apiPost('/api/pro/stock/push',{}).then(function(d){el.disabled=false;el.textContent='Pousser stock + prix vers kingbase';toast((d&&d.ok)?('✅ Envoyé au site ('+(d.pushed||0)+'/'+(d.of||0)+' produit'+((d.of||0)>1?'s':'')+')'):('❌ '+((d&&d.error)||'Échec')));proData.loaded=false;proData.loading=false;loadPro();}).catch(function(e){el.disabled=false;el.textContent='Pousser stock + prix vers kingbase';toast('Échec : '+(e.message||e));});
       return;
     }
     if(a==='pro-clear'){ var pid2=el.getAttribute('data-id'); if(st.proCart)delete st.proCart[pid2]; renderProCat(); return; }
