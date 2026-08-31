@@ -240,6 +240,19 @@ let proStock = {};        // { productId: quantite dispo chez le grossiste (u ou
 let proBuyPrice = {};     // { productId: prix d'ACHAT grossiste en € } — CONFIDENTIEL : admin uniquement
 let proSellPrice = {};    // { productId: prix de VENTE aux franchises en € } — override admin, prime sur le prix du site et survit aux synchros
 let proStockPush = { lastOkAt: 0, lastAt: 0, lastError: '', lastCount: 0 };   // etat des envois vers kingbase (Woo REST)
+// ---- BLOCAGE du Réassort pro pour les franchises (decide par l'admin, jamais applique a l'admin) ----
+// mode 'off' = ouvert a tous · 'all' = bloque pour TOUTES les boutiques · 'selected' = bloque pour ids[]
+let proBlock = { mode: 'off', message: '', ids: [] };
+function proBlockedFor(u) {
+  if (!u || u.role !== 'manager') return false;                    // l'admin n'est JAMAIS bloque
+  if (proBlock.mode === 'all') return true;
+  if (proBlock.mode === 'selected') return (proBlock.ids || []).indexOf(u.boutiqueId) >= 0;
+  return false;
+}
+function proBlockMessage() {
+  const m = String(proBlock.message || '').trim();
+  return m || 'Le réassort pro est momentanément fermé par le réseau KINGSTON. Contacte ton animateur réseau pour plus d\'informations.';
+}
 const PRO_WC_KEY = process.env.COMPTOIR_PRO_WC_KEY || '';
 const PRO_WC_SECRET = process.env.COMPTOIR_PRO_WC_SECRET || '';
 function proPushConfigured() { return !!(PRO_WP_URL && PRO_WC_KEY && PRO_WC_SECRET); }
@@ -598,7 +611,7 @@ function persist() {
       // Écriture ATOMIQUE : fichier temporaire puis renommage -> jamais de fichier tronqué en cas de coupure.
       // NB : fiscalKey n'est PLUS écrite ici (stockée à part, fichier protégé).
       const tmp = DATA_FILE + '.tmp';
-      fs.writeFileSync(tmp, JSON.stringify({ v: 1, savedAt: new Date().toISOString(), pointsPerEuro: POINTS_PER_EURO, hideBaseCatalog, customProducts, stock, boutiques, invoiceSeq, lastHash, invoices, orderSeq, orders, fiscalEvents, fiscalSeq, lastFiscalSig, clotureSeq, gtPerpetuel, gtPerpetuelAvoirs, seqByB, gtByB, gtAvoirsByB, royaltiesRates, royaltiesStatus, clotureSeqByB, supplyOrders, supplySeq, stockMoves, proRate, pontDevices, sessions, proProducts, lastProSync, proLots, proStock, proBuyPrice, proSellPrice, proStockPush, entreprise, adminCred, adminEmail, backupState }), 'utf8');
+      fs.writeFileSync(tmp, JSON.stringify({ v: 1, savedAt: new Date().toISOString(), pointsPerEuro: POINTS_PER_EURO, hideBaseCatalog, customProducts, stock, boutiques, invoiceSeq, lastHash, invoices, orderSeq, orders, fiscalEvents, fiscalSeq, lastFiscalSig, clotureSeq, gtPerpetuel, gtPerpetuelAvoirs, seqByB, gtByB, gtAvoirsByB, royaltiesRates, royaltiesStatus, clotureSeqByB, supplyOrders, supplySeq, stockMoves, proRate, pontDevices, sessions, proProducts, lastProSync, proLots, proStock, proBuyPrice, proSellPrice, proStockPush, proBlock, entreprise, adminCred, adminEmail, backupState }), 'utf8');
       fs.renameSync(tmp, DATA_FILE);
     } catch (e) { console.error('Persistance impossible :', e.message); }
   }, 200);
@@ -724,6 +737,7 @@ function loadPersisted() {
     if (d.proStock && typeof d.proStock === 'object') proStock = d.proStock;                 // stock grossiste (Basecamp/kingbase)
     if (d.proBuyPrice && typeof d.proBuyPrice === 'object') proBuyPrice = d.proBuyPrice;     // prix d'achat grossiste (admin)
     if (d.proSellPrice && typeof d.proSellPrice === 'object') proSellPrice = d.proSellPrice; // prix de vente aux franchises (override admin)
+    if (d.proBlock && typeof d.proBlock === 'object') proBlock = { mode: ['off', 'all', 'selected'].indexOf(d.proBlock.mode) >= 0 ? d.proBlock.mode : 'off', message: String(d.proBlock.message || '').slice(0, 1000), ids: Array.isArray(d.proBlock.ids) ? d.proBlock.ids.map(String) : [] }; // blocage reassort franchises
     if (d.proStockPush && typeof d.proStockPush === 'object') proStockPush = Object.assign(proStockPush, d.proStockPush);
     if (typeof d.pointsPerEuro === 'number') { POINTS_PER_EURO = d.pointsPerEuro; if (loyalty) loyalty.pointsPerEuro = POINTS_PER_EURO; }
     if (typeof d.hideBaseCatalog === 'boolean') hideBaseCatalog = d.hideBaseCatalog;
@@ -2634,6 +2648,8 @@ const server = http.createServer(async (req, res) => {
 
     // ---------------- RÉASSORT PRO (B2B) : les franchisés commandent leur stock au réseau ----------------
     if (req.method === 'GET' && path === '/api/pro/catalog') {
+      // Boutique bloquee par l'admin : pas de catalogue, seulement le message (200 pour un affichage propre cote app).
+      if (proBlockedFor(user)) return send(res, 200, { blocked: true, message: proBlockMessage(), products: [], rate: proRate, source: 'kingbase' });
       const usePro = proProducts.length > 0;          // kingbase.fr branche -> le catalogue de gros = kingbase
       const src = usePro ? proProducts : allCatalog().filter((p) => !p.boutiqueId);   // le reassort reseau ignore les produits propres a une boutique
       const list = src.map((p) => {
@@ -2727,6 +2743,7 @@ const server = http.createServer(async (req, res) => {
     }
     if (req.method === 'POST' && path === '/api/pro/orders') {
       if (user.role !== 'admin' && user.role !== 'manager') return send(res, 403, { error: 'Réservé au personnel' });
+      if (proBlockedFor(user)) return send(res, 403, { error: proBlockMessage(), blocked: true });   // blocage decide par l'admin
       const b = await readJson(req);
       const bId = user.role === 'admin' ? (b.boutiqueId || 'aix') : user.boutiqueId;
       const items = []; let total = 0;
@@ -2777,6 +2794,7 @@ const server = http.createServer(async (req, res) => {
       return send(res, 201, { ok: true, order: o });
     }
     if (req.method === 'GET' && path === '/api/pro/orders') {
+      if (proBlockedFor(user)) return send(res, 200, { blocked: true, message: proBlockMessage(), orders: [] });   // page fermee pour cette boutique
       // Reflet du paiement : pour les commandes non encore payees ayant une commande Woo, on rafraichit
       // l'etat depuis kingbase (lazy, borne a 10, throttle 60s par commande) afin d'afficher "Paye ✓"
       // et de masquer le bouton "Payer" une fois reglee. Non bloquant en cas d'erreur/timeout.
@@ -2811,6 +2829,7 @@ const server = http.createServer(async (req, res) => {
       const o = supplyOrders.find((x) => x.id === parseInt(mProCancel[1], 10));
       if (!o) return send(res, 404, { error: 'Commande introuvable' });
       if (user.role !== 'admin' && o.boutiqueId !== user.boutiqueId) return send(res, 403, { error: 'Accès refusé' });
+      if (proBlockedFor(user)) return send(res, 403, { error: proBlockMessage(), blocked: true });
       if (o.status !== 'attente') return send(res, 400, { error: 'Seule une commande non payée peut être annulée' });
       o.status = 'annulee'; o.canceledAt = Date.now();
       // RESTAURATION : une commande annulee rend ses quantites au stock grossiste.
@@ -2822,6 +2841,23 @@ const server = http.createServer(async (req, res) => {
       }
       persist();
       return send(res, 200, { ok: true, order: o });
+    }
+    // ---- Blocage du Réassort pro (admin) : lecture + reglage du mode, du message et des boutiques visees ----
+    if (req.method === 'GET' && path === '/api/pro/block') {
+      if (user.role !== 'admin') return send(res, 403, { error: 'Réservé à l\'administrateur réseau' });
+      const bqs = Object.keys(boutiques).map((id) => ({ id: id, label: (boutiques[id] && boutiques[id].label) || id, blocked: proBlock.mode === 'all' || (proBlock.mode === 'selected' && proBlock.ids.indexOf(id) >= 0) }));
+      return send(res, 200, { mode: proBlock.mode, message: proBlock.message, ids: proBlock.ids, defaultMessage: proBlockMessage(), boutiques: bqs });
+    }
+    if (req.method === 'POST' && path === '/api/pro/block') {
+      if (user.role !== 'admin') return send(res, 403, { error: 'Réservé à l\'administrateur réseau' });
+      const b = await readJson(req);
+      const mode = String(b.mode || 'off');
+      if (['off', 'all', 'selected'].indexOf(mode) < 0) return send(res, 400, { error: 'Mode invalide.' });
+      const ids = Array.isArray(b.ids) ? b.ids.map(String).filter((id) => !!boutiques[id]) : [];
+      if (mode === 'selected' && !ids.length) return send(res, 400, { error: 'Choisis au moins une boutique à bloquer (ou passe en « Ouvert pour tous »).' });
+      proBlock = { mode: mode, message: String(b.message == null ? '' : b.message).slice(0, 1000), ids: mode === 'selected' ? ids : [] };
+      persist();
+      return send(res, 200, { ok: true, mode: proBlock.mode, message: proBlock.message, ids: proBlock.ids });
     }
     if (req.method === 'POST' && path === '/api/pro/config') {
       if (user.role !== 'admin') return send(res, 403, { error: 'Réservé à l\'administrateur réseau' });
