@@ -253,6 +253,14 @@ function proBlockMessage() {
   const m = String(proBlock.message || '').trim();
   return m || 'Le réassort pro est momentanément fermé par le réseau KINGSTON. Contacte ton animateur réseau pour plus d\'informations.';
 }
+// ---- PRODUITS GROSSISTE AJOUTES A LA MAIN (admin) : varietes et references absentes du site kingbase.
+// Ils survivent aux synchros du catalogue (stockes a part) et ne sont jamais pousses vers Woo (pas de wooId).
+let proExtras = [];   // [{ id:'kx..', name, cat, unit:'g'|'u', proPrice? , source:'manuel', custom:true }]
+function allProProducts() { return proExtras.length ? proProducts.concat(proExtras) : proProducts; }
+// Nom normalise pour rapprocher un inventaire dicte des fiches existantes ("KING4" == "King 4").
+function proNorm(s) {
+  return String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]/g, '');
+}
 const PRO_WC_KEY = process.env.COMPTOIR_PRO_WC_KEY || '';
 const PRO_WC_SECRET = process.env.COMPTOIR_PRO_WC_SECRET || '';
 function proPushConfigured() { return !!(PRO_WP_URL && PRO_WC_KEY && PRO_WC_SECRET); }
@@ -318,7 +326,7 @@ async function pushProStockToWoo(ids) {
   return { ok: !lastErr, pushed: okCount, of: targets.length, error: lastErr || undefined };
 }
 function schedulePushProStock(ids) { setTimeout(() => { pushProStockToWoo(ids).catch(() => {}); }, 50); }
-function findProProduct(id) { return proProducts.find((p) => p.id === id) || findProduct(id); }
+function findProProduct(id) { return proProducts.find((p) => p.id === id) || proExtras.find((p) => p.id === id) || findProduct(id); }
 async function syncProCatalog() {
   if (PG || !PRO_WP_URL) return { error: 'pas de site grossiste configure' };
   if (proSyncing) return { busy: true };
@@ -611,7 +619,7 @@ function persist() {
       // Écriture ATOMIQUE : fichier temporaire puis renommage -> jamais de fichier tronqué en cas de coupure.
       // NB : fiscalKey n'est PLUS écrite ici (stockée à part, fichier protégé).
       const tmp = DATA_FILE + '.tmp';
-      fs.writeFileSync(tmp, JSON.stringify({ v: 1, savedAt: new Date().toISOString(), pointsPerEuro: POINTS_PER_EURO, hideBaseCatalog, customProducts, stock, boutiques, invoiceSeq, lastHash, invoices, orderSeq, orders, fiscalEvents, fiscalSeq, lastFiscalSig, clotureSeq, gtPerpetuel, gtPerpetuelAvoirs, seqByB, gtByB, gtAvoirsByB, royaltiesRates, royaltiesStatus, clotureSeqByB, supplyOrders, supplySeq, stockMoves, proRate, pontDevices, sessions, proProducts, lastProSync, proLots, proStock, proBuyPrice, proSellPrice, proStockPush, proBlock, entreprise, adminCred, adminEmail, backupState }), 'utf8');
+      fs.writeFileSync(tmp, JSON.stringify({ v: 1, savedAt: new Date().toISOString(), pointsPerEuro: POINTS_PER_EURO, hideBaseCatalog, customProducts, stock, boutiques, invoiceSeq, lastHash, invoices, orderSeq, orders, fiscalEvents, fiscalSeq, lastFiscalSig, clotureSeq, gtPerpetuel, gtPerpetuelAvoirs, seqByB, gtByB, gtAvoirsByB, royaltiesRates, royaltiesStatus, clotureSeqByB, supplyOrders, supplySeq, stockMoves, proRate, pontDevices, sessions, proProducts, lastProSync, proLots, proStock, proBuyPrice, proSellPrice, proStockPush, proBlock, proExtras, entreprise, adminCred, adminEmail, backupState }), 'utf8');
       fs.renameSync(tmp, DATA_FILE);
     } catch (e) { console.error('Persistance impossible :', e.message); }
   }, 200);
@@ -737,6 +745,7 @@ function loadPersisted() {
     if (d.proStock && typeof d.proStock === 'object') proStock = d.proStock;                 // stock grossiste (Basecamp/kingbase)
     if (d.proBuyPrice && typeof d.proBuyPrice === 'object') proBuyPrice = d.proBuyPrice;     // prix d'achat grossiste (admin)
     if (d.proSellPrice && typeof d.proSellPrice === 'object') proSellPrice = d.proSellPrice; // prix de vente aux franchises (override admin)
+    if (Array.isArray(d.proExtras)) proExtras = d.proExtras;                                   // produits grossiste ajoutes a la main
     if (d.proBlock && typeof d.proBlock === 'object') proBlock = { mode: ['off', 'all', 'selected'].indexOf(d.proBlock.mode) >= 0 ? d.proBlock.mode : 'off', message: String(d.proBlock.message || '').slice(0, 1000), ids: Array.isArray(d.proBlock.ids) ? d.proBlock.ids.map(String) : [] }; // blocage reassort franchises
     if (d.proStockPush && typeof d.proStockPush === 'object') proStockPush = Object.assign(proStockPush, d.proStockPush);
     if (typeof d.pointsPerEuro === 'number') { POINTS_PER_EURO = d.pointsPerEuro; if (loyalty) loyalty.pointsPerEuro = POINTS_PER_EURO; }
@@ -2650,12 +2659,12 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && path === '/api/pro/catalog') {
       // Boutique bloquee par l'admin : pas de catalogue, seulement le message (200 pour un affichage propre cote app).
       if (proBlockedFor(user)) return send(res, 200, { blocked: true, message: proBlockMessage(), products: [], rate: proRate, source: 'kingbase' });
-      const usePro = proProducts.length > 0;          // kingbase.fr branche -> le catalogue de gros = kingbase
+      const usePro = (proProducts.length + proExtras.length) > 0;   // kingbase branche (ou references manuelles) -> catalogue de gros
       // Les FRANCHISES ne voient que les produits reellement suivis en stock chez Basecamp (proStock defini,
       // meme a 0 = rupture affichee). Un produit sans stock suivi est retire de leur catalogue a commander.
       // L'admin voit TOUT (il gere le stock et decide ce qui est propose).
       const src = usePro
-        ? (user.role === 'admin' ? proProducts : proProducts.filter((p) => proStock[p.id] != null))
+        ? (user.role === 'admin' ? allProProducts() : allProProducts().filter((p) => proStock[p.id] != null))
         : allCatalog().filter((p) => !p.boutiqueId);   // le reassort reseau ignore les produits propres a une boutique
       const list = src.map((p) => {
         const pi = proUnitInfo(p);
@@ -2689,13 +2698,13 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && path === '/api/pro/stock') {
       if (user.role !== 'admin') return send(res, 403, { error: 'Réservé à l\'administrateur réseau' });
       let vAchat = 0, vGros = 0;
-      const rows = proProducts.map((p) => {
+      const rows = allProProducts().map((p) => {
         const pi = proUnitInfo(p);
         const stq = proStock[p.id] != null ? proStock[p.id] : null;
         const bp = proBuyPrice[p.id] != null ? proBuyPrice[p.id] : null;
         if (stq != null && bp != null) vAchat += stq * bp;
         if (stq != null && pi.price != null) vGros += stq * pi.price;
-        return { id: p.id, name: p.name, cat: p.cat, img: p.img || '', unit: p.unit, wooId: p.wooId || null, proPrice: pi.price, sitePrice: (typeof p.proPrice === 'number' ? p.proPrice : null), sellOverride: proSellPrice[p.id] != null, buyPrice: bp, stock: stq, lot: proLots[p.id] || '' };
+        return { id: p.id, name: p.name, cat: p.cat, img: p.img || '', unit: p.unit, wooId: p.wooId || null, proPrice: pi.price, sitePrice: (typeof p.proPrice === 'number' ? p.proPrice : null), sellOverride: proSellPrice[p.id] != null, buyPrice: bp, stock: stq, lot: proLots[p.id] || '', extra: p.source === 'manuel' };
       });
       return send(res, 200, { products: rows, valeurAchat: Math.round(vAchat * 100) / 100, valeurGros: Math.round(vGros * 100) / 100, push: { configured: proPushConfigured(), state: proStockPush }, site: PRO_WP_URL });
     }
@@ -2709,7 +2718,7 @@ const server = http.createServer(async (req, res) => {
       const num = (v) => Math.round(Number(v) * 100) / 100;
       for (const it of reqs) {
         const pid = String((it && it.productId) || '').slice(0, 80);
-        const p = proProducts.find((x) => x.id === pid);
+        const p = allProProducts().find((x) => x.id === pid);
         if (!p) return send(res, 404, { error: 'Produit de gros inconnu (' + (pid || '?') + ') — synchronise d\'abord le catalogue kingbase.' });
         if (it.stock !== undefined && it.stock !== null && it.stock !== '' && !(Math.floor(Number(it.stock)) >= 0)) return send(res, 400, { error: 'Quantité invalide (' + p.name + ').' });
         if (it.buyPrice !== undefined && it.buyPrice !== null && it.buyPrice !== '' && !(num(it.buyPrice) >= 0)) return send(res, 400, { error: 'Prix d\'achat invalide (' + p.name + ').' });
@@ -2741,6 +2750,55 @@ const server = http.createServer(async (req, res) => {
       const first = results[0] || {};
       return send(res, 200, Array.isArray(b.items) ? { ok: true, saved: results.length, results: results } : Object.assign({ ok: true }, first));
     }
+    // ---- IMPORT D'INVENTAIRE Basecamp (admin) : colle des lignes « Nom : quantite ». Une ligne sans
+    // « : nombre » devient un titre de section (categorie des lignes suivantes). Produit connu (site ou
+    // manuel, rapprochement par nom normalise) -> stock mis a jour ; inconnu -> cree en produit manuel (grammes).
+    if (req.method === 'POST' && path === '/api/pro/stock/import') {
+      if (user.role !== 'admin') return send(res, 403, { error: 'Réservé à l\'administrateur réseau' });
+      const b = await readJson(req);
+      const lines = String(b.text || '').split(/\r?\n/);
+      const byNorm = {};
+      allProProducts().forEach((p) => { byNorm[proNorm(p.name)] = p; });
+      const updated = [], created = [], ignored = [], pushIds = [];
+      let cat = '';
+      let kxSeq = 0;
+      for (const raw of lines) {
+        const line = raw.trim();
+        if (!line) continue;
+        const m = line.match(/^(.+?)\s*[:=]\s*([\d\s]+)\s*(?:g|gr|grammes?|u)?\s*$/i);
+        if (!m) { cat = line.replace(/\s*:\s*$/, '').trim().slice(0, 40); continue; }
+        const name = m[1].trim().slice(0, 80);
+        const qty = Math.floor(Number(m[2].replace(/\s+/g, '')));
+        if (!name || !(qty >= 0)) { ignored.push(line.slice(0, 60)); continue; }
+        const norm = proNorm(name);
+        let p = byNorm[norm];
+        if (!p) {
+          p = { id: 'kx' + Date.now().toString(36) + (kxSeq++).toString(36), source: 'manuel', custom: true, name: name, cat: cat || 'Gros', img: '', unit: 'g' };
+          proExtras.push(p); byNorm[norm] = p;
+          created.push({ name: name, cat: p.cat, qty: qty });
+        } else {
+          updated.push({ name: p.name, qty: qty });
+        }
+        proStock[p.id] = qty;
+        pushIds.push(p.id);
+      }
+      if (!updated.length && !created.length) return send(res, 400, { error: 'Aucune ligne « Nom : quantité » reconnue.' });
+      persist();
+      if (pushIds.length) schedulePushProStock(pushIds);
+      return send(res, 200, { ok: true, updated: updated, created: created, ignored: ignored, total: updated.length + created.length });
+    }
+    // Retire un produit grossiste ajoute a la main (et nettoie son stock/prix/lot).
+    if (req.method === 'POST' && path === '/api/pro/extras/delete') {
+      if (user.role !== 'admin') return send(res, 403, { error: 'Réservé à l\'administrateur réseau' });
+      const b = await readJson(req);
+      const id = String(b.id || '');
+      const i = proExtras.findIndex((p) => p.id === id);
+      if (i < 0) return send(res, 404, { error: 'Produit manuel introuvable.' });
+      const gone = proExtras.splice(i, 1)[0];
+      delete proStock[id]; delete proBuyPrice[id]; delete proSellPrice[id]; delete proLots[id];
+      persist();
+      return send(res, 200, { ok: true, removed: gone.name });
+    }
     if (req.method === 'POST' && path === '/api/pro/stock/push') {
       if (user.role !== 'admin') return send(res, 403, { error: 'Réservé à l\'administrateur réseau' });
       const r = await pushProStockToWoo(null);
@@ -2752,11 +2810,11 @@ const server = http.createServer(async (req, res) => {
       const b = await readJson(req);
       const bId = user.role === 'admin' ? (b.boutiqueId || 'aix') : user.boutiqueId;
       const items = []; let total = 0;
-      const usePro = proProducts.length > 0;
+      const usePro = (proProducts.length + proExtras.length) > 0;
       for (const it of (Array.isArray(b.items) ? b.items : [])) {
         const p = findProProduct(it.productId); if (!p) continue;
         // Produit kingbase NON suivi en stock : retire du catalogue des franchises -> non commandable par eux.
-        if (usePro && user.role !== 'admin' && proProducts.some((x) => x.id === p.id) && proStock[p.id] == null) continue;
+        if (usePro && user.role !== 'admin' && allProProducts().some((x) => x.id === p.id) && proStock[p.id] == null) continue;
         const pi = proUnitInfo(p); if (!pi) continue;
         const qty = Math.max(0, Math.floor(Number(it.qty) || 0)); if (qty <= 0) continue;
         const up = (pi.price != null ? pi.price : 0);

@@ -1785,7 +1785,7 @@ function setPayMode(m){ PAY_MODE=(m==='auto')?'auto':'manuel'; try{ localStorage
     }
     var rows=(d.products||[]).map(proStockRowHTML).join('')||'<tr><td colspan="6" class="muted" style="padding:12px">Catalogue de gros vide — clique « Synchroniser maintenant » pour importer kingbase.fr.</td></tr>';
     var margePot=Math.round(((d.valeurGros||0)-(d.valeurAchat||0))*100)/100;
-    el.innerHTML='<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px">'+pushLine+'<span style="flex:1"></span>'+(push.configured?'<button class="btn" data-act="prostock-push">Pousser stock + prix vers kingbase</button>':'')+'</div>'+
+    el.innerHTML='<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px">'+pushLine+'<span style="flex:1"></span><button class="btn" data-act="proimp-open">📥 Importer un inventaire</button>'+(push.configured?'<button class="btn" data-act="prostock-push">Pousser stock + prix vers kingbase</button>':'')+'</div>'+
       '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px;align-items:center"><span class="tag">valeur du stock au prix d\'achat : <b id="pstk-vach">'+eur2(d.valeurAchat||0)+'</b></span><span class="tag">au prix de vente : <b id="pstk-vgros">'+eur2(d.valeurGros||0)+'</b></span><span class="tag '+(margePot>=0?'tag-ok':'tag-low')+'" id="pstk-vmarge-tag">marge potentielle : <b id="pstk-vmarge">'+eur2(margePot)+'</b></span><span style="flex:1"></span><button class="btn primary" data-act="prostock-saveall" style="padding:7px 14px">💾 Tout enregistrer</button></div>'+
       '<div style="overflow-x:auto"><table class="tbl"><thead><tr><th>Produit</th><th>Prix d\'achat</th><th>Prix de vente franchisé</th><th>Marge</th><th>Stock grossiste (− / +)</th><th></th></tr></thead><tbody>'+rows+'</tbody></table></div>'+
       '<div class="muted" style="font-size:11.5px;margin-top:8px">Le prix d\'achat et la marge ne sont visibles que par toi (jamais par les franchisés). Le prix de vente est celui payé par les franchisés — modifié ici, il s\'applique immédiatement aux commandes et est poussé vers kingbase.fr quand la synchro est active. Les boutons − / + ajoutent ou retirent du stock immédiatement ; « Tout enregistrer » applique d\'un coup toutes les cases modifiées. <b>Un produit sans stock renseigné est retiré du catalogue des franchisés</b> (toi seul le vois encore ici) ; à 0 il reste visible en « rupture grossiste ».</div>';
@@ -1798,7 +1798,8 @@ function setPayMode(m){ PAY_MODE=(m==='auto')?'auto':'manuel'; try{ localStorage
     var margeTxt=marge!=null
       ? '<b style="color:'+(marge>=0?'#2e7d4f':'#b4452f')+'">'+eur2(marge)+'</b>'+(p.buyPrice>0?'<span class="muted" style="font-size:11px"> ('+Math.round(marge/p.buyPrice*100)+'%)</span>':'')
       : '<span class="muted">—</span>';
-    var lien=(p.unit==='g')?'<span class="muted" style="font-size:10.5px">suivi KINGTOOLS</span>':(p.wooId?'<span class="muted" style="font-size:10.5px">lié au site</span>':'<span class="tag tag-low" style="font-size:10px">non lié au site</span>');
+    var lien=p.extra?'<span class="tag" style="font-size:10px">ajouté à la main</span>':(p.unit==='g')?'<span class="muted" style="font-size:10.5px">suivi KINGTOOLS</span>':(p.wooId?'<span class="muted" style="font-size:10.5px">lié au site</span>':'<span class="tag tag-low" style="font-size:10px">non lié au site</span>');
+    var delBtn=p.extra?' <button class="btn" data-act="prostock-delextra" data-id="'+esc(p.id)+'" title="Retirer ce produit ajouté à la main" style="padding:6px 10px;color:#b4452f">✕</button>':'';
     var sellHint=p.sellOverride
       ? '<div class="muted" style="font-size:10.5px;margin-top:2px">prix modifié'+(p.sitePrice!=null?(' · site : '+eur2(p.sitePrice)):'')+' · <a href="#" data-act="prostock-resetsell" data-id="'+esc(p.id)+'" title="Revenir au prix du site">↺ prix du site</a></div>'
       : '';
@@ -1808,8 +1809,16 @@ function setPayMode(m){ PAY_MODE=(m==='auto')?'auto':'manuel'; try{ localStorage
       '<td style="white-space:nowrap"><input class="psell-f" data-id="'+esc(p.id)+'" data-orig="'+(p.proPrice!=null?p.proPrice:'')+'" type="number" step="0.01" min="0" value="'+(p.proPrice!=null?p.proPrice:'')+'" placeholder="—" style="width:84px;'+inpSt+'"/> €/'+u+sellHint+'</td>'+
       '<td style="white-space:nowrap">'+margeTxt+'</td>'+
       '<td style="white-space:nowrap"><button class="btn" data-act="prostock-adj" data-id="'+esc(p.id)+'" data-d="-'+stepQ+'" title="Retirer '+stepQ+' '+u+' (immédiat)" style="padding:6px 10px">−</button> <input class="pstk-f" data-id="'+esc(p.id)+'" data-orig="'+(p.stock!=null?p.stock:'')+'" type="number" step="1" min="0" value="'+(p.stock!=null?p.stock:'')+'" placeholder="—" style="width:76px;'+inpSt+';text-align:center"/> <button class="btn" data-act="prostock-adj" data-id="'+esc(p.id)+'" data-d="'+stepQ+'" title="Ajouter '+stepQ+' '+u+' (immédiat)" style="padding:6px 10px">+</button> '+u+'</td>'+
-      '<td style="text-align:right"><button class="btn" data-act="prostock-save" data-id="'+esc(p.id)+'" style="padding:6px 12px">Enregistrer</button></td>'+
+      '<td style="text-align:right;white-space:nowrap"><button class="btn" data-act="prostock-save" data-id="'+esc(p.id)+'" style="padding:6px 12px">Enregistrer</button>'+delBtn+'</td>'+
     '</tr>';
+  }
+  // ----- Import d'inventaire Basecamp : coller des lignes « Nom : quantité » -----
+  function openProImport(){
+    openModal('<div class="modal-h">📥 Importer un inventaire Basecamp</div><div class="modal-b">'+
+      '<div class="muted" style="font-size:12.5px;line-height:1.55;margin-bottom:10px">Colle ton inventaire, une ligne par produit : <b>Nom : quantité</b> (en grammes). Une ligne sans nombre (ex. « CBD ») devient la <b>catégorie</b> des lignes suivantes. Produit déjà connu → stock mis à jour ; produit inconnu → créé automatiquement (tu régleras son prix de vente dans la colonne « Prix de vente franchisé »).</div>'+
+      '<textarea id="proimp-txt" rows="12" placeholder="King fleur\nKing 1 Guava : 2000\nKing 2 R : 1400\nCBD\nGuava : 1500" style="width:100%;resize:vertical;font-family:ui-monospace,monospace;font-size:13px"></textarea>'+
+      '<div id="proimp-res" style="font-size:13px;line-height:1.6;margin-top:10px"></div>'+
+      '</div><div style="display:flex;gap:10px;padding:16px 20px;border-top:1px solid var(--line)"><button class="btn" data-act="closemodal" style="flex:1">Fermer</button><button class="btn btn-gold" data-act="proimp-go" style="flex:1">Importer</button></div>');
   }
   // Valeur d'un champ si elle a change par rapport a data-orig (undefined = inchange, null = vide).
   function proStockFieldChange(elm){
@@ -2689,6 +2698,36 @@ function setPayMode(m){ PAY_MODE=(m==='auto')?'auto':'manuel'; try{ localStorage
     if(a==='fiscarchive'){exportArchive();return;}
     if(a==='pro-set'){ proSetQty(el.getAttribute('data-id'), +el.getAttribute('data-q')||0); renderProCat(); return; }
     if(a==='pro-step'){ var psid=el.getAttribute('data-id'); proSetQty(psid, proCapQty(psid, proQty(psid)+(+el.getAttribute('data-d')||0))); renderProCat(); return; }
+    if(a==='proimp-open'){ openProImport(); return; }
+    if(a==='proimp-go'){
+      if(!API.on){toast('Connecte-toi au serveur');return;}
+      var _txt=((document.getElementById('proimp-txt')||{}).value||'').trim();
+      if(!_txt){toast('Colle d\'abord ton inventaire');return;}
+      el.disabled=true;el.textContent='Import…';
+      apiPost('/api/pro/stock/import',{text:_txt}).then(function(d){
+        el.disabled=false;el.textContent='Importer';
+        var res=document.getElementById('proimp-res');
+        if(res){
+          var lignes=[];
+          if((d.updated||[]).length)lignes.push('<b>✅ '+d.updated.length+' produit'+(d.updated.length>1?'s':'')+' mis à jour :</b> '+d.updated.map(function(x){return esc(x.name)+' ('+x.qty+' g)';}).join(' · '));
+          if((d.created||[]).length)lignes.push('<b>🆕 '+d.created.length+' créé'+(d.created.length>1?'s':'')+' :</b> '+d.created.map(function(x){return esc(x.name)+' ('+x.qty+' g, '+esc(x.cat)+')';}).join(' · '));
+          if((d.ignored||[]).length)lignes.push('<span class="tag tag-low">'+d.ignored.length+' ligne(s) ignorée(s)</span> '+d.ignored.map(esc).join(' · '));
+          lignes.push('<span class="muted">Les produits créés n\'ont pas encore de prix de vente — renseigne la colonne « Prix de vente franchisé » ci-dessous.</span>');
+          res.innerHTML=lignes.join('<br/>');
+        }
+        toast('✅ Inventaire importé ('+(d.total||0)+' produits)');
+        proData.loaded=false;proData.loading=false;loadPro();
+      }).catch(function(e){el.disabled=false;el.textContent='Importer';toast('Échec : '+(e.message||e));});
+      return;
+    }
+    if(a==='prostock-delextra'){
+      if(!API.on){toast('Connecte-toi au serveur');return;}
+      if(el.getAttribute('data-armed')!=='1'){ el.setAttribute('data-armed','1'); el.textContent='Confirmer ✕'; setTimeout(function(){ if(el&&el.isConnected){el.removeAttribute('data-armed');el.textContent='✕';} },4000); return; }
+      var _did=el.getAttribute('data-id');
+      el.disabled=true;
+      apiPost('/api/pro/extras/delete',{id:_did}).then(function(d){toast('Produit retiré : '+((d&&d.removed)||''));proData.loaded=false;proData.loading=false;loadPro();}).catch(function(e){el.disabled=false;toast('Échec : '+(e.message||e));});
+      return;
+    }
     if(a==='probloc-save'){
       if(!API.on){toast('Connecte-toi au serveur');return;}
       var _md=(document.querySelector('input[name="probloc-mode"]:checked')||{}).value||'off';
