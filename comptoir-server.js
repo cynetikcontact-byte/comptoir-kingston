@@ -2651,7 +2651,12 @@ const server = http.createServer(async (req, res) => {
       // Boutique bloquee par l'admin : pas de catalogue, seulement le message (200 pour un affichage propre cote app).
       if (proBlockedFor(user)) return send(res, 200, { blocked: true, message: proBlockMessage(), products: [], rate: proRate, source: 'kingbase' });
       const usePro = proProducts.length > 0;          // kingbase.fr branche -> le catalogue de gros = kingbase
-      const src = usePro ? proProducts : allCatalog().filter((p) => !p.boutiqueId);   // le reassort reseau ignore les produits propres a une boutique
+      // Les FRANCHISES ne voient que les produits reellement suivis en stock chez Basecamp (proStock defini,
+      // meme a 0 = rupture affichee). Un produit sans stock suivi est retire de leur catalogue a commander.
+      // L'admin voit TOUT (il gere le stock et decide ce qui est propose).
+      const src = usePro
+        ? (user.role === 'admin' ? proProducts : proProducts.filter((p) => proStock[p.id] != null))
+        : allCatalog().filter((p) => !p.boutiqueId);   // le reassort reseau ignore les produits propres a une boutique
       const list = src.map((p) => {
         const pi = proUnitInfo(p);
         const retail = p.unit === 'g' ? ((p.tiers && p.tiers[0]) ? p.tiers[0][1] : 0) : (p.price || 0);
@@ -2747,8 +2752,11 @@ const server = http.createServer(async (req, res) => {
       const b = await readJson(req);
       const bId = user.role === 'admin' ? (b.boutiqueId || 'aix') : user.boutiqueId;
       const items = []; let total = 0;
+      const usePro = proProducts.length > 0;
       for (const it of (Array.isArray(b.items) ? b.items : [])) {
         const p = findProProduct(it.productId); if (!p) continue;
+        // Produit kingbase NON suivi en stock : retire du catalogue des franchises -> non commandable par eux.
+        if (usePro && user.role !== 'admin' && proProducts.some((x) => x.id === p.id) && proStock[p.id] == null) continue;
         const pi = proUnitInfo(p); if (!pi) continue;
         const qty = Math.max(0, Math.floor(Number(it.qty) || 0)); if (qty <= 0) continue;
         const up = (pi.price != null ? pi.price : 0);
