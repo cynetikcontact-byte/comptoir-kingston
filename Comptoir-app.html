@@ -1807,7 +1807,7 @@ function setPayMode(m){ PAY_MODE=(m==='auto')?'auto':'manuel'; try{ localStorage
       '<td class="pn-cell"><span class="pn-view"><b>'+esc(p.name)+'</b> <button class="btn" data-act="prostock-rename" data-id="'+esc(p.id)+'" title="Renommer ce produit" style="padding:1px 7px;font-size:11px;vertical-align:middle">✏</button></span><div class="muted" style="font-size:11px">'+esc(p.cat||'')+' · '+lien+'</div></td>'+
       '<td style="white-space:nowrap"><input class="pbuy-f" data-id="'+esc(p.id)+'" data-orig="'+(p.buyPrice!=null?p.buyPrice:'')+'" type="number" step="0.01" min="0" value="'+(p.buyPrice!=null?p.buyPrice:'')+'" placeholder="—" style="width:84px;'+inpSt+'"/> €/'+u+'</td>'+
       '<td style="white-space:nowrap"><input class="psell-f" data-id="'+esc(p.id)+'" data-orig="'+(p.proPrice!=null?p.proPrice:'')+'" type="number" step="0.01" min="0" value="'+(p.proPrice!=null?p.proPrice:'')+'" placeholder="—" style="width:84px;'+inpSt+'"/> €/'+u+sellHint+'</td>'+
-      '<td style="white-space:nowrap">'+margeTxt+'</td>'+
+      '<td style="white-space:nowrap" class="pmarge-cell">'+margeTxt+'</td>'+
       '<td style="white-space:nowrap"><button class="btn" data-act="prostock-adj" data-id="'+esc(p.id)+'" data-d="-'+stepQ+'" title="Retirer '+stepQ+' '+u+' (immédiat)" style="padding:6px 10px">−</button> <input class="pstk-f" data-id="'+esc(p.id)+'" data-orig="'+(p.stock!=null?p.stock:'')+'" type="number" step="1" min="0" value="'+(p.stock!=null?p.stock:'')+'" placeholder="—" style="width:76px;'+inpSt+';text-align:center"/> <button class="btn" data-act="prostock-adj" data-id="'+esc(p.id)+'" data-d="'+stepQ+'" title="Ajouter '+stepQ+' '+u+' (immédiat)" style="padding:6px 10px">+</button> '+u+'</td>'+
       '<td style="text-align:right;white-space:nowrap"><button class="btn" data-act="prostock-save" data-id="'+esc(p.id)+'" style="padding:6px 12px">Enregistrer</button>'+delBtn+'</td>'+
     '</tr>';
@@ -1836,6 +1836,32 @@ function setPayMode(m){ PAY_MODE=(m==='auto')?'auto':'manuel'; try{ localStorage
     v=proStockFieldChange(document.querySelector('.psell-f[data-id="'+pid+'"]')); if(v!==undefined){ch.sellPrice=v;any=true;}
     var kEl=document.querySelector('.pstk-f[data-id="'+pid+'"]'); v=proStockFieldChange(kEl); if(v!==undefined){ch.stock=(v==null?null:Math.floor(v));any=true;}
     return any?ch:null;
+  }
+  // Recalcul EN DIRECT (pendant la frappe, avant meme d'enregistrer) : marge de chaque ligne + totaux,
+  // d'apres ce qui est actuellement SAISI dans les cases prix/stock du tableau.
+  function proStockLiveCalc(){
+    var va=0,vg=0;
+    document.querySelectorAll('tr[data-prow]').forEach(function(tr){
+      var bEl=tr.querySelector('.pbuy-f'),sEl=tr.querySelector('.psell-f'),kEl=tr.querySelector('.pstk-f');
+      var b=bEl&&bEl.value!==''?parseFloat(bEl.value):null; if(b!=null&&!isFinite(b))b=null;
+      var s=sEl&&sEl.value!==''?parseFloat(sEl.value):null; if(s!=null&&!isFinite(s))s=null;
+      var k=kEl&&kEl.value!==''?parseFloat(kEl.value):null; if(k!=null&&!isFinite(k))k=null;
+      var cell=tr.querySelector('.pmarge-cell');
+      if(cell){
+        if(b!=null&&s!=null){
+          var m=Math.round((s-b)*100)/100;
+          cell.innerHTML='<b style="color:'+(m>=0?'#2e7d4f':'#b4452f')+'">'+eur2(m)+'</b>'+(b>0?'<span class="muted" style="font-size:11px"> ('+Math.round(m/b*100)+'%)</span>':'');
+        }else cell.innerHTML='<span class="muted">—</span>';
+      }
+      if(k!=null&&b!=null)va+=k*b;
+      if(k!=null&&s!=null)vg+=k*s;
+    });
+    va=Math.round(va*100)/100; vg=Math.round(vg*100)/100;
+    var m2=Math.round((vg-va)*100)/100;
+    var e1=document.getElementById('pstk-vach'); if(e1)e1.textContent=eur2(va);
+    var e2=document.getElementById('pstk-vgros'); if(e2)e2.textContent=eur2(vg);
+    var e3=document.getElementById('pstk-vmarge'); if(e3)e3.textContent=eur2(m2);
+    var e4=document.getElementById('pstk-vmarge-tag'); if(e4){e4.classList.toggle('tag-ok',m2>=0);e4.classList.toggle('tag-low',m2<0);}
   }
   function proStockTotalsRefresh(){
     var d=proData.stockMgr; if(!d)return;
@@ -3106,6 +3132,7 @@ function setPayMode(m){ PAY_MODE=(m==='auto')?'auto':'manuel'; try{ localStorage
     if(e.target&&e.target.id==='fid-search'){ st.fidQ=e.target.value; clearTimeout(custSearchTimer); custSearchTimer=setTimeout(loadFidelite,250); return; }
     if(e.target&&e.target.id==='tpe-mode'){ tpeToggle(); return; }
     if(e.target&&e.target.classList&&e.target.classList.contains('pro-qty')){ var _qpid=e.target.getAttribute('data-pid'); var _qv=proCapQty(_qpid, e.target.value); if(String(_qv)!==String(e.target.value)&&e.target.value!=='')e.target.value=_qv||''; proSetQty(_qpid, _qv); proRefreshBar(); var pc=e.target.closest&&e.target.closest('.pro-card'); if(pc)pc.classList.toggle('inpanier', proQty(_qpid)>0); return; }
+    if(e.target&&e.target.classList&&(e.target.classList.contains('pbuy-f')||e.target.classList.contains('psell-f')||e.target.classList.contains('pstk-f'))){ proStockLiveCalc(); return; }
     if(e.target&&e.target.classList&&e.target.classList.contains('ship-f')){ proShipGet(); st.proShip[e.target.getAttribute('data-k')]=e.target.value; return; }
   });
   document.body.addEventListener('change',function(e){ if(e.target&&e.target.id==='tpe-mode'){ tpeToggle(); } if(e.target&&e.target.id==='pay-mode'){ setPayMode(e.target.value); } if(e.target&&e.target.classList&&e.target.classList.contains('pro-qty')){ proSetQty(e.target.getAttribute('data-pid'), e.target.value); renderProCat(); } if(e.target&&e.target.classList&&e.target.classList.contains('pro-lot-f')){ var lid=e.target.getAttribute('data-id'); var lv=(e.target.value||'').trim(); apiPost('/api/pro/lots',{productId:lid,lot:lv}).then(function(){ var it=(proData.catalog||[]).filter(function(x){return x.id===lid;})[0]; if(it)it.lot=lv; toast(lv?('Lot « '+lv+' » enregistré sur '+((it&&it.name)||'le produit')):'Lot retiré'); }).catch(function(err){toast('Échec : '+(err.message||err));}); } });
