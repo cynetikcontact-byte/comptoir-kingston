@@ -2267,10 +2267,65 @@ function setPayMode(m){ PAY_MODE=(m==='auto')?'auto':'manuel'; try{ localStorage
   function closeModal(){cmStopScan();modalRoot.innerHTML='';}
   function prixLibreModal(){openModal('<div class="modal-h">Prix libre</div><div class="modal-b"><label style="display:block;font-size:13px;color:#8a8475;margin:0 0 6px">Montant (€)</label><input id="pl-amount" type="text" inputmode="decimal" placeholder="0,00" style="width:100%;font-size:24px;font-weight:700;padding:12px;border-radius:10px;border:1px solid var(--line);background:#fff;color:var(--ink2);text-align:center;box-sizing:border-box"/><label style="display:block;font-size:13px;color:#8a8475;margin:16px 0 6px">Libellé (optionnel)</label><input id="pl-label" type="text" placeholder="Article divers" style="width:100%;font-size:15px;padding:10px 12px;border-radius:10px;border:1px solid var(--line);background:#fff;color:var(--ink2);box-sizing:border-box"/><button data-act="addlibre" style="margin-top:20px;width:100%;padding:14px;font-size:16px;font-weight:700;border-radius:10px;border:none;background:var(--gold);color:#fff;cursor:pointer">Ajouter au panier</button></div>');setTimeout(function(){var e=document.getElementById('pl-amount');if(e){e.focus();e.addEventListener('keydown',function(ev){if(ev.key==='Enter'){var b=document.querySelector('[data-act=addlibre]');if(b)b.click();}});}},60);}
 
+  // ----- Grammage libre : règle du « palier atteint » (même formule que le serveur) -----
+  // Tarif au gramme du plus grand palier <= grammes (sinon 1er palier), PLAFONNÉ au prix du palier supérieur.
+  function tierPriceForGrams(tiers,grams){
+    var t=(tiers||[]).slice().sort(function(a,b){return a[0]-b[0];});
+    if(!t.length||!(grams>0))return null;
+    var base=t[0];
+    for(var i=0;i<t.length;i++){ if(t[i][0]<=grams)base=t[i]; else break; }
+    var price=grams*(base[1]/base[0]);
+    for(var j=0;j<t.length;j++){ if(t[j][0]>grams){ if(price>t[j][1])price=t[j][1]; break; } }
+    return Math.round(price*100)/100;
+  }
+  // Inverse : combien de grammes (0,1 g près) pour un montant donné — le plus grand g tel que prix(g) <= montant.
+  function gramsForAmount(tiers,amount){
+    var t=(tiers||[]).slice().sort(function(a,b){return a[0]-b[0];});
+    if(!t.length||!(amount>0))return null;
+    var last=t[t.length-1]; var maxG=Math.max(last[0],amount/(last[1]/last[0]))+last[0];
+    var best=null;
+    for(var g=Math.round(maxG*10);g>=1;g--){ var pr=tierPriceForGrams(t,g/10); if(pr!=null&&pr<=amount+1e-9){best=g/10;break;} }
+    return best;
+  }
+  function cgWire(p){
+    var gEl=document.getElementById('cg-grams'),eEl=document.getElementById('cg-eur'),pv=document.getElementById('cg-preview');
+    if(!gEl||!eEl||!pv)return;
+    var upd=function(mode){
+      var stockG=totalStockG(p);
+      if(mode==='g'&&eEl.value!=='')eEl.value='';
+      if(mode==='e'&&gEl.value!=='')gEl.value='';
+      var g=null,pr=null;
+      if(gEl.value!==''){ g=Math.round((parseFloat(gEl.value)||0)*10)/10; pr=tierPriceForGrams(p.tiers,g); }
+      else if(eEl.value!==''){ var amt=parseFloat(eEl.value)||0; g=gramsForAmount(p.tiers,amt); pr=(g!=null)?tierPriceForGrams(p.tiers,g):null; }
+      if(g==null||!(g>0)||pr==null){ pv.innerHTML='<span class="muted">Tape un grammage OU un montant — le prix suit tes paliers programmés.</span>'; return; }
+      if(g>stockG){ pv.innerHTML='<b style="color:#b4452f">⛔ '+g+' g demandés — il ne reste que '+stockG+' g en stock.</b>'; pv.setAttribute('data-ko','1'); return; }
+      pv.removeAttribute('data-ko');
+      pv.innerHTML='→ <b>'+g+' g</b> pour <b>'+eur(pr)+'</b> <span class="muted">(tarif '+p.name+', déduit du stock)</span>';
+      pv.setAttribute('data-g',g); pv.setAttribute('data-pr',pr);
+    };
+    gEl.addEventListener('input',function(){upd('g');});
+    eEl.addEventListener('input',function(){upd('e');});
+    gEl.addEventListener('keydown',function(ev){if(ev.key==='Enter'){var b=document.querySelector('[data-act="addgram-custom"]');if(b)b.click();}});
+    eEl.addEventListener('keydown',function(ev){if(ev.key==='Enter'){var b=document.querySelector('[data-act="addgram-custom"]');if(b)b.click();}});
+    upd();
+  }
   function gramModal(p){
+    var inpSt='padding:10px;border:1px solid var(--line);border-radius:10px;background:#fff;color:var(--ink2);font-size:16px;font-weight:700;text-align:center;box-sizing:border-box';
     openModal('<div class="modal-h">'+p.name+' — choisis le poids</div><div class="modal-b">'+(p.unit==='g'?'<div class="muted" style="margin-bottom:8px;font-size:12px">Stock restant : '+totalStockG(p)+' g</div>':'')+'<div class="modal-grid">'+
       p.tiers.map(function(t){var _ko=(p.unit==='g'&&t[0]>totalStockG(p));return '<button class="gbtn'+(_ko?' dis':'')+'" data-act="'+(_ko?'rupturegram':'addgram')+'" data-id="'+p.id+'" data-g="'+t[0]+'" data-pr="'+t[1]+'"><div class="g1">'+t[0]+' g</div><div class="g2">'+(_ko?'indispo':eur(t[1]))+'</div></button>';}).join('')+
-      '</div></div>');
+      '</div>'+
+      (p.unit==='g'?('<div style="border-top:1px dashed var(--line);margin-top:14px;padding-top:12px">'+
+        '<div style="font-size:13px;font-weight:700;margin-bottom:8px">Autre quantité ou montant <span class="muted" style="font-weight:400">(hors paliers)</span></div>'+
+        '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">'+
+          '<input id="cg-grams" type="number" inputmode="decimal" step="0.1" min="0" placeholder="grammes" style="width:110px;'+inpSt+'"/><span class="muted">g</span>'+
+          '<span class="muted" style="margin:0 4px">ou</span>'+
+          '<input id="cg-eur" type="number" inputmode="decimal" step="0.5" min="0" placeholder="montant" style="width:110px;'+inpSt+'"/><span class="muted">€</span>'+
+          '<button class="btn btn-gold" data-act="addgram-custom" data-id="'+p.id+'" style="margin-left:auto;padding:10px 18px">Ajouter</button>'+
+        '</div>'+
+        '<div id="cg-preview" style="font-size:13.5px;margin-top:8px;min-height:18px"></div>'+
+      '</div>'):'')+
+      '</div>');
+    if(p.unit==='g')setTimeout(function(){cgWire(p);},60);
   }
   // Choix unité / pack pour un produit à l'unité qui a des packs.
   function packModal(p){
@@ -2640,6 +2695,17 @@ function setPayMode(m){ PAY_MODE=(m==='auto')?'auto':'manuel'; try{ localStorage
     if(a==='rupture'){toast('⛔ Plus de stock — saisis du nouveau stock (page Stock grammes) avant de vendre ce produit.');return;}
     if(a==='rupturegram'){toast('⛔ Stock insuffisant pour cette quantité — réapprovisionne le produit.');return;}
     if(a==='addgram'){var pg=pById(el.getAttribute('data-id'));var g=+el.getAttribute('data-g');if(pg&&pg.unit==='g'&&g>totalStockG(pg)){toast('⛔ Stock insuffisant — réapprovisionne avant de vendre.');return;}var pr=+el.getAttribute('data-pr');st.cart.push({name:pg.name,detail:g+' g',price:pr,productId:pg.id,grams:g});closeModal();render();return;}
+    if(a==='addgram-custom'){
+      var pgc=pById(el.getAttribute('data-id')); if(!pgc)return;
+      var pvc=document.getElementById('cg-preview');
+      if(!pvc||!pvc.getAttribute('data-g')){toast(pvc&&pvc.getAttribute('data-ko')?'⛔ Stock insuffisant pour cette quantité.':'Tape d\'abord un grammage ou un montant.');return;}
+      var gc=parseFloat(pvc.getAttribute('data-g')),prc=parseFloat(pvc.getAttribute('data-pr'));
+      if(!(gc>0)||!(prc>0)){toast('Saisie invalide.');return;}
+      if(gc>totalStockG(pgc)){toast('⛔ Stock insuffisant — il reste '+totalStockG(pgc)+' g.');return;}
+      st.cart.push({name:pgc.name,detail:gc+' g',price:prc,productId:pgc.id,grams:gc});
+      closeModal();render();toast(gc+' g de '+pgc.name+' ajoutés ('+eur(prc)+')');
+      return;
+    }
     if(a==='addunit'){var puu=pById(el.getAttribute('data-id'));st.cart.push({name:puu.name,detail:'Unité',price:puu.price,productId:puu.id,qty:1});closeModal();render();return;}
     if(a==='addpack'){var ppk=pById(el.getAttribute('data-id'));var pq=+el.getAttribute('data-q'),ppr=+el.getAttribute('data-pr');st.cart.push({name:ppk.name,detail:'Pack de '+pq,price:ppr,productId:ppk.id,packQty:pq,qty:1});closeModal();render();return;}
     if(a==='rmline'){st.cart.splice(+el.getAttribute('data-i'),1);render();return;}

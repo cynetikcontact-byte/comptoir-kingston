@@ -953,11 +953,28 @@ function totalGrams(s) { return s && s.lots ? s.lots.reduce((a, l) => a + l.g, 0
 function decrementFEFO(boutiqueId, productId, grams) {
   const s = (stock[boutiqueId] || {})[productId];
   if (!s || !s.lots) throw new Error('Produit non disponible dans cette boutique');
-  if (totalGrams(s) < grams) throw new Error('Stock insuffisant pour ' + productId);
+  if (totalGrams(s) < grams - 1e-9) throw new Error('Stock insuffisant pour ' + productId);
   s.lots.sort((a, b) => (a.exp > b.exp ? 1 : -1)); // FEFO : on ecoule d'abord le lot qui perime le plus tot
   let g = grams;
-  for (const lot of s.lots) { const take = Math.min(lot.g, g); lot.g -= take; g -= take; }
+  for (const lot of s.lots) {
+    const take = Math.min(lot.g, g);
+    lot.g = Math.round((lot.g - take) * 1000) / 1000;   // grammages libres (0,1 g) : pas de residus flottants
+    g = Math.round((g - take) * 1000) / 1000;
+  }
   s.lots = s.lots.filter((l) => l.g > 0);
+}
+
+// Prix d'un grammage LIBRE (saisi en caisse) d'apres les paliers programmes du produit — regle du
+// « palier atteint » : tarif au gramme du plus grand palier <= grammes (sinon 1er palier), PLAFONNE au
+// prix du palier superieur (la degressivite ne doit jamais rendre 24 g plus cher que 25 g).
+function tierPriceForGrams(tiers, grams) {
+  const t = (tiers || []).slice().sort((a, b) => a[0] - b[0]);
+  if (!t.length || !(grams > 0)) return null;
+  let base = t[0];
+  for (const x of t) { if (x[0] <= grams) base = x; else break; }
+  let price = grams * (base[1] / base[0]);
+  for (const x of t) { if (x[0] > grams) { if (price > x[1]) price = x[1]; break; } }
+  return Math.round(price * 100) / 100;
 }
 
 function decrementUnits(boutiqueId, productId, qty) {
@@ -1902,12 +1919,17 @@ const server = http.createServer(async (req, res) => {
         if (!p) throw new Error('Produit inconnu : ' + it.productId);
         const rate = vatRate(p);
         if (p.unit === 'g') {
-          const grams = Number(it.grams);
-          const tier = p.tiers.find((t) => t[0] === grams);
-          if (!tier) throw new Error('Palier de grammes invalide pour ' + p.name);
+          const grams = Math.round(Number(it.grams) * 10) / 10;   // grammage libre autorise, 0,1 g pres
+          if (!(grams > 0) || grams > 100000) throw new Error('Grammage invalide pour ' + p.name);
+          const tier = (p.tiers || []).find((t) => t[0] === grams);
+          // Palier exact -> prix du palier ; sinon grammage LIBRE saisi en caisse -> prix calcule
+          // d'apres les paliers programmes (regle du palier atteint, plafonnee). Le serveur reste
+          // l'autorite du prix : la caisse n'envoie que les grammes.
+          const prixG = tier ? tier[1] : tierPriceForGrams(p.tiers, grams);
+          if (prixG == null) throw new Error('Palier de grammes invalide pour ' + p.name);
           decrementFEFO(bId, p.id, grams);
-          brut += tier[1];
-          lines.push({ produit: p.name, detail: grams + ' g', prix: tier[1], productId: p.id, grams: grams, vat: rate });
+          brut += prixG;
+          lines.push({ produit: p.name, detail: grams + ' g', prix: prixG, productId: p.id, grams: grams, vat: rate });
         } else if (it.packQty && Array.isArray(p.packs)) {
           // Vente par PACK : prix du pack (autoritatif, lu sur le produit), stock = qty du pack x nombre de packs.
           const packQ = Math.floor(Number(it.packQty));
