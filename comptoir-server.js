@@ -256,6 +256,9 @@ function proBlockMessage() {
 // ---- PRODUITS GROSSISTE AJOUTES A LA MAIN (admin) : varietes et references absentes du site kingbase.
 // Ils survivent aux synchros du catalogue (stockes a part) et ne sont jamais pousses vers Woo (pas de wooId).
 let proExtras = [];   // [{ id:'kx..', name, cat, unit:'g'|'u', proPrice? , source:'manuel', custom:true }]
+// Renommages decides par l'admin : { productId: nouveau nom }. Applique apres chaque synchro kingbase
+// (sinon la synchro horaire remettrait le nom du site) et pousse vers Woo quand le produit y est lie.
+let proRename = {};
 function allProProducts() { return proExtras.length ? proProducts.concat(proExtras) : proProducts; }
 // Nom normalise pour rapprocher un inventaire dicte des fiches existantes ("KING4" == "King 4").
 function proNorm(s) {
@@ -362,6 +365,7 @@ async function syncProCatalog() {
         ensureStock(prod); next.push(prod);
       } catch (e) {}
     }
+    next.forEach((p) => { if (proRename[p.id]) p.name = String(proRename[p.id]); });   // les noms choisis par l'admin priment sur ceux du site
     if (next.length) { proProducts = next; lastProSync = Date.now(); persist(); console.log('Synchro kingbase (gros) : ' + next.length + ' produits.'); }
     return { count: next.length, at: lastProSync };
   } finally { proSyncing = false; }
@@ -619,7 +623,7 @@ function persist() {
       // Écriture ATOMIQUE : fichier temporaire puis renommage -> jamais de fichier tronqué en cas de coupure.
       // NB : fiscalKey n'est PLUS écrite ici (stockée à part, fichier protégé).
       const tmp = DATA_FILE + '.tmp';
-      fs.writeFileSync(tmp, JSON.stringify({ v: 1, savedAt: new Date().toISOString(), pointsPerEuro: POINTS_PER_EURO, hideBaseCatalog, customProducts, stock, boutiques, invoiceSeq, lastHash, invoices, orderSeq, orders, fiscalEvents, fiscalSeq, lastFiscalSig, clotureSeq, gtPerpetuel, gtPerpetuelAvoirs, seqByB, gtByB, gtAvoirsByB, royaltiesRates, royaltiesStatus, clotureSeqByB, supplyOrders, supplySeq, stockMoves, proRate, pontDevices, sessions, proProducts, lastProSync, proLots, proStock, proBuyPrice, proSellPrice, proStockPush, proBlock, proExtras, entreprise, adminCred, adminEmail, backupState }), 'utf8');
+      fs.writeFileSync(tmp, JSON.stringify({ v: 1, savedAt: new Date().toISOString(), pointsPerEuro: POINTS_PER_EURO, hideBaseCatalog, customProducts, stock, boutiques, invoiceSeq, lastHash, invoices, orderSeq, orders, fiscalEvents, fiscalSeq, lastFiscalSig, clotureSeq, gtPerpetuel, gtPerpetuelAvoirs, seqByB, gtByB, gtAvoirsByB, royaltiesRates, royaltiesStatus, clotureSeqByB, supplyOrders, supplySeq, stockMoves, proRate, pontDevices, sessions, proProducts, lastProSync, proLots, proStock, proBuyPrice, proSellPrice, proStockPush, proBlock, proExtras, proRename, entreprise, adminCred, adminEmail, backupState }), 'utf8');
       fs.renameSync(tmp, DATA_FILE);
     } catch (e) { console.error('Persistance impossible :', e.message); }
   }, 200);
@@ -746,6 +750,7 @@ function loadPersisted() {
     if (d.proBuyPrice && typeof d.proBuyPrice === 'object') proBuyPrice = d.proBuyPrice;     // prix d'achat grossiste (admin)
     if (d.proSellPrice && typeof d.proSellPrice === 'object') proSellPrice = d.proSellPrice; // prix de vente aux franchises (override admin)
     if (Array.isArray(d.proExtras)) proExtras = d.proExtras;                                   // produits grossiste ajoutes a la main
+    if (d.proRename && typeof d.proRename === 'object') proRename = d.proRename;             // noms modifies par l'admin (survivent aux synchros)
     if (d.proBlock && typeof d.proBlock === 'object') proBlock = { mode: ['off', 'all', 'selected'].indexOf(d.proBlock.mode) >= 0 ? d.proBlock.mode : 'off', message: String(d.proBlock.message || '').slice(0, 1000), ids: Array.isArray(d.proBlock.ids) ? d.proBlock.ids.map(String) : [] }; // blocage reassort franchises
     if (d.proStockPush && typeof d.proStockPush === 'object') proStockPush = Object.assign(proStockPush, d.proStockPush);
     if (typeof d.pointsPerEuro === 'number') { POINTS_PER_EURO = d.pointsPerEuro; if (loyalty) loyalty.pointsPerEuro = POINTS_PER_EURO; }
@@ -2808,6 +2813,35 @@ const server = http.createServer(async (req, res) => {
       persist();
       if (pushIds.length) schedulePushProStock(pushIds);
       return send(res, 200, { ok: true, updated: updated, created: created, ignored: ignored, total: updated.length + created.length });
+    }
+    // Renomme un produit du reassort (admin) : effet immediat dans KINGTOOLS ; si le produit est lie au
+    // site (wooId) le nouveau nom est aussi pousse vers Woo ; le renommage survit aux synchros (proRename).
+    if (req.method === 'POST' && path === '/api/pro/rename') {
+      if (user.role !== 'admin') return send(res, 403, { error: 'Réservé à l\'administrateur réseau' });
+      const b = await readJson(req);
+      const pid = String(b.productId || '').slice(0, 80);
+      const name = String(b.name == null ? '' : b.name).trim().slice(0, 80);
+      if (!name) return send(res, 400, { error: 'Le nom ne peut pas être vide.' });
+      const p = allProProducts().find((x) => x.id === pid);
+      if (!p) return send(res, 404, { error: 'Produit de gros inconnu.' });
+      const avant = p.name;
+      p.name = name;
+      if (p.source !== 'manuel') proRename[pid] = name;   // produit du site : memorise pour survivre aux synchros
+      persist();
+      let pushSite = false;
+      if (p.wooId != null && proPushConfigured()) {
+        pushSite = true;
+        setTimeout(async () => {   // envoi non bloquant vers kingbase (meme mecanique que le stock)
+          try {
+            const auth = 'Basic ' + Buffer.from(PRO_WC_KEY + ':' + PRO_WC_SECRET).toString('base64');
+            await wooFetch(PRO_WP_URL + '/wp-json/wc/v3/products/' + p.wooId, {
+              method: 'PUT', headers: { 'Authorization': auth, 'content-type': 'application/json' },
+              body: JSON.stringify({ name: name }),
+            });
+          } catch (e) {}
+        }, 50);
+      }
+      return send(res, 200, { ok: true, productId: pid, name: name, avant: avant, pushSite: pushSite });
     }
     // Retire un produit grossiste ajoute a la main (et nettoie son stock/prix/lot).
     if (req.method === 'POST' && path === '/api/pro/extras/delete') {

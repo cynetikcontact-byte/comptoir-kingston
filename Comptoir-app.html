@@ -1804,7 +1804,7 @@ function setPayMode(m){ PAY_MODE=(m==='auto')?'auto':'manuel'; try{ localStorage
       ? '<div class="muted" style="font-size:10.5px;margin-top:2px">prix modifié'+(p.sitePrice!=null?(' · site : '+eur2(p.sitePrice)):'')+' · <a href="#" data-act="prostock-resetsell" data-id="'+esc(p.id)+'" title="Revenir au prix du site">↺ prix du site</a></div>'
       : '';
     return '<tr data-prow="'+esc(p.id)+'">'+
-      '<td><b>'+esc(p.name)+'</b><div class="muted" style="font-size:11px">'+esc(p.cat||'')+' · '+lien+'</div></td>'+
+      '<td class="pn-cell"><span class="pn-view"><b>'+esc(p.name)+'</b> <button class="btn" data-act="prostock-rename" data-id="'+esc(p.id)+'" title="Renommer ce produit" style="padding:1px 7px;font-size:11px;vertical-align:middle">✏</button></span><div class="muted" style="font-size:11px">'+esc(p.cat||'')+' · '+lien+'</div></td>'+
       '<td style="white-space:nowrap"><input class="pbuy-f" data-id="'+esc(p.id)+'" data-orig="'+(p.buyPrice!=null?p.buyPrice:'')+'" type="number" step="0.01" min="0" value="'+(p.buyPrice!=null?p.buyPrice:'')+'" placeholder="—" style="width:84px;'+inpSt+'"/> €/'+u+'</td>'+
       '<td style="white-space:nowrap"><input class="psell-f" data-id="'+esc(p.id)+'" data-orig="'+(p.proPrice!=null?p.proPrice:'')+'" type="number" step="0.01" min="0" value="'+(p.proPrice!=null?p.proPrice:'')+'" placeholder="—" style="width:84px;'+inpSt+'"/> €/'+u+sellHint+'</td>'+
       '<td style="white-space:nowrap">'+margeTxt+'</td>'+
@@ -2784,6 +2784,45 @@ function setPayMode(m){ PAY_MODE=(m==='auto')?'auto':'manuel'; try{ localStorage
         toast('✅ Inventaire importé ('+(d.total||0)+' produits)');
         proData.loaded=false;proData.loading=false;loadPro();
       }).catch(function(e){el.disabled=false;el.textContent='Importer';toast('Échec : '+(e.message||e));});
+      return;
+    }
+    if(a==='prostock-rename'){
+      var _rnId=el.getAttribute('data-id');
+      var _rp=((proData.stockMgr||{}).products||[]).find(function(x){return x.id===_rnId;});
+      if(!_rp)return;
+      var _cell=el.closest('.pn-cell'); if(!_cell)return;
+      var _vw=_cell.querySelector('.pn-view'); if(!_vw)return;
+      _vw.innerHTML='<input class="pn-edit" data-id="'+esc(_rnId)+'" maxlength="80" value="'+esc(_rp.name).replace(/"/g,'&quot;')+'" style="width:180px;padding:5px 8px;border:1px solid var(--line);border-radius:8px;font-weight:700"/> '+
+        '<button class="btn btn-gold" data-act="prostock-rename-save" data-id="'+esc(_rnId)+'" style="padding:4px 10px">✓</button> '+
+        '<button class="btn" data-act="prostock-rename-cancel" data-id="'+esc(_rnId)+'" style="padding:4px 10px">✕</button>';
+      var _inp=_vw.querySelector('.pn-edit');
+      if(_inp){_inp.focus();_inp.select();_inp.addEventListener('keydown',function(ev){if(ev.key==='Enter'){var b=_vw.querySelector('[data-act="prostock-rename-save"]');if(b)b.click();}if(ev.key==='Escape'){var c=_vw.querySelector('[data-act="prostock-rename-cancel"]');if(c)c.click();}});}
+      return;
+    }
+    if(a==='prostock-rename-save'){
+      if(!API.on){toast('Connecte-toi au serveur');return;}
+      var _rsId=el.getAttribute('data-id');
+      var _rsInp=document.querySelector('.pn-edit[data-id="'+_rsId+'"]');
+      var _nv=_rsInp?_rsInp.value.trim():'';
+      if(!_nv){toast('Le nom ne peut pas être vide.');return;}
+      el.disabled=true;
+      apiPost('/api/pro/rename',{productId:_rsId,name:_nv}).then(function(d){
+        var _p=((proData.stockMgr||{}).products||[]).find(function(x){return x.id===_rsId;});
+        if(_p)_p.name=d.name;
+        var _c=(proData.catalog||[]).find(function(x){return x.id===_rsId;});
+        if(_c)_c.name=d.name;
+        var tr=document.querySelector('tr[data-prow="'+_rsId+'"]');
+        if(tr&&_p){var tmp=document.createElement('tbody');tmp.innerHTML=proStockRowHTML(_p);if(tmp.firstChild)tr.parentNode.replaceChild(tmp.firstChild,tr);}
+        renderProCat();
+        toast('✏ Renommé en « '+d.name+' »'+(d.pushSite?' — aussi mis à jour sur kingbase.fr':''));
+      }).catch(function(e){el.disabled=false;toast('Échec : '+(e.message||e));});
+      return;
+    }
+    if(a==='prostock-rename-cancel'){
+      var _rcId=el.getAttribute('data-id');
+      var _pc=((proData.stockMgr||{}).products||[]).find(function(x){return x.id===_rcId;});
+      var trc=document.querySelector('tr[data-prow="'+_rcId+'"]');
+      if(trc&&_pc){var tmpc=document.createElement('tbody');tmpc.innerHTML=proStockRowHTML(_pc);if(tmpc.firstChild)trc.parentNode.replaceChild(tmpc.firstChild,trc);}
       return;
     }
     if(a==='prostock-delextra'){
