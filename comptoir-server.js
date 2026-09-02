@@ -1166,7 +1166,40 @@ function resetEmailHtml(code, who) {
 function royaltiesRateFor(boutiqueId){ var r=royaltiesRates[boutiqueId]; return (typeof r==='number')?r:6; }
 function royaltiesRec(ym, boutiqueId){ var m=royaltiesStatus[ym]||{}; return m[boutiqueId]||{status:'a_payer',declaredAt:null,validatedAt:null}; }
 function royaltiesSetStatus(ym, boutiqueId, patch){ if(!royaltiesStatus[ym]) royaltiesStatus[ym]={}; var cur=royaltiesStatus[ym][boutiqueId]||{status:'a_payer',declaredAt:null,validatedAt:null}; royaltiesStatus[ym][boutiqueId]=Object.assign({},cur,patch); persist(); }
-function royaltiesCaHT(boutiqueId, ym){ var sum=0; invoices.forEach(function(inv){ if(inv.boutiqueId!==boutiqueId) return; if((inv.total||0)<0 || inv.avoirDe) return; var d=new Date(inv.date); var k=d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2); if(k!==ym) return; var ht=(inv.tva && typeof inv.tva.totalHT==='number')?inv.tva.totalHT:((inv.total||0)/1.2); sum+=ht; }); return Math.round(sum*100)/100; }
+// Mois d'une facture en HEURE DE PARIS (le serveur tourne en UTC : sans ca, les ventes de debut de
+// nuit glissaient sur le mauvais mois en bordure de mois).
+function parisYM(dateStr){
+  try { var s = new Date(dateStr).toLocaleDateString('fr-CA', { timeZone: 'Europe/Paris' }); if (/^\d{4}-\d{2}/.test(s)) return s.slice(0, 7); } catch (e) {}
+  var d = new Date(dateStr); if (isNaN(d)) return '';
+  return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2);
+}
+// HT d'une facture : la ventilation TVA enregistree si presente ; sinon recalcul ligne par ligne avec le
+// taux de CHAQUE ligne (remise repartie au prorata) ; en dernier recours division par 1,2.
+function invoiceHT(inv){
+  if (inv.tva && typeof inv.tva.totalHT === 'number') return inv.tva.totalHT;
+  var total = Number(inv.total) || 0;
+  if (Array.isArray(inv.lines) && inv.lines.length) {
+    var brut = 0, ht = 0, okL = true;
+    inv.lines.forEach(function(l){
+      var p = Number(l.prix != null ? l.prix : l.price);
+      if (!isFinite(p)) { okL = false; return; }
+      brut += p; ht += p / (1 + (typeof l.vat === 'number' ? l.vat : 0.2));
+    });
+    if (okL && brut !== 0) return ht * (total / brut);
+  }
+  return total / 1.2;
+}
+// CA HT NET du mois d'une boutique : ventes MOINS avoirs (un remboursement reduit le CA du mois ou
+// l'avoir est emis — avant, l'avoir etait ignore et la vente remboursee gonflait les royalties).
+function royaltiesCaHT(boutiqueId, ym){
+  var sum = 0;
+  invoices.forEach(function(inv){
+    if (inv.boutiqueId !== boutiqueId) return;
+    if (parisYM(inv.date) !== ym) return;
+    sum += invoiceHT(inv);
+  });
+  return Math.round(sum * 100) / 100;
+}
 
 const server = http.createServer(async (req, res) => {
   res._cors = corsFor(req);
