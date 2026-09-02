@@ -1078,7 +1078,7 @@ function readJson(req) {
 function vatRate(p) { return typeof p.vat === 'number' ? p.vat : 0.20; }
 function computeTva(lines, brut, remise) {
   const byRate = {};
-  lines.forEach((l) => { const share = brut > 0 ? l.prix / brut : 0; const ttc = l.prix - remise * share; byRate[l.vat] = (byRate[l.vat] || 0) + ttc; });
+  lines.forEach((l) => { const share = brut !== 0 ? l.prix / brut : 0; const ttc = l.prix - remise * share; byRate[l.vat] = (byRate[l.vat] || 0) + ttc; });   // brut negatif = AVOIR (remise inversee au prorata)
   const ventilation = Object.keys(byRate).map((r) => {
     const rate = Number(r); const ttc = Math.round(byRate[r] * 100) / 100;
     const ht = Math.round((ttc / (1 + rate)) * 100) / 100; const tva = Math.round((ttc - ht) * 100) / 100;
@@ -1176,7 +1176,13 @@ function parisYM(dateStr){
 // HT d'une facture : la ventilation TVA enregistree si presente ; sinon recalcul ligne par ligne avec le
 // taux de CHAQUE ligne (remise repartie au prorata) ; en dernier recours division par 1,2.
 function invoiceHT(inv){
-  if (inv.tva && typeof inv.tva.totalHT === 'number') return inv.tva.totalHT;
+  var totalG = Number(inv.total) || 0;
+  var estAvoir = !!(inv.avoirDe || totalG < 0);
+  // VENTES : la ventilation TVA enregistree fait foi. AVOIRS : on recalcule TOUJOURS par les lignes au
+  // prorata du total net — les avoirs historiques emis sur des ventes remisees portent un totalHT
+  // survalue (bug corrige a l'emission) ; pour un avoir sain le recalcul donne exactement le meme HT.
+  // On ne touche PAS aux factures scellees : c'est uniquement la lecture qui corrige.
+  if (!estAvoir && inv.tva && typeof inv.tva.totalHT === 'number') return inv.tva.totalHT;
   var total = Number(inv.total) || 0;
   if (Array.isArray(inv.lines) && inv.lines.length) {
     var brut = 0, ht = 0, okL = true;
@@ -2078,7 +2084,11 @@ const server = http.createServer(async (req, res) => {
       const avoirLines = orig.lines.map((l) => ({ produit: l.produit, detail: l.detail, prix: -l.prix, productId: l.productId, grams: l.grams, qty: l.qty, vat: l.vat }));
       const inv = createInvoice(orig.boutiqueId, -orig.total, avoirLines, orig.client, 'Avoir / remboursement', 'avoir');
       inv.avoirDe = orig.num;
-      if (orig.tva) inv.tva = computeTva(avoirLines, -orig.total, 0);
+      // TVA de l'avoir : brut REEL des lignes + remise d'origine inversee. (Avant : brut = -total net et
+      // remise = 0, donc sur une vente AVEC remise fidelite le HT de l'avoir etait surevalue — les
+      // royalties du franchise etaient reduites a tort a chaque remboursement de vente remisee.)
+      const avoirBrut = avoirLines.reduce((a, l) => a + (Number(l.prix) || 0), 0);
+      if (orig.tva) inv.tva = computeTva(avoirLines, avoirBrut, -(orig.remise || 0));
       // Correction par nouvel enregistrement (jamais par suppression) -> tracée au journal des événements.
       logFiscalEvent('CORRECTION_AVOIR', orig.boutiqueId, { avoir: inv.num, factureOrigine: orig.num, montant: inv.total });
       return send(res, 201, { avoir: { numero: inv.num, total: inv.total, refDe: orig.num, empreinte: inv.hash.slice(0, 16) + '...' } });
