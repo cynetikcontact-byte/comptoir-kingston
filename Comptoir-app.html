@@ -3302,14 +3302,31 @@ function setPayMode(m){ PAY_MODE=(m==='auto')?'auto':'manuel'; try{ localStorage
     if(admin && view==='franchiseur'){ var t=d.totals||{}; h+='<div class="rstats"><div class="rstat"><div class="l">CA HT réseau du mois</div><div class="v">'+euro2(t.caHT)+'</div></div><div class="rstat"><div class="l">Royalties dues</div><div class="v" style="color:#b5872f">'+euro2(t.royalties)+'</div></div><div class="rstat"><div class="l">Encaissé (validé)</div><div class="v" style="color:#1a7f37">'+euro2(t.encaisse)+'</div></div><div class="rstat"><div class="l">En attente</div><div class="v" style="color:#b07d10">'+euro2(t.attente)+'</div></div></div>'; }
     (d.boutiques||[]).forEach(function(b){ var bd=BADGE[b.status]||BADGE.a_payer;
       h+='<div class="rcard"><div><div class="rtop"><span class="rname">'+b.label+'</span><span class="rbadge" style="color:'+bd.c+';background:'+bd.b+';border-color:'+bd.c+'">'+bd.t+'</span></div><div class="rmet">';
-      h+='<div class="rm"><div class="l">CA HT du mois</div><div class="v">'+euro2(b.caHT)+'</div></div>';
+      h+='<div class="rm"><div class="l">CA HT du mois</div><div class="v">'+euro2(b.caHT)+'</div><div style="margin-top:3px"><a style="cursor:pointer;text-decoration:underline;font-size:12px;color:#8a8077" data-act="kt-roy-detail" data-id="'+b.id+'">voir le détail du calcul</a></div></div>';
       h+='<div class="rm"><div class="l">Taux royalties</div>';
       if(admin && view==='franchiseur' && ST.editRate===b.id){ h+='<div style="display:flex;gap:6px;align-items:center;margin-top:4px"><input class="rin" id="kt-roy-rin" type="number" min="0" max="100" value="'+b.rate+'"/><span class="rnote">%</span><button class="rbtn" style="padding:6px 10px" data-act="kt-roy-rate-save" data-id="'+b.id+'">OK</button></div>'; }
       else if(admin && view==='franchiseur'){ h+='<div style="margin-top:4px"><span class="rpill edit" data-act="kt-roy-rate-edit" data-id="'+b.id+'">'+b.rate+'% <span class="hint">modifier</span></span></div>'; }
       else { h+='<div class="v" style="margin-top:4px">'+b.rate+'%</div>'; }
       h+='</div>';
       h+='<div class="rm"><div class="l">Royalties à reverser</div><div class="v gold">'+euro2(b.royalty)+'</div></div>';
-      h+='</div>'+pipe(b.status)+'</div><div class="ract">'+actionHtml(b,admin,view)+'</div></div>';
+      h+='</div>'+pipe(b.status);
+      if(ST.detail && ST.detail.id===b.id && ST.detail.ym===(ST.ym||curYM()) && ST.detail.data){
+        var dd=ST.detail.data;
+        h+='<div style="border:1px dashed #d8d0c2;border-radius:11px;padding:12px 14px;margin-top:10px;font-size:13px;line-height:1.7">'+
+          '<b>Détail du calcul · '+ymLabel(dd.ym)+'</b>'+
+          '<div style="display:grid;grid-template-columns:1fr auto;gap:2px 16px;margin-top:6px">'+
+          '<span>Ventes encaissées ('+dd.nbVentes+' facture'+(dd.nbVentes>1?'s':'')+')</span><b style="text-align:right">'+euro2(dd.bruteTTC)+' TTC</b>'+
+          '<span>Avoirs / remboursements ('+dd.nbAvoirs+')</span><b style="text-align:right;color:#b4452f">'+euro2(dd.avoirsTTC)+' TTC</b>'+
+          '<span>= Encaissé net</span><b style="text-align:right">'+euro2(dd.netTTC)+' TTC</b>'+
+          '<span>= CA HT retenu <span style="color:#8a8077;font-weight:400">(TVA déduite ligne à ligne : 20 % / 5,5 %)</span></span><b style="text-align:right">'+euro2(dd.caHT)+' HT</b>'+
+          '<span>× taux '+dd.rate+' %</span><b style="text-align:right;color:#b5872f">'+euro2(dd.royalty)+'</b>'+
+          '</div>'+
+          ((dd.factures||[]).some(function(f){return f.avoir;})?('<div style="margin-top:8px;color:#8a8077">Avoirs du mois : '+dd.factures.filter(function(f){return f.avoir;}).map(function(f){return f.numero+' ('+euro2(f.totalTTC)+' le '+fmtDate(f.date)+')';}).join(' · ')+'</div>'):'')+
+          '<div style="margin-top:6px;color:#8a8077">Le CA HT peut différer d’un simple « TTC ÷ 1,2 » : les produits à 5,5 % comptent plus de HT, et chaque avoir réduit le mois où il est émis. Le détail facture par facture est dans « Journal des ventes ».</div>'+
+          '<a style="cursor:pointer;text-decoration:underline;font-size:12px;color:#8a8077" data-act="kt-roy-detail-close">fermer</a>'+
+        '</div>';
+      }
+      h+='</div><div class="ract">'+actionHtml(b,admin,view)+'</div></div>';
     });
     if(!(d.boutiques||[]).length) h+='<div class="rnote">Aucune boutique.</div>';
     h+='<div class="rfoot">Royalties = CA HT du mois × taux · calcul automatique · données partagées entre franchiseur et franchisés.</div>';
@@ -3317,9 +3334,11 @@ function setPayMode(m){ PAY_MODE=(m==='auto')?'auto':'manuel'; try{ localStorage
   }
   function onClick(e){ var t=e.target.closest('[data-act]'); if(!t) return; var a=t.getAttribute('data-act'); var id=t.getAttribute('data-id'); var ym=ST.ym||curYM();
     if(a==='kt-roy-view'){ ST.view=t.getAttribute('data-v'); ST.editRate=null; render(); return; }
-    if(a==='kt-roy-prev'){ ST.ym=shiftYM(ym,-1); ST.data=null; load(); return; }
-    if(a==='kt-roy-next'){ ST.ym=shiftYM(ym,1); ST.data=null; load(); return; }
-    if(a==='kt-roy-cur'){ ST.ym=curYM(); ST.data=null; load(); return; }
+    if(a==='kt-roy-detail'){ if(ST.detail&&ST.detail.id===id&&ST.detail.ym===ym){ST.detail=null;render();return;} api('/api/royalties/detail?ym='+ym+'&boutique='+encodeURIComponent(id)).then(function(o){ if(o.s===200){ ST.detail={id:id,ym:ym,data:o.j}; render(); } }); return; }
+    if(a==='kt-roy-detail-close'){ ST.detail=null; render(); return; }
+    if(a==='kt-roy-prev'){ ST.ym=shiftYM(ym,-1); ST.data=null; ST.detail=null; load(); return; }
+    if(a==='kt-roy-next'){ ST.ym=shiftYM(ym,1); ST.data=null; ST.detail=null; load(); return; }
+    if(a==='kt-roy-cur'){ ST.ym=curYM(); ST.data=null; ST.detail=null; load(); return; }
     if(a==='kt-roy-rate-edit'){ ST.editRate=id; render(); var i=document.getElementById('kt-roy-rin'); if(i)i.focus(); return; }
     if(a==='kt-roy-rate-save'){ var inp=document.getElementById('kt-roy-rin'); var rate=Math.max(0,Math.min(100,Number(inp&&inp.value)||0)); act('/api/royalties/rate',{boutiqueId:id,rate:rate}); return; }
     if(a==='kt-roy-declare'){ act('/api/royalties/declare',{ym:ym,boutiqueId:id}); return; }

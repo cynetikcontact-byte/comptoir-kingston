@@ -1660,6 +1660,37 @@ const server = http.createServer(async (req, res) => {
       Object.keys(rtot).forEach(function(k){ rtot[k]=Math.round(rtot[k]*100)/100; });
       return send(res, 200, { role:user.role, ym:rym, boutiques:rlist, totals:rtot });
     }
+    // Detail du calcul des royalties d'un mois : reconciliation TTC brut -> avoirs -> net -> CA HT.
+    // Admin : n'importe quelle boutique ; manager : uniquement la sienne (transparence des deux cotes).
+    if (req.method === 'GET' && path === '/api/royalties/detail') {
+      var dym = String(u.searchParams.get('ym') || '').trim();
+      if (!/^\d{4}-\d{2}$/.test(dym)) return send(res, 400, { error: 'Mois invalide (AAAA-MM).' });
+      var dbid = user.role === 'admin' ? String(u.searchParams.get('boutique') || '') : user.boutiqueId;
+      if (!boutiques[dbid]) return send(res, 404, { error: 'Boutique inconnue.' });
+      var drows = [], dbrut = 0, davoirs = 0, dht = 0;
+      invoices.forEach(function (inv) {
+        if (inv.boutiqueId !== dbid) return;
+        if (parisYM(inv.date) !== dym) return;
+        var h = invoiceHT(inv);
+        var t = Number(inv.total) || 0;
+        dht += h;
+        var estAvoir = !!(inv.avoirDe || t < 0);
+        if (estAvoir) davoirs += t; else dbrut += t;
+        drows.push({ numero: inv.num, date: inv.date, totalTTC: Math.round(t * 100) / 100, ht: Math.round(h * 100) / 100, avoir: estAvoir });
+      });
+      drows.sort(function (a, b) { return a.date < b.date ? -1 : 1; });
+      var drate = royaltiesRateFor(dbid);
+      var dca = Math.round(dht * 100) / 100;
+      return send(res, 200, {
+        ym: dym, boutiqueId: dbid, label: (boutiques[dbid].label || dbid),
+        bruteTTC: Math.round(dbrut * 100) / 100, avoirsTTC: Math.round(davoirs * 100) / 100,
+        netTTC: Math.round((dbrut + davoirs) * 100) / 100, caHT: dca,
+        rate: drate, royalty: Math.round(dca * drate) / 100,
+        nbVentes: drows.filter(function (r) { return !r.avoir; }).length,
+        nbAvoirs: drows.filter(function (r) { return r.avoir; }).length,
+        factures: drows.slice(0, 2000),
+      });
+    }
     if (req.method === 'POST' && path === '/api/royalties/rate') {
       if (user.role !== 'admin') return send(res, 403, { error: 'Action reservee a l administrateur.' });
       var rrb = await readJson(req); var rrid=String((rrb&&rrb.boutiqueId)||''); var rrate=Math.max(0,Math.min(100,Number(rrb&&rrb.rate)||0));
