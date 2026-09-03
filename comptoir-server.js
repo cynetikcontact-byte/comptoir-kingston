@@ -1445,7 +1445,8 @@ const server = http.createServer(async (req, res) => {
     const token = newSession(uname);
     const a = accounts[uname];
     const mustChangePassword = !!(credentials[uname] && credentials[uname].isDefault);
-    return send(res, 200, { token: token, name: a.name, role: a.role, boutiqueId: a.boutiqueId, mustChangePassword: mustChangePassword });
+    const bqLabel = a.boutiqueId ? ((boutiques[a.boutiqueId] && boutiques[a.boutiqueId].label) || a.boutiqueId) : null;
+    return send(res, 200, { token: token, name: a.name, role: a.role, boutiqueId: a.boutiqueId, label: bqLabel, mustChangePassword: mustChangePassword });
   }
 
   // ---- Mot de passe oublie (PUBLIC) : demande d'un code a 6 chiffres envoye par e-mail ----

@@ -649,7 +649,7 @@ table.tbl tr:hover td{background:#faf9f5;}
     aix:{name:'Manager Aix',role:'manager',roleLabel:'Manager · Aix-en-Provence',boutiqueId:'aix',token:'aix-token',initials:'AX',pass:'kingston'},
     marseille:{name:'Manager Marseille',role:'manager',roleLabel:'Manager · Marseille Prado',boutiqueId:'marseille',token:'marseille-token',initials:'MP',pass:'kingston'}
   };
-  function boutiqueName(id){return {aix:'Aix-en-Provence',marseille:'Marseille Prado',avignon:'Avignon Centre'}[id]||id;}
+  function boutiqueName(id){ if(st.user&&st.user.boutiqueId===id&&st.user.bqLabel)return st.user.bqLabel; return bqLabelFull(id); }
   function showLogin(){
     document.getElementById('login-root').innerHTML='<div class="login-bg"><div class="login-card"><div class="login-wm">'+crown()+' KINGSTON</div><div class="login-sub">Comptoir</div>'+
       '<div class="fld" style="margin:20px 0 12px"><label>Compte</label><select id="lg-user"><option value="admin">Lenny K. — Admin réseau</option><option value="aix">Manager — Aix-en-Provence</option><option value="marseille">Manager — Marseille Prado</option></select></div>'+
@@ -976,7 +976,7 @@ table.tbl tr:hover td{background:#faf9f5;}
       '<div id="hm-err" style="color:#b4452f;font-size:12.5px;margin-top:6px"></div>'+
       '<div style="margin:16px 0 6px;font-weight:700;font-family:var(--serif)">Derniers mouvements</div><div id="hm-moves" class="muted" style="font-size:12.5px">'+(API.on?'Chargement…':'Disponible une fois connecté au serveur.')+'</div>'+
       '<div style="margin-top:14px"><button class="btn" style="width:100%" data-act="closemodal">Fermer</button></div></div>');
-    if(API.on){apiGet('/api/stock/moves?productId='+encodeURIComponent(p.id)+((st.user&&st.user.role==='admin')?'&boutique='+encodeURIComponent(st.boutiqueId||''):'')).then(function(d){var el2=document.getElementById('hm-moves');if(!el2)return;var ms=(d&&d.mouvements)||[];el2.innerHTML=ms.length?ms.slice(0,8).map(function(m){return '<div style="padding:6px 0;border-bottom:1px dashed var(--line)"><b>'+(m.sens==='ajout'?'+':'−')+m.quantite+' '+m.unite+'</b> · '+esc(m.motif)+'<br><span class="muted">'+new Date(m.date).toLocaleString('fr-FR')+' · '+esc(m.par||'')+' · reste : '+m.stockApres+' '+m.unite+'</span></div>';}).join(''):'Aucun mouvement enregistré pour ce produit.';}).catch(function(){var el2=document.getElementById('hm-moves');if(el2)el2.textContent='Historique indisponible.';});}
+    if(API.on){apiGet('/api/stock/moves?productId='+encodeURIComponent(p.id)+((st.user&&st.user.role==='admin')?'&boutique='+encodeURIComponent(st.prodBtq||st.boutiqueId||''):'')).then(function(d){var el2=document.getElementById('hm-moves');if(!el2)return;var ms=(d&&d.mouvements)||[];el2.innerHTML=ms.length?ms.slice(0,8).map(function(m){return '<div style="padding:6px 0;border-bottom:1px dashed var(--line)"><b>'+(m.sens==='ajout'?'+':'−')+m.quantite+' '+m.unite+'</b> · '+esc(m.motif)+'<br><span class="muted">'+new Date(m.date).toLocaleString('fr-FR')+' · '+esc(m.par||'')+' · reste : '+m.stockApres+' '+m.unite+'</span></div>';}).join(''):'Aucun mouvement enregistré pour ce produit.';}).catch(function(){var el2=document.getElementById('hm-moves');if(el2)el2.textContent='Historique indisponible.';});}
   }
   function viewStock(){
     var fleurs=products.filter(function(p){return p.unit==='g';});
@@ -1013,10 +1013,10 @@ table.tbl tr:hover td{background:#faf9f5;}
     var isAdm=(st.user&&st.user.role==='admin'&&API.on);
     if(isAdm)setTimeout(ensureAdminStk,0);
     var adminNet=isAdm?'<div id="astk-wrap" style="margin-bottom:24px"><div class="muted" style="padding:14px">Chargement de la vue réseau…</div></div>':'';
-    return '<div class="vhead"><div><h1>Stock'+(isAdm?' réseau':' — '+(BQNAME[st.boutiqueId]||st.boutique))+'</h1><p>'+(isAdm?'Vue admin : le stock et les mouvements de chaque franchisé. Plus bas, le détail de la boutique active et le comparatif.':'Stock de la boutique sélectionnée (change la ville en haut à droite). Fleurs au gramme, par lot, avec péremption et COA.')+'</p></div><div style="display:flex;gap:8px"><button class="btn" data-act="restockall">Réappro. tout</button><button class="btn btn-gold" data-act="recept">+ Réceptionner un lot</button></div></div>'+
+    return '<div class="vhead"><div><h1>Stock'+(isAdm?' réseau':' — '+esc(boutiqueName((st.user&&st.user.boutiqueId)||st.boutiqueId)))+'</h1><p>'+(isAdm?'Vue admin : le stock et les mouvements de chaque franchisé. Plus bas, le détail de la boutique active et le comparatif.':'Le stock de ta boutique. Fleurs au gramme, par lot, avec péremption et COA.')+'</p></div><div style="display:flex;gap:8px"><button class="btn" data-act="restockall">Réappro. tout</button><button class="btn btn-gold" data-act="recept">+ Réceptionner un lot</button></div></div>'+
     adminNet+
     heatmap+
-    '<h3 style="font-family:var(--serif);margin:26px 0 10px">Comparatif multi‑boutiques</h3>'+compareSection();
+    ((isAdm||!API.on)?('<h3 style="font-family:var(--serif);margin:26px 0 10px">Comparatif multi‑boutiques</h3>'+compareSection()):'');
   }
 
   // ---------- Vue réseau du stock (admin) : stock détaillé + mouvements, par franchisé ----------
@@ -1406,7 +1406,7 @@ function setPayMode(m){ PAY_MODE=(m==='auto')?'auto':'manuel'; try{ localStorage
   }
   function cmdCounts(){var c={nouveau:0,preparation:0,prete:0,servie:0};Object.keys(ordersData).forEach(function(k){var s=ordersData[k].status;if(c[s]!=null)c[s]++;});return c;}
   function refreshCmd(){ if(st.view!=='commandes')return; var b=document.getElementById('cmd-board'); if(b)b.innerHTML=cmdBoardHtml(); var p=document.getElementById('cmd-pend'); if(p)p.textContent=cmdCounts().nouveau; }
-  function bqLabel(id){return {aix:'Aix',marseille:'Marseille',avignon:'Avignon'}[id]||id;}
+  function bqLabel(id){return {aix:'Aix',marseille:'Marseille',avignon:'Avignon'}[id]||boutiqueName(id);}
   function cmdAgo(ts){var m=Math.floor((Date.now()-ts)/60000);return m<1?'à l’instant':(m+' min');}
   function cmdCard(o){
     var items=(o.items||[]).map(function(it){return '<div style="font-size:13px;display:flex;gap:6px"><span style="color:var(--gold);font-weight:700;min-width:22px">'+(it.qty||1)+'×</span><span>'+esc(it.name)+(it.detail?' <span class="muted">'+esc(it.detail)+'</span>':'')+'</span></div>';}).join('');
@@ -2656,7 +2656,7 @@ function setPayMode(m){ PAY_MODE=(m==='auto')?'auto':'manuel'; try{ localStorage
       var er=document.getElementById('lg-err');if(er){er.style.color='#8a8273';er.textContent='Connexion…';}
       fetch((API.base||'')+'/api/login',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({user:ukey,password:pass})})
         .then(function(r){return r.json().then(function(d){if(!r.ok)throw new Error(d.error||'Identifiants invalides');return d;});})
-        .then(function(d){API.token=d.token;if(d.mustChangePassword){forcePwModal(ukey,pass,d);return;}var meta=ACCOUNTS[ukey]||{};st.user={name:d.name,role:d.role,roleLabel:meta.roleLabel||d.role,boutiqueId:d.boutiqueId,initials:meta.initials||'',token:d.token};st.boutique=d.boutiqueId?boutiqueName(d.boutiqueId):'Réseau (toutes boutiques)';saveSession();render();autoConnect();toast('Bienvenue, '+d.name);})
+        .then(function(d){API.token=d.token;if(d.mustChangePassword){forcePwModal(ukey,pass,d);return;}var meta=ACCOUNTS[ukey]||{};st.user={name:d.name,role:d.role,roleLabel:meta.roleLabel||(d.role==='manager'&&d.label?('Manager · '+d.label):d.role),boutiqueId:d.boutiqueId,bqLabel:d.label||null,initials:meta.initials||((d.label||d.name||'').replace(/[^0-9A-Za-zÀ-ÿ]/g,'').slice(0,2).toUpperCase()),token:d.token};if(d.boutiqueId)st.boutiqueId=d.boutiqueId;st.boutique=d.boutiqueId?boutiqueName(d.boutiqueId):'Réseau (toutes boutiques)';saveSession();render();autoConnect();toast('Bienvenue, '+d.name);})
         .catch(function(e){var e2=document.getElementById('lg-err');if(e2){e2.style.color='#e0917a';e2.textContent=(e.message||'Erreur de connexion');}});
       return;
     }
@@ -2671,7 +2671,8 @@ function setPayMode(m){ PAY_MODE=(m==='auto')?'auto':'manuel'; try{ localStorage
       var _pl={currentPassword:ctx.cur,newPassword:nw};if(fem)_pl.email=fem;
       apiPost('/api/account/password',_pl).then(function(){
         var d=ctx.d||{};var meta=ACCOUNTS[ctx.ukey]||{};
-        st.user={name:d.name,role:d.role,roleLabel:meta.roleLabel||d.role,boutiqueId:d.boutiqueId,initials:meta.initials||'',token:d.token};
+        st.user={name:d.name,role:d.role,roleLabel:meta.roleLabel||(d.role==='manager'&&d.label?('Manager · '+d.label):d.role),boutiqueId:d.boutiqueId,bqLabel:d.label||null,initials:meta.initials||((d.label||d.name||'').replace(/[^0-9A-Za-zÀ-ÿ]/g,'').slice(0,2).toUpperCase()),token:d.token};
+        if(d.boutiqueId)st.boutiqueId=d.boutiqueId;
         st.boutique=d.boutiqueId?boutiqueName(d.boutiqueId):'Réseau (toutes boutiques)';
         saveSession();closeModal();render();autoConnect();toast('Mot de passe mis à jour · Bienvenue, '+d.name);
       }).catch(function(e){if(er){er.style.color='#e0917a';er.textContent=(e&&e.message)||'Erreur';}el.disabled=false;el.textContent='Enregistrer et continuer';});
@@ -2778,7 +2779,7 @@ function setPayMode(m){ PAY_MODE=(m==='auto')?'auto':'manuel'; try{ localStorage
       if(!hq||hq<=0){if(herr)herr.textContent='Indique une quantité valide.';return;}
       if(hmotif.length<3){if(herr)herr.textContent='Le motif est obligatoire (3 caractères minimum).';return;}
       el.disabled=true;
-      apiPost('/api/stock/adjust',{productId:hpid,qty:hq,sens:hsens,motif:hmotif,boutiqueId:st.boutiqueId}).then(function(){
+      apiPost('/api/stock/adjust',{productId:hpid,qty:hq,sens:hsens,motif:hmotif,boutiqueId:(st.user&&st.user.role==='admin')?(st.prodBtq||st.boutiqueId||'aix'):undefined}).then(function(){
         closeModal();toast('Stock ajusté ('+(hsens==='ajout'?'+':'−')+hq+') — mouvement tracé');
         reloadProducts(function(){render();});
       }).catch(function(e){el.disabled=false;if(herr)herr.textContent=(e&&e.message)||'Erreur serveur';});
@@ -3009,8 +3010,8 @@ function setPayMode(m){ PAY_MODE=(m==='auto')?'auto':'manuel'; try{ localStorage
         if(st.user&&st.user.role==='admin'){ st.adminReturn={name:st.user.name,role:st.user.role,roleLabel:st.user.roleLabel,boutiqueId:st.user.boutiqueId,initials:st.user.initials,token:st.user.token}; try{localStorage.setItem('kt_admin_return',JSON.stringify(st.adminReturn));}catch(e){} }
         var _lb=d.label||_elabel;
         var _ini=_lb.replace(/[^0-9A-Za-zÀ-ÿ]/g,'').slice(0,2).toUpperCase()||'BT';
-        st.user={name:d.name||('Manager '+_lb),role:d.role,roleLabel:'Accès admin',boutiqueId:d.boutiqueId,initials:_ini,token:d.token,viaAdmin:true};
-        API.token=d.token;API.on=true;st.boutique=boutiqueName(d.boutiqueId);st.view='dash';
+        st.user={name:d.name||('Manager '+_lb),role:d.role,roleLabel:'Accès admin',boutiqueId:d.boutiqueId,bqLabel:_lb,initials:_ini,token:d.token,viaAdmin:true};
+        API.token=d.token;API.on=true;if(d.boutiqueId)st.boutiqueId=d.boutiqueId;st.boutique=boutiqueName(d.boutiqueId);st.view='dash';
         saveSession();render();toast('Espace « '+_lb+' » ouvert — accès admin');
       }).catch(function(e){toast('Échec : '+(e&&e.message||e));});
       return;
@@ -3019,7 +3020,7 @@ function setPayMode(m){ PAY_MODE=(m==='auto')?'auto':'manuel'; try{ localStorage
       var _ar=st.adminReturn;if(!_ar){try{_ar=JSON.parse(localStorage.getItem('kt_admin_return')||'null');}catch(e){}}
       if(!_ar||!_ar.token){toast('Session admin introuvable — reconnecte-toi');return;}
       st.user=_ar;st.adminReturn=null;try{localStorage.removeItem('kt_admin_return');}catch(e){}
-      API.token=_ar.token;API.on=true;st.boutique='Réseau (toutes boutiques)';st.view='franchises';
+      API.token=_ar.token;API.on=true;st.boutiqueId='aix';st.boutique='Réseau (toutes boutiques)';st.view='franchises';
       saveSession();render();toast('Retour à ton compte admin');
       return;
     }
@@ -3065,7 +3066,21 @@ function setPayMode(m){ PAY_MODE=(m==='auto')?'auto':'manuel'; try{ localStorage
       else{toast('Copie non supportée par le navigateur');}
       return;
     }
-    if(a==='recok'){var rp=pById($('#rc-prod').value);var lot=($('#rc-lot').value||'LOT-NEW').trim();var gg=parseInt($('#rc-g').value,10)||0;var exp=($('#rc-exp').value||'12/2027').trim();rp.lots=rp.lots||[];rp.lots.push({lot:lot,g:gg,exp:exp,coa:'COA-'+Math.floor(Math.random()*9000+1000)});saveStock(st.boutiqueId);closeModal();render();toast('Lot '+lot+' réceptionné (+'+gg+' g) · '+(BQNAME[st.boutiqueId]||''));return;}
+    if(a==='recok'){
+      var rp=pById($('#rc-prod').value);var lot=($('#rc-lot').value||'LOT-NEW').trim();var gg=parseFloat($('#rc-g').value)||0;var exp=($('#rc-exp').value||'12/2027').trim();
+      if(!rp){toast('Choisis un produit');return;}
+      if(!(gg>0)){toast('Quantité (g) invalide');return;}
+      if(API.on){
+        // Connecté : le lot est enregistré sur le serveur, pour la boutique de la session (le serveur force la sienne pour un franchisé).
+        el.disabled=true;
+        var _rbq=(st.user&&st.user.role==='admin')?(st.prodBtq||st.boutiqueId||'aix'):undefined;   // admin : la boutique affichée ; franchisé : le serveur force la sienne
+        apiPost('/api/stock/lot',{productId:rp.id,g:gg,lot:lot,exp:exp,boutiqueId:_rbq})
+          .then(function(){closeModal();reloadProducts(function(){render();});toast('Lot '+lot+' réceptionné (+'+gg+' g)');})
+          .catch(function(e){el.disabled=false;toast('Échec : '+(e.message||e));});
+        return;
+      }
+      rp.lots=rp.lots||[];rp.lots.push({lot:lot,g:gg,exp:exp,coa:'COA-'+Math.floor(Math.random()*9000+1000)});saveStock(st.boutiqueId);closeModal();render();toast('Lot '+lot+' réceptionné (+'+gg+' g) · '+(boutiqueName(st.boutiqueId)||''));return;
+    }
     if(a==='astk-sel'){adminStk.sel=el.getAttribute('data-astk');adminStk.loadedSel=null;adminStk.detail=null;renderAdminStk();loadAdminStkSel();return;}
     if(a==='cmpbq'){var bb=el.getAttribute('data-b');var ci=st.compare.indexOf(bb);if(ci>=0)st.compare.splice(ci,1);else st.compare.push(bb);render();return;}
     if(a==='apiconnect'){doApiConnect();return;}
@@ -3138,7 +3153,14 @@ function setPayMode(m){ PAY_MODE=(m==='auto')?'auto':'manuel'; try{ localStorage
   document.body.addEventListener('change',function(e){ if(e.target&&e.target.id==='tpe-mode'){ tpeToggle(); } if(e.target&&e.target.id==='pay-mode'){ setPayMode(e.target.value); } if(e.target&&e.target.classList&&e.target.classList.contains('pro-qty')){ proSetQty(e.target.getAttribute('data-pid'), e.target.value); renderProCat(); } if(e.target&&e.target.classList&&e.target.classList.contains('pro-lot-f')){ var lid=e.target.getAttribute('data-id'); var lv=(e.target.value||'').trim(); apiPost('/api/pro/lots',{productId:lid,lot:lv}).then(function(){ var it=(proData.catalog||[]).filter(function(x){return x.id===lid;})[0]; if(it)it.lot=lv; toast(lv?('Lot « '+lv+' » enregistré sur '+((it&&it.name)||'le produit')):'Lot retiré'); }).catch(function(err){toast('Échec : '+(err.message||err));}); } });
 
   // Reprise de session : si la caisse etait deja connectee sur cet appareil, on la reconnecte toute seule.
-  (function(){ try{ var s=JSON.parse(localStorage.getItem('kt_session')||'null'); if(s&&s.token){ st.user=s; API.token=s.token; st.boutique=s.boutiqueId?boutiqueName(s.boutiqueId):'Réseau (toutes boutiques)'; } var ar=JSON.parse(localStorage.getItem('kt_admin_return')||'null'); if(ar&&ar.token) st.adminReturn=ar; }catch(e){} })();
+  (function(){ try{ var s=JSON.parse(localStorage.getItem('kt_session')||'null'); if(s&&s.token){ st.user=s; API.token=s.token; if(s.boutiqueId)st.boutiqueId=s.boutiqueId; st.boutique=s.boutiqueId?boutiqueName(s.boutiqueId):'Réseau (toutes boutiques)'; } var ar=JSON.parse(localStorage.getItem('kt_admin_return')||'null'); if(ar&&ar.token) st.adminReturn=ar; }catch(e){} })();
+  // Session franchisé restaurée d'avant la mise a jour : recupere le vrai nom de la boutique (une fois).
+  (function(){ if(!(st.user&&st.user.role==='manager'&&st.user.boutiqueId&&!st.user.bqLabel&&st.user.token))return;
+    fetch((API.base||'')+'/api/boutiques',{headers:{'x-comptoir-token':st.user.token}}).then(function(r){return r.ok?r.json():null;}).then(function(d){
+      var b=((d&&d.boutiques)||[])[0];
+      if(b&&b.id===st.user.boutiqueId&&b.label){ st.user.bqLabel=b.label; st.boutique=b.label; if(st.user.roleLabel==='manager')st.user.roleLabel='Manager · '+b.label; saveSession(); render(); }
+    }).catch(function(){});
+  })();
   render();
   if(st.user&&st.user.token){ autoConnect(); }
 })();
@@ -3411,6 +3433,7 @@ function setPayMode(m){ PAY_MODE=(m==='auto')?'auto':'manuel'; try{ localStorage
 
   /* ---------- etat / token ---------- */
   function tok(){ try{ var t=localStorage.getItem('kt_session'); var o=JSON.parse(t); return (o&&o.token)?o.token:t; }catch(e){ return localStorage.getItem('kt_session')||''; } }
+  function liveRole(){ try{ var o=JSON.parse(localStorage.getItem('kt_session')||'null'); return (o&&o.role)||null; }catch(e){ return null; } }
   function getSel(){ try{ var a=JSON.parse(localStorage.getItem(LS)); return (Array.isArray(a)&&a.length)?a:null; }catch(e){ return null; } }
   function setSel(a){ try{ localStorage.setItem(LS, JSON.stringify(a)); }catch(e){} }
   function clearSel(){ try{ localStorage.removeItem(LS); }catch(e){} }
@@ -3434,7 +3457,7 @@ function setPayMode(m){ PAY_MODE=(m==='auto')?'auto':'manuel'; try{ localStorage
     var method = ((init && init.method) || (input && input.method) || 'GET').toUpperCase();
     var isJournal = url.indexOf('/api/journal') >= 0;
     var isDash = url.indexOf('/api/dashboard') >= 0;
-    if (method !== 'GET' || (!isJournal && !isDash)) return _fetch(input, init);
+    if (method !== 'GET' || (!isJournal && !isDash) || liveRole() !== 'admin') return _fetch(input, init);
     var sel = getSel();
     return _fetch(input, init).then(function(resp){
       if (!ALL || !sel) return resp;
@@ -3500,7 +3523,9 @@ function setPayMode(m){ PAY_MODE=(m==='auto')?'auto':'manuel'; try{ localStorage
   }
 
   function ensureUI(){
-    if (!(ROLE==='admin' && ALL && ALL.length>1)) return;
+    if (liveRole() !== 'admin'){ var w0=document.getElementById('kt-city-wrap'); if(w0)w0.remove(); return; }   // espace franchisé (ou accès admin chez un franchisé) : pas de filtre villes
+    if (ROLE!=='admin'){ initDone=false; ROLE=null; ALL=null; return; }   // la session est (re)devenue admin sans rechargement : re-initialiser au prochain tick
+    if (!(ALL && ALL.length>1)) return;
     // masque l'ancien selecteur unique
     var old = document.getElementById('boutiqueSel'); if(old){ old.style.display='none'; }
     if (document.getElementById('kt-city-wrap')) { return; }
@@ -3524,7 +3549,7 @@ function setPayMode(m){ PAY_MODE=(m==='auto')?'auto':'manuel'; try{ localStorage
       .catch(function(){});
   }
   init();
-  setInterval(function(){ if (!initDone) init(); else if (ROLE==='admin' && ALL && ALL.length>1) ensureUI(); }, 1500);
+  setInterval(function(){ if (!initDone) init(); else ensureUI(); }, 1500);
 })();
 
 </script>
