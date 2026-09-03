@@ -132,6 +132,50 @@ let adminEmail = '';    // e-mail de recuperation de l'admin reseau (optionnel, 
 const resetCodes = {};  // { compte: { stored:{salt,hash}, exp, tries, email } } — codes de reinitialisation par e-mail (ephemeres, en memoire)
 const recentSales = {}; // idempotence encaissement : { saleKey: { status, json, exp } } — evite les doublons (double-clic caisse, renvoi reseau)
 function pruneRecentSales(){ const now = Date.now(); for (const k in recentSales) { if (recentSales[k].exp < now) delete recentSales[k]; } }
+
+// ---- Comptes FRANCHISES (une personne -> plusieurs boutiques) et comptes VENDEURS (onglets autorises) ----
+// Les comptes boutique historiques (1 login = 1 boutique) restent inchanges ; ces comptes s'ajoutent par-dessus.
+let franchisees = {};   // { id: { id, name, email, boutiques:[bId], cred:{salt,hash}, mustChangePw, createdAt } }
+let sellers = {};       // { id: { id, name, email, boutiques:[bId], tabs:[onglet], cred, mustChangePw, createdBy, createdAt } }
+const SELLER_TABS = ['dash','activite','pos','borne','commandes','challenge','produits','stock','fidelite','journal','factu','conformite','royalties','pro','ponts'];
+function cleanBoutiqueList(arr){ const out = []; (Array.isArray(arr) ? arr : []).forEach(function (x) { const id = String(x || '').trim().toLowerCase(); if (boutiques[id] && out.indexOf(id) < 0) out.push(id); }); return out; }
+function cleanTabList(arr){ const out = []; (Array.isArray(arr) ? arr : []).forEach(function (x) { const t = String(x || '').trim(); if (SELLER_TABS.indexOf(t) >= 0 && out.indexOf(t) < 0) out.push(t); }); return out; }
+function slugAccountId(s){ return String(s || '').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40); }
+function accountIdTaken(id){ return !!(id === 'admin' || boutiques[id] || accounts[id] || franchisees[id] || sellers[id]); }
+function killKindSessions(kindKey, uname){ for (const t of Object.keys(sessions)) { const s = sessions[t]; if (s && s.kind === kindKey && s.uname === uname) delete sessions[t]; } }
+// Repercute une modification (boutiques / onglets / nom) sur les sessions DEJA ouvertes de ce compte.
+function refreshKindSessions(kindKey, uname, rec){
+  for (const t of Object.keys(sessions)) {
+    const s = sessions[t]; if (!(s && s.kind === kindKey && s.uname === uname)) continue;
+    s.name = rec.name || uname;
+    s.boutiques = cleanBoutiqueList(rec.boutiques);
+    if (kindKey === 'vendeur') s.tabs = cleanTabList(rec.tabs);
+    if (s.boutiques.indexOf(s.boutiqueId) < 0) s.boutiqueId = s.boutiques[0] || null;
+    if (!s.boutiqueId) delete sessions[t];
+  }
+}
+// Carte VENDEUR : chaque famille de routes -> les onglets qui y donnent droit (au moins un requis).
+// null = route commune (produits en lecture, sante, compte...) : les gardes de role existantes s'appliquent.
+function vendeurTabsForPath(method, p){
+  if (p === '/api/my-boutique') return method === 'POST' ? [] : null;   // identite legale : jamais modifiable par un vendeur
+  if (p.indexOf('/api/royalties') === 0) return ['royalties'];
+  if (p.indexOf('/api/journal') === 0) return ['journal', 'factu', 'conformite', 'activite'];
+  if (p.indexOf('/api/factu/') === 0) return ['factu'];
+  if (p.indexOf('/api/fiscal/') === 0) return ['conformite', 'factu'];
+  if (p.indexOf('/api/facture') === 0) return ['journal', 'factu', 'pos'];
+  if (p === '/api/invoices') return ['journal', 'factu', 'pos'];
+  if (p === '/api/refund') return ['journal', 'pos'];
+  if (p.indexOf('/api/pro/') === 0 || p === '/api/pro') return ['pro'];
+  if (p.indexOf('/api/stock/') === 0) return ['stock'];
+  if (p === '/api/sales') return ['pos', 'borne'];
+  if (p.indexOf('/api/loyalty/') === 0) return ['fidelite', 'pos', 'borne'];
+  if (p.indexOf('/api/terminal/') === 0) return ['pos', 'ponts'];
+  if (p === '/api/ponts' || p.indexOf('/api/pont/setup-token') === 0) return ['ponts'];
+  if (p === '/api/dashboard' || p === '/api/analytics') return ['dash', 'activite'];
+  if (p === '/api/challenge') return ['challenge', 'dash'];
+  if (p.indexOf('/api/products') === 0 && method !== 'GET') return ['produits'];
+  return null;
+}
 function genTempPass() {
   // Mot de passe temporaire lisible : sans caracteres ambigus (0/O, 1/l/I), 9 caracteres, garanti maj+min+2 chiffres.
   const U = 'ABCDEFGHJKLMNPQRSTUVWXYZ', L = 'abcdefghijkmnpqrstuvwxyz', D = '23456789', ALL = U + L + D;
@@ -623,7 +667,7 @@ function persist() {
       // Écriture ATOMIQUE : fichier temporaire puis renommage -> jamais de fichier tronqué en cas de coupure.
       // NB : fiscalKey n'est PLUS écrite ici (stockée à part, fichier protégé).
       const tmp = DATA_FILE + '.tmp';
-      fs.writeFileSync(tmp, JSON.stringify({ v: 1, savedAt: new Date().toISOString(), pointsPerEuro: POINTS_PER_EURO, hideBaseCatalog, customProducts, stock, boutiques, invoiceSeq, lastHash, invoices, orderSeq, orders, fiscalEvents, fiscalSeq, lastFiscalSig, clotureSeq, gtPerpetuel, gtPerpetuelAvoirs, seqByB, gtByB, gtAvoirsByB, royaltiesRates, royaltiesStatus, clotureSeqByB, supplyOrders, supplySeq, stockMoves, proRate, pontDevices, sessions, proProducts, lastProSync, proLots, proStock, proBuyPrice, proSellPrice, proStockPush, proBlock, proExtras, proRename, entreprise, adminCred, adminEmail, backupState }), 'utf8');
+      fs.writeFileSync(tmp, JSON.stringify({ v: 1, savedAt: new Date().toISOString(), pointsPerEuro: POINTS_PER_EURO, hideBaseCatalog, customProducts, stock, boutiques, invoiceSeq, lastHash, invoices, orderSeq, orders, fiscalEvents, fiscalSeq, lastFiscalSig, clotureSeq, gtPerpetuel, gtPerpetuelAvoirs, seqByB, gtByB, gtAvoirsByB, royaltiesRates, royaltiesStatus, clotureSeqByB, supplyOrders, supplySeq, stockMoves, proRate, pontDevices, sessions, proProducts, lastProSync, proLots, proStock, proBuyPrice, proSellPrice, proStockPush, proBlock, proExtras, proRename, entreprise, adminCred, adminEmail, backupState, franchisees, sellers }), 'utf8');
       fs.renameSync(tmp, DATA_FILE);
     } catch (e) { console.error('Persistance impossible :', e.message); }
   }, 200);
@@ -783,6 +827,8 @@ function loadPersisted() {
     if (Array.isArray(d.supplyOrders)) supplyOrders = d.supplyOrders;
     if (d.pontDevices && typeof d.pontDevices === 'object') Object.assign(pontDevices, d.pontDevices);
     if (d.sessions && typeof d.sessions === 'object') { const _now = Date.now(); for (const t in d.sessions) { const s = d.sessions[t]; if (s && s.exp > _now) sessions[t] = s; } } // garde les connexions actives apres un redemarrage
+    if (d.franchisees && typeof d.franchisees === 'object') franchisees = d.franchisees;   // comptes franchises (multi-boutiques)
+    if (d.sellers && typeof d.sellers === 'object') sellers = d.sellers;                   // comptes vendeurs (onglets autorises)
     if (Array.isArray(d.proProducts)) { proProducts = d.proProducts; proProducts.forEach(ensureStock); }
     if (d.proLots && typeof d.proLots === 'object') proLots = d.proLots;
     if (d.entreprise && typeof d.entreprise === 'object') Object.assign(entreprise, d.entreprise);
@@ -1134,7 +1180,11 @@ function resolveAccountByIdent(ident){
   ident = String(ident || '').trim().toLowerCase(); if (!ident) return null;
   if (ident === 'admin') return { uname: 'admin', email: adminEmail };
   if (boutiques[ident]) return { uname: ident, email: boutiques[ident].email || '' };
+  if (franchisees[ident]) return { uname: ident, email: franchisees[ident].email || '', kind: 'franchise' };
+  if (sellers[ident]) return { uname: ident, email: sellers[ident].email || '', kind: 'vendeur' };
   for (const id of boutiqueIds()) { const b = boutiques[id]; if (b.email && String(b.email).toLowerCase() === ident) return { uname: id, email: b.email }; }
+  for (const k of Object.keys(franchisees)) { const f = franchisees[k]; if (f.email && String(f.email).toLowerCase() === ident) return { uname: k, email: f.email, kind: 'franchise' }; }
+  for (const k of Object.keys(sellers)) { const s2 = sellers[k]; if (s2.email && String(s2.email).toLowerCase() === ident) return { uname: k, email: s2.email, kind: 'vendeur' }; }
   if (adminEmail && adminEmail.toLowerCase() === ident) return { uname: 'admin', email: adminEmail };
   return null;
 }
@@ -1424,6 +1474,8 @@ const server = http.createServer(async (req, res) => {
       const label = a.role === 'admin' ? (a.name + ' \u2014 Admin r\u00e9seau') : ('Manager \u2014 ' + ((boutiques[a.boutiqueId] && boutiques[a.boutiqueId].label) || a.boutiqueId));
       return { key: k, label: label };
     });
+    for (const k of Object.keys(franchisees)) list.push({ key: k, label: 'Franchis\u00e9 \u2014 ' + (franchisees[k].name || k) });
+    for (const k of Object.keys(sellers)) list.push({ key: k, label: 'Vendeur \u2014 ' + (sellers[k].name || k) });
     return send(res, 200, { accounts: list });
   }
   if (req.method === 'POST' && path === '/api/login') {
@@ -1440,6 +1492,28 @@ const server = http.createServer(async (req, res) => {
       return send(res, 200, r);
     }
     const uname = body && body.user;
+    // Comptes FRANCHISE / VENDEUR : session role "manager" avec boutique ACTIVE validee -> toutes les routes
+    // existantes gardent exactement la meme isolation par boutique, sans modification.
+    const lkey = String(uname || '').trim().toLowerCase();
+    if (!accounts[uname] && (franchisees[lkey] || sellers[lkey])) {
+      const isFr = !!franchisees[lkey];
+      const rec = franchisees[lkey] || sellers[lkey];
+      if (!(rec.cred && rec.cred.salt) || !verifyStoredPass(rec.cred, (body && body.password) || '')) { loginFail(gate.ip); return send(res, 401, { error: 'Identifiants invalides' }); }
+      const bqs = cleanBoutiqueList(rec.boutiques);
+      if (!bqs.length) { loginOk(gate.ip); return send(res, 403, { error: 'Aucune boutique associée à ce compte — contacte l\'administrateur réseau.' }); }
+      loginOk(gate.ip);
+      const active = bqs[0];
+      const ktoken = crypto.randomBytes(24).toString('hex');
+      sessions[ktoken] = { name: rec.name || lkey, role: 'manager', boutiqueId: active, kind: isFr ? 'franchise' : 'vendeur', uname: lkey, boutiques: bqs, tabs: isFr ? null : cleanTabList(rec.tabs), exp: Date.now() + SESSION_TTL };
+      persist();
+      return send(res, 200, {
+        token: ktoken, name: rec.name || lkey, role: 'manager', kind: isFr ? 'franchise' : 'vendeur',
+        boutiqueId: active, label: (boutiques[active].label || active),
+        boutiques: bqs.map((id) => ({ id: id, label: (boutiques[id].label || id) })),
+        tabs: isFr ? null : cleanTabList(rec.tabs),
+        mustChangePassword: !!rec.mustChangePw,
+      });
+    }
     if (!accounts[uname] || !checkPass(uname, body && body.password)) { loginFail(gate.ip); return send(res, 401, { error: 'Identifiants invalides' }); }
     loginOk(gate.ip);
     const token = newSession(uname);
@@ -1459,7 +1533,10 @@ const server = http.createServer(async (req, res) => {
     if (acc && acc.email && ktValidEmail(acc.email)) {
       const code = String(crypto.randomInt(0, 1000000)).padStart(6, '0');
       resetCodes[acc.uname] = { stored: makeStoredPass(code), exp: Date.now() + 15 * 60 * 1000, tries: 0, email: acc.email };
-      const who = acc.uname === 'admin' ? 'Admin réseau' : ('Boutique ' + ((boutiques[acc.uname] && boutiques[acc.uname].label) || acc.uname));
+      const who = acc.uname === 'admin' ? 'Admin réseau'
+        : acc.kind === 'franchise' ? ('Compte franchisé ' + ((franchisees[acc.uname] && franchisees[acc.uname].name) || acc.uname))
+        : acc.kind === 'vendeur' ? ('Compte vendeur ' + ((sellers[acc.uname] && sellers[acc.uname].name) || acc.uname))
+        : ('Boutique ' + ((boutiques[acc.uname] && boutiques[acc.uname].label) || acc.uname));
       hint = maskEmail(acc.email);
       sendMail(acc.email, 'Code de réinitialisation KINGTOOLS', resetEmailHtml(code, who)).then(function (r) { if (!r.ok) console.error('Envoi code reinit echoue:', r.error || r.code); }, function () {});
     }
@@ -1483,9 +1560,12 @@ const server = http.createServer(async (req, res) => {
     if (nw.length < 6) return send(res, 400, { error: 'Nouveau mot de passe : 6 caractères minimum.' });
     if (nw.toLowerCase() === DEFAULT_PASS) return send(res, 400, { error: 'Choisis un mot de passe différent de celui par défaut.' });
     if (acc.uname === 'admin') { adminCred = makeStoredPass(nw); }
+    else if (acc.kind === 'franchise' && franchisees[acc.uname]) { franchisees[acc.uname].cred = makeStoredPass(nw); franchisees[acc.uname].mustChangePw = false; }
+    else if (acc.kind === 'vendeur' && sellers[acc.uname]) { sellers[acc.uname].cred = makeStoredPass(nw); sellers[acc.uname].mustChangePw = false; }
     else { if (!boutiques[acc.uname]) return send(res, 404, { error: 'Compte inconnu' }); boutiques[acc.uname].cred = makeStoredPass(nw); boutiques[acc.uname].mustChangePw = false; }
     delete resetCodes[acc.uname];
-    for (const t of Object.keys(sessions)) { const s = sessions[t]; if (s && ((acc.uname === 'admin' && s.role === 'admin' && !s.boutiqueId) || s.boutiqueId === acc.uname)) delete sessions[t]; }
+    if (acc.kind) { killKindSessions(acc.kind, acc.uname); }
+    else for (const t of Object.keys(sessions)) { const s = sessions[t]; if (s && !s.kind && ((acc.uname === 'admin' && s.role === 'admin' && !s.boutiqueId) || s.boutiqueId === acc.uname)) delete sessions[t]; }
     rebuildAccounts();
     persist();
     loginOk(gate.ip);
@@ -1634,7 +1714,133 @@ const server = http.createServer(async (req, res) => {
   const user = PG ? await PG.contextFromToken(req.headers['x-comptoir-token']) : sessionUser(req.headers['x-comptoir-token']);
   if (!user) return send(res, 401, { error: 'Session expirée ou invalide — reconnecte-toi.' });
 
+  // ---- Comptes VENDEURS : les onglets non autorises sont bloques ICI aussi, pas seulement caches a l'ecran ----
+  if (user.kind === 'vendeur') {
+    const needTabs = vendeurTabsForPath(req.method, path);
+    if (needTabs && !needTabs.some(function (t) { return (user.tabs || []).indexOf(t) >= 0; })) {
+      return send(res, 403, { error: 'Accès non autorisé pour ce compte vendeur.' });
+    }
+  }
+
   try {
+    // ---- Boutique ACTIVE d'un compte multi-boutiques (franchise, ou vendeur rattache a plusieurs) ----
+    if (req.method === 'POST' && path === '/api/session/boutique') {
+      if (!(user.kind === 'franchise' || user.kind === 'vendeur') || !Array.isArray(user.boutiques)) return send(res, 400, { error: 'Réservé aux comptes multi-boutiques' });
+      const sb = await readJson(req);
+      const sbId = String((sb && sb.boutiqueId) || '').trim().toLowerCase();
+      if (user.boutiques.indexOf(sbId) < 0 || !boutiques[sbId]) return send(res, 403, { error: 'Boutique non associée à ce compte' });
+      user.boutiqueId = sbId;   // user EST l'objet session vivant -> persiste avec les sessions
+      persist();
+      return send(res, 200, { ok: true, boutiqueId: sbId, label: (boutiques[sbId].label || sbId) });
+    }
+
+    // ---------------- Gestion des comptes : franchises (admin) + vendeurs (admin / franchise / boutique) ----------------
+    const canManageSellers = user.role === 'admin' || (user.role === 'manager' && user.kind !== 'vendeur');
+    const sellerScope = user.role === 'admin' ? null : (user.kind === 'franchise' ? cleanBoutiqueList(user.boutiques) : [user.boutiqueId]);
+    const inScope = (bqs) => !sellerScope || (bqs.length > 0 && bqs.every((b) => sellerScope.indexOf(b) >= 0));
+
+    if (req.method === 'GET' && path === '/api/accounts') {
+      if (!canManageSellers) return send(res, 403, { error: 'Réservé aux gérants' });
+      const isAdm = user.role === 'admin';
+      const out = { tabs: SELLER_TABS, sellers: [] };
+      if (isAdm) out.franchisees = Object.keys(franchisees).map((k) => { const f = franchisees[k]; return { id: k, name: f.name || k, email: f.email || '', boutiques: cleanBoutiqueList(f.boutiques), pending: !!f.mustChangePw }; });
+      out.sellers = Object.keys(sellers).map((k) => { const s2 = sellers[k]; return { id: k, name: s2.name || k, email: s2.email || '', boutiques: cleanBoutiqueList(s2.boutiques), tabs: cleanTabList(s2.tabs), pending: !!s2.mustChangePw, createdBy: s2.createdBy || '' }; })
+        .filter((s2) => isAdm || s2.boutiques.some((b) => sellerScope.indexOf(b) >= 0));
+      return send(res, 200, out);
+    }
+
+    if (req.method === 'POST' && path === '/api/franchisees') {
+      if (user.role !== 'admin') return send(res, 403, { error: 'Réservé à l\'administrateur réseau' });
+      const b = await readJson(req);
+      const name = String((b && b.name) || '').trim();
+      if (!name) return send(res, 400, { error: 'Nom du franchisé requis' });
+      const fid = slugAccountId((b && b.id) || name);
+      if (!fid) return send(res, 400, { error: 'Identifiant de connexion invalide' });
+      if (accountIdTaken(fid)) return send(res, 409, { error: 'Identifiant déjà pris : ' + fid });
+      const bqs = cleanBoutiqueList(b && b.boutiques);
+      if (!bqs.length) return send(res, 400, { error: 'Coche au moins une boutique' });
+      const em = String((b && b.email) || '').trim();
+      if (em && !ktValidEmail(em)) return send(res, 400, { error: 'E-mail invalide' });
+      const tp = genTempPass();
+      franchisees[fid] = { id: fid, name: name, email: em, boutiques: bqs, cred: makeStoredPass(tp), mustChangePw: true, createdAt: new Date().toISOString() };
+      persist();
+      return send(res, 201, { ok: true, franchisee: { id: fid, name: name, email: em, boutiques: bqs }, tempPassword: tp });
+    }
+    { const mFr = /^\/api\/franchisees\/([A-Za-z0-9_-]+)(\/reset-password)?$/.exec(path);
+      if (mFr) {
+        if (user.role !== 'admin') return send(res, 403, { error: 'Réservé à l\'administrateur réseau' });
+        const fid = mFr[1].toLowerCase();
+        const rec = franchisees[fid];
+        if (!rec) return send(res, 404, { error: 'Compte franchisé inconnu' });
+        if (req.method === 'POST' && mFr[2]) {
+          const tp = genTempPass();
+          rec.cred = makeStoredPass(tp); rec.mustChangePw = true;
+          killKindSessions('franchise', fid); persist();
+          return send(res, 200, { ok: true, tempPassword: tp });
+        }
+        if (req.method === 'PUT' && !mFr[2]) {
+          const b = await readJson(req);
+          if (b && b.name != null) { const nn = String(b.name).trim(); if (!nn) return send(res, 400, { error: 'Nom requis' }); rec.name = nn; }
+          if (b && b.email != null) { const em = String(b.email).trim(); if (em && !ktValidEmail(em)) return send(res, 400, { error: 'E-mail invalide' }); rec.email = em; }
+          if (b && b.boutiques != null) { const bqs = cleanBoutiqueList(b.boutiques); if (!bqs.length) return send(res, 400, { error: 'Coche au moins une boutique' }); rec.boutiques = bqs; }
+          refreshKindSessions('franchise', fid, rec); persist();
+          return send(res, 200, { ok: true, franchisee: { id: fid, name: rec.name, email: rec.email || '', boutiques: cleanBoutiqueList(rec.boutiques) } });
+        }
+        if (req.method === 'DELETE' && !mFr[2]) {
+          delete franchisees[fid]; killKindSessions('franchise', fid); persist();
+          return send(res, 200, { ok: true });
+        }
+        return send(res, 405, { error: 'Méthode non autorisée' });
+      } }
+
+    if (req.method === 'POST' && path === '/api/sellers') {
+      if (!canManageSellers) return send(res, 403, { error: 'Réservé aux gérants' });
+      const b = await readJson(req);
+      const name = String((b && b.name) || '').trim();
+      if (!name) return send(res, 400, { error: 'Nom du vendeur requis' });
+      const sid = slugAccountId((b && b.id) || name);
+      if (!sid) return send(res, 400, { error: 'Identifiant de connexion invalide' });
+      if (accountIdTaken(sid)) return send(res, 409, { error: 'Identifiant déjà pris : ' + sid });
+      const bqs = cleanBoutiqueList(b && b.boutiques && b.boutiques.length ? b.boutiques : (sellerScope || []));
+      if (!bqs.length) return send(res, 400, { error: 'Coche au moins une boutique' });
+      if (!inScope(bqs)) return send(res, 403, { error: 'Boutique hors de ton périmètre' });
+      const em = String((b && b.email) || '').trim();
+      if (em && !ktValidEmail(em)) return send(res, 400, { error: 'E-mail invalide' });
+      const tabs = cleanTabList(b && b.tabs);
+      const tp = genTempPass();
+      sellers[sid] = { id: sid, name: name, email: em, boutiques: bqs, tabs: tabs, cred: makeStoredPass(tp), mustChangePw: true, createdAt: new Date().toISOString(), createdBy: user.role === 'admin' ? 'admin' : (user.kind === 'franchise' ? ('franchisé ' + (user.uname || '')) : ('boutique ' + user.boutiqueId)) };
+      persist();
+      return send(res, 201, { ok: true, seller: { id: sid, name: name, email: em, boutiques: bqs, tabs: tabs }, tempPassword: tp });
+    }
+    { const mSl = /^\/api\/sellers\/([A-Za-z0-9_-]+)(\/reset-password)?$/.exec(path);
+      if (mSl) {
+        if (!canManageSellers) return send(res, 403, { error: 'Réservé aux gérants' });
+        const sid = mSl[1].toLowerCase();
+        const rec = sellers[sid];
+        if (!rec) return send(res, 404, { error: 'Compte vendeur inconnu' });
+        if (!inScope(cleanBoutiqueList(rec.boutiques))) return send(res, 403, { error: 'Ce vendeur dépend d\'une boutique hors de ton périmètre' });
+        if (req.method === 'POST' && mSl[2]) {
+          const tp = genTempPass();
+          rec.cred = makeStoredPass(tp); rec.mustChangePw = true;
+          killKindSessions('vendeur', sid); persist();
+          return send(res, 200, { ok: true, tempPassword: tp });
+        }
+        if (req.method === 'PUT' && !mSl[2]) {
+          const b = await readJson(req);
+          if (b && b.name != null) { const nn = String(b.name).trim(); if (!nn) return send(res, 400, { error: 'Nom requis' }); rec.name = nn; }
+          if (b && b.email != null) { const em = String(b.email).trim(); if (em && !ktValidEmail(em)) return send(res, 400, { error: 'E-mail invalide' }); rec.email = em; }
+          if (b && b.boutiques != null) { const bqs = cleanBoutiqueList(b.boutiques); if (!bqs.length) return send(res, 400, { error: 'Coche au moins une boutique' }); if (!inScope(bqs)) return send(res, 403, { error: 'Boutique hors de ton périmètre' }); rec.boutiques = bqs; }
+          if (b && b.tabs != null) rec.tabs = cleanTabList(b.tabs);
+          refreshKindSessions('vendeur', sid, rec); persist();
+          return send(res, 200, { ok: true, seller: { id: sid, name: rec.name, email: rec.email || '', boutiques: cleanBoutiqueList(rec.boutiques), tabs: cleanTabList(rec.tabs) } });
+        }
+        if (req.method === 'DELETE' && !mSl[2]) {
+          delete sellers[sid]; killKindSessions('vendeur', sid); persist();
+          return send(res, 200, { ok: true });
+        }
+        return send(res, 405, { error: 'Méthode non autorisée' });
+      } }
+
     if (req.method === 'POST' && path === '/api/facture/email') {
       var bMail = await readJson(req);
       var numMail = (bMail && bMail.num ? String(bMail.num) : '').trim();
@@ -2124,6 +2330,7 @@ const server = http.createServer(async (req, res) => {
       if (!id) id = (b.label || '').toString().trim().toLowerCase().replace(/[^a-z0-9]+/g, '').slice(0, 20);
       if (!id) return send(res, 400, { error: 'Identifiant de boutique requis (ex. lyon)' });
       if (id === 'admin') return send(res, 400, { error: 'Identifiant réservé' });
+      if (!boutiques[id] && (franchisees[id] || sellers[id])) return send(res, 409, { error: 'Identifiant déjà utilisé par un compte (franchisé ou vendeur) : ' + id });
       const ex = boutiques[id] || {};
       const exSeller = ex.seller || {};
       const seller = {
@@ -2233,6 +2440,20 @@ const server = http.createServer(async (req, res) => {
     // Changer SON PROPRE mot de passe (tout compte connecte). Sert au « mot de passe obligatoire a la 1re connexion ».
     if (req.method === 'POST' && path === '/api/account/password') {
       const body = await readJson(req);
+      // Comptes franchise / vendeur : le mot de passe change dans LEUR fiche, jamais dans celle de la boutique active.
+      if (user.kind === 'franchise' || user.kind === 'vendeur') {
+        const rec = user.kind === 'franchise' ? franchisees[user.uname] : sellers[user.uname];
+        if (!rec || !(rec.cred && rec.cred.salt)) return send(res, 400, { error: 'Compte inconnu' });
+        if (!verifyStoredPass(rec.cred, (body && body.currentPassword) || '')) return send(res, 403, { error: 'Mot de passe actuel incorrect' });
+        const knw = String((body && body.newPassword) || '');
+        if (knw.length < 6) return send(res, 400, { error: 'Nouveau mot de passe : 6 caractères minimum.' });
+        if (knw.toLowerCase() === DEFAULT_PASS) return send(res, 400, { error: 'Choisis un mot de passe différent de celui par défaut.' });
+        if (body && body.email != null) { const em = String(body.email).trim(); if (em) { if (!ktValidEmail(em)) return send(res, 400, { error: 'E-mail invalide.' }); rec.email = em; } }
+        if (user.kind === 'franchise' && !(rec.email && ktValidEmail(rec.email))) return send(res, 400, { error: 'E-mail valide requis (pour récupérer ton mot de passe en cas d\'oubli).' });
+        rec.cred = makeStoredPass(knw); rec.mustChangePw = false;
+        persist();
+        return send(res, 200, { ok: true });
+      }
       const uname = user.role === 'admin' ? 'admin' : user.boutiqueId;
       if (!uname || !credentials[uname]) return send(res, 400, { error: 'Compte inconnu' });
       if (!checkPass(uname, (body && body.currentPassword) || '')) return send(res, 403, { error: 'Mot de passe actuel incorrect' });
@@ -2256,6 +2477,28 @@ const server = http.createServer(async (req, res) => {
     // « Mon compte » du compte connecte (surtout l'ADMIN reseau) : lire/modifier l'e-mail de recuperation et le mot de passe.
     // L'e-mail se change sans re-saisir le mot de passe ; le mot de passe exige le mot de passe actuel.
     if (path === '/api/account/me') {
+      // Comptes franchise / vendeur : leur propre fiche (e-mail + mot de passe), independante de la boutique active.
+      if (user.kind === 'franchise' || user.kind === 'vendeur') {
+        const rec = user.kind === 'franchise' ? franchisees[user.uname] : sellers[user.uname];
+        if (!rec) return send(res, 400, { error: 'Compte inconnu' });
+        if (req.method === 'GET') {
+          return send(res, 200, { role: user.role, kind: user.kind, boutiqueId: user.boutiqueId || null, label: rec.name || user.uname, email: rec.email || '', login: user.uname });
+        }
+        const kb = await readJson(req);
+        let kpw = false;
+        const kWants = kb && kb.newPassword != null && String(kb.newPassword) !== '';
+        if (kWants) {
+          if (!(rec.cred && rec.cred.salt) || !verifyStoredPass(rec.cred, (kb && kb.currentPassword) || '')) return send(res, 403, { error: 'Mot de passe actuel incorrect' });
+          const knw = String(kb.newPassword);
+          if (knw.length < 6) return send(res, 400, { error: 'Nouveau mot de passe : 6 caractères minimum.' });
+          if (knw.toLowerCase() === DEFAULT_PASS) return send(res, 400, { error: 'Choisis un mot de passe différent de celui par défaut.' });
+          rec.cred = makeStoredPass(knw); rec.mustChangePw = false; kpw = true;
+        }
+        if (kb && kb.email != null) { const em = String(kb.email).trim(); if (em && !ktValidEmail(em)) return send(res, 400, { error: 'E-mail invalide.' }); rec.email = em; }
+        if (!kWants && !(kb && kb.email != null)) return send(res, 400, { error: 'Rien à modifier.' });
+        persist();
+        return send(res, 200, { ok: true, email: rec.email || '', passwordChanged: kpw });
+      }
       const uname = user.role === 'admin' ? 'admin' : user.boutiqueId;
       if (!uname || !credentials[uname]) return send(res, 400, { error: 'Compte inconnu' });
       const curEmail = () => user.role === 'admin' ? adminEmail : ((boutiques[uname] && boutiques[uname].email) || '');

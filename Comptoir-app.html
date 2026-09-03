@@ -2259,6 +2259,15 @@ function setPayMode(m){ PAY_MODE=(m==='auto')?'auto':'manuel'; try{ localStorage
   function render(){
     if(!st.user){showLogin();return;}
     var lr=document.getElementById('login-root');if(lr)lr.innerHTML='';
+    // VENDEUR : si la vue demandee n'est pas dans ses onglets autorises, basculer sur son premier onglet permis.
+    if(st.user.kind==='vendeur'){
+      var _vt=st.user.tabs||[];
+      if(st.view!=='moncompte'&&_vt.indexOf(st.view)<0){
+        var _pref=['pos','dash','commandes','stock','borne','produits','fidelite','journal','factu','conformite','challenge','pro','ponts'];
+        var _first=null;for(var _i=0;_i<_pref.length;_i++){if(_vt.indexOf(_pref[_i])>=0&&viewsMap[_pref[_i]]){_first=_pref[_i];break;}}
+        st.view=_first||'moncompte';
+      }
+    }
     view.innerHTML=(viewsMap[st.view]||viewDash)();
     wrapTables(view);
     if(!window.__tblMo){try{window.__tblMo=new MutationObserver(function(){wrapTables(view);});window.__tblMo.observe(view,{childList:true,subtree:true});}catch(e){}}
@@ -2266,6 +2275,36 @@ function setPayMode(m){ PAY_MODE=(m==='auto')?'auto':'manuel'; try{ localStorage
     $("#topTitle").textContent=titles[st.view]||'';
     var rb=document.querySelector('.role-badge');if(rb){rb.innerHTML='<span class="av">'+st.user.initials+'</span><div>'+st.user.roleLabel+'<br><b>'+st.user.name+'</b></div>';}
     var sel=document.getElementById('boutiqueSel');if(sel){sel.style.display=st.user.role==='admin'?'':'none';}
+    // VENDEUR : ne montrer QUE les onglets coches (le serveur bloque aussi cote API). Autres roles : tout reafficher.
+    var _isVnd=st.user.kind==='vendeur';
+    document.querySelectorAll('.nav-item[data-view]').forEach(function(n){
+      var v=n.getAttribute('data-view');
+      if(v==='franchises'||v==='guideponts'||v==='moncompte')return;   // geres par les regles de role ci-dessous
+      n.style.display=_isVnd?(((st.user.tabs||[]).indexOf(v)>=0)?'':'none'):'';
+    });
+    // FRANCHISE / VENDEUR multi-boutiques : selecteur de boutique active en haut a droite.
+    (function(){
+      var multi=st.user&&(st.user.kind==='franchise'||st.user.kind==='vendeur')&&Array.isArray(st.user.boutiques)&&st.user.boutiques.length>1;
+      var fsel=document.getElementById('kt-frbq-sel');
+      if(multi){
+        if(!fsel){
+          fsel=document.createElement('select');fsel.id='kt-frbq-sel';fsel.className='boutique-sel';
+          var tr=document.querySelector('.top-r');if(tr)tr.insertBefore(fsel,tr.firstChild);
+          fsel.addEventListener('change',function(){
+            var nid=fsel.value;
+            apiPost('/api/session/boutique',{boutiqueId:nid}).then(function(d){
+              var bo=(st.user.boutiques||[]).filter(function(b){return b.id===nid;})[0]||{};
+              var bl=bo.label||(d&&d.label)||nid;
+              st.user.boutiqueId=nid;st.user.bqLabel=bl;st.boutiqueId=nid;st.boutique=bl;
+              if(st.user.kind==='franchise')st.user.roleLabel='Franchisé';
+              saveSession();location.reload();   // repart proprement sur la boutique choisie (tous les caches)
+            }).catch(function(e){toast('Échec du changement de boutique : '+(e.message||e));fsel.value=st.user.boutiqueId;});
+          });
+        }
+        fsel.innerHTML=(st.user.boutiques||[]).map(function(b){return '<option value="'+esc(b.id)+'"'+(b.id===st.user.boutiqueId?' selected':'')+'>'+esc(b.label||b.id)+'</option>';}).join('');
+        fsel.style.display='';
+      } else if(fsel){fsel.style.display='none';}
+    })();
     var nfr=document.getElementById('nav-franchises');if(nfr){nfr.style.display=(st.user.role==='admin')?'':'none';}
     var ngp=document.getElementById('nav-guideponts');if(ngp){ngp.style.display=(st.user.role==='admin')?'':'none';}
     var nmc=document.getElementById('nav-moncompte');if(nmc){nmc.style.display=(st.user.role==='manager'||st.user.role==='admin')?'':'none';}
@@ -2656,13 +2695,13 @@ function setPayMode(m){ PAY_MODE=(m==='auto')?'auto':'manuel'; try{ localStorage
       var er=document.getElementById('lg-err');if(er){er.style.color='#8a8273';er.textContent='Connexion…';}
       fetch((API.base||'')+'/api/login',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({user:ukey,password:pass})})
         .then(function(r){return r.json().then(function(d){if(!r.ok)throw new Error(d.error||'Identifiants invalides');return d;});})
-        .then(function(d){API.token=d.token;if(d.mustChangePassword){forcePwModal(ukey,pass,d);return;}var meta=ACCOUNTS[ukey]||{};st.user={name:d.name,role:d.role,roleLabel:meta.roleLabel||(d.role==='manager'&&d.label?('Manager · '+d.label):d.role),boutiqueId:d.boutiqueId,bqLabel:d.label||null,initials:meta.initials||((d.label||d.name||'').replace(/[^0-9A-Za-zÀ-ÿ]/g,'').slice(0,2).toUpperCase()),token:d.token};if(d.boutiqueId)st.boutiqueId=d.boutiqueId;st.boutique=d.boutiqueId?boutiqueName(d.boutiqueId):'Réseau (toutes boutiques)';saveSession();render();autoConnect();toast('Bienvenue, '+d.name);})
+        .then(function(d){API.token=d.token;if(d.mustChangePassword){forcePwModal(ukey,pass,d);return;}var meta=ACCOUNTS[ukey]||{};var _rl=meta.roleLabel||(d.kind==='franchise'?'Franchisé':(d.kind==='vendeur'?('Vendeur · '+(d.label||'')):(d.role==='manager'&&d.label?('Manager · '+d.label):d.role)));st.user={name:d.name,role:d.role,kind:d.kind||null,boutiques:d.boutiques||null,tabs:d.tabs||null,roleLabel:_rl,boutiqueId:d.boutiqueId,bqLabel:d.label||null,initials:meta.initials||((d.name||d.label||'').replace(/[^0-9A-Za-zÀ-ÿ]/g,'').slice(0,2).toUpperCase()),token:d.token};if(d.boutiqueId)st.boutiqueId=d.boutiqueId;st.boutique=d.boutiqueId?boutiqueName(d.boutiqueId):'Réseau (toutes boutiques)';saveSession();render();autoConnect();toast('Bienvenue, '+d.name);})
         .catch(function(e){var e2=document.getElementById('lg-err');if(e2){e2.style.color='#e0917a';e2.textContent=(e.message||'Erreur de connexion');}});
       return;
     }
     if(a==='fpw-go'){
       var ctx=window.__fpw||{};var nw=((document.getElementById('fpw-new')||{}).value)||'';var cf=((document.getElementById('fpw-confirm')||{}).value)||'';var fem=((document.getElementById('fpw-email')||{}).value||'').trim();var er=document.getElementById('fpw-err');
-      var isMgr=ctx.d&&ctx.d.role&&ctx.d.role!=='admin';var emailRe=/^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      var isMgr=ctx.d&&ctx.d.role&&ctx.d.role!=='admin'&&ctx.d.kind!=='vendeur';var emailRe=/^[^\s@]+@[^\s@]+\.[^\s@]+$/;   // vendeur : e-mail facultatif
       if(isMgr&&!emailRe.test(fem)){if(er){er.style.color='#e0917a';er.textContent='Renseigne un e-mail valide (pour récupérer ton mot de passe).';}return;}
       if(fem&&!emailRe.test(fem)){if(er){er.style.color='#e0917a';er.textContent='E-mail invalide.';}return;}
       if(nw.length<6){if(er){er.style.color='#e0917a';er.textContent='6 caractères minimum.';}return;}
@@ -2671,7 +2710,8 @@ function setPayMode(m){ PAY_MODE=(m==='auto')?'auto':'manuel'; try{ localStorage
       var _pl={currentPassword:ctx.cur,newPassword:nw};if(fem)_pl.email=fem;
       apiPost('/api/account/password',_pl).then(function(){
         var d=ctx.d||{};var meta=ACCOUNTS[ctx.ukey]||{};
-        st.user={name:d.name,role:d.role,roleLabel:meta.roleLabel||(d.role==='manager'&&d.label?('Manager · '+d.label):d.role),boutiqueId:d.boutiqueId,bqLabel:d.label||null,initials:meta.initials||((d.label||d.name||'').replace(/[^0-9A-Za-zÀ-ÿ]/g,'').slice(0,2).toUpperCase()),token:d.token};
+        var _rl2=meta.roleLabel||(d.kind==='franchise'?'Franchisé':(d.kind==='vendeur'?('Vendeur · '+(d.label||'')):(d.role==='manager'&&d.label?('Manager · '+d.label):d.role)));
+        st.user={name:d.name,role:d.role,kind:d.kind||null,boutiques:d.boutiques||null,tabs:d.tabs||null,roleLabel:_rl2,boutiqueId:d.boutiqueId,bqLabel:d.label||null,initials:meta.initials||((d.name||d.label||'').replace(/[^0-9A-Za-zÀ-ÿ]/g,'').slice(0,2).toUpperCase()),token:d.token};
         if(d.boutiqueId)st.boutiqueId=d.boutiqueId;
         st.boutique=d.boutiqueId?boutiqueName(d.boutiqueId):'Réseau (toutes boutiques)';
         saveSession();closeModal();render();autoConnect();toast('Mot de passe mis à jour · Bienvenue, '+d.name);
@@ -3202,7 +3242,7 @@ function setPayMode(m){ PAY_MODE=(m==='auto')?'auto':'manuel'; try{ localStorage
   function render(){var box=document.getElementById('kt-act-view');if(!box)return;if(ST.loading&&!ST.loaded){box.innerHTML='<div class="kt-h">Activité</div><div style="color:#9a9085">Chargement…</div>';return;}if(ST.detail){box.innerHTML=renderDetail();return;}var bqs=[],seen={};(ST.data||[]).forEach(function(x){if(!seen[x.boutique]){seen[x.boutique]=1;bqs.push(x.boutique);}});var h='<div class="kt-h">Activité</div>';if(bqs.length>1){h+='<div class="kt-chips"><button class="kt-chip'+((!ST.sel||!ST.sel.size)?' on':'')+'" data-bq="__all">Toutes</button>';bqs.forEach(function(b){h+='<button class="kt-chip'+((ST.sel&&ST.sel.has(b))?' on':'')+'" data-bq="'+b+'">'+cap(b)+'</button>';});h+='</div>';}h+='<div class="kt-tabs"><button class="kt-tab'+(ST.tab==='jour'?' on':'')+'" data-tab="jour">Par jour</button><button class="kt-tab'+(ST.tab==='mois'?' on':'')+'" data-tab="mois">Par mois</button></div>';h+=renderHero();h+=renderList();box.innerHTML=h;}
   function onClick(e){var t=e.target.closest('[data-tab],[data-bq],[data-k],[data-back]');if(!t)return;if(t.hasAttribute('data-back')){ST.detail=null;render();return;}if(t.hasAttribute('data-tab')){ST.tab=t.getAttribute('data-tab');render();return;}if(t.hasAttribute('data-bq')){var b=t.getAttribute('data-bq');if(b==='__all'){ST.sel=null;}else{ST.sel=ST.sel||new Set();if(ST.sel.has(b))ST.sel.delete(b);else ST.sel.add(b);if(!ST.sel.size)ST.sel=null;}render();return;}if(t.hasAttribute('data-k')){ST.detail={t:t.getAttribute('data-t'),k:t.getAttribute('data-k')};render();var sv=document.querySelector('main.main section.view');if(sv)sv.scrollTop=0;window.scrollTo(0,0);return;}}
   function openView(){var sv=document.querySelector('main.main section.view');if(!sv)return;ST.active=true;document.querySelectorAll('#side .nav-item').forEach(function(n){n.classList.remove('active');});var nv=document.getElementById('kt-act-nav');if(nv)nv.classList.add('active');var tt=document.querySelector('main.main .top-title');if(tt)tt.textContent='Activité';sv.innerHTML='<div id="kt-act-view"></div>';var box=document.getElementById('kt-act-view');box.addEventListener('click',onClick);if(!ST.loaded&&!ST.loading){ST.loading=true;render();fetch('/api/journal?from=2020-01-01&to=2035-12-31',{headers:{'x-comptoir-token':tok()}}).then(function(r){return r.json();}).then(function(j){ST.data=j.ventes||[];ST.loaded=true;ST.loading=false;render();}).catch(function(){ST.loading=false;render();});}else render();}
-  function ensureNav(){var nav=document.querySelector('#side nav.nav');if(!nav)return;if(document.getElementById('kt-act-nav'))return;var dash=[].slice.call(nav.querySelectorAll('.nav-item')).filter(function(n){return n.getAttribute('data-view')==='dash';})[0];var item=document.createElement('div');item.className='nav-item';item.id='kt-act-nav';item.innerHTML='<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 12h4l2 6 4-14 2 8h6"/></svg> Activité';item.addEventListener('click',function(ev){ev.stopPropagation();openView();});if(dash&&dash.nextSibling){nav.insertBefore(item,dash.nextSibling);}else{nav.appendChild(item);}}
+  function ensureNav(){var nav=document.querySelector('#side nav.nav');if(!nav)return;var _ss=null;try{_ss=JSON.parse(localStorage.getItem('kt_session')||'null');}catch(e){}if(_ss&&Array.isArray(_ss.tabs)&&_ss.tabs.indexOf('activite')<0){var _ex=document.getElementById('kt-act-nav');if(_ex)_ex.remove();return;}if(document.getElementById('kt-act-nav'))return;var dash=[].slice.call(nav.querySelectorAll('.nav-item')).filter(function(n){return n.getAttribute('data-view')==='dash';})[0];var item=document.createElement('div');item.className='nav-item';item.id='kt-act-nav';item.innerHTML='<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 12h4l2 6 4-14 2 8h6"/></svg> Activité';item.addEventListener('click',function(ev){ev.stopPropagation();openView();});if(dash&&dash.nextSibling){nav.insertBefore(item,dash.nextSibling);}else{nav.appendChild(item);}}
   document.addEventListener('click',function(e){var n=e.target.closest('.nav-item[data-view]');if(n){ST.active=false;}},true);
   window.__ktActTimer=setInterval(ensureNav,1000);ensureNav();
 })();</script>
@@ -3370,7 +3410,7 @@ function setPayMode(m){ PAY_MODE=(m==='auto')?'auto':'manuel'; try{ localStorage
   }
   function openView(){ var sv=document.querySelector('main.main section.view'); if(!sv)return; document.querySelectorAll('#side .nav-item').forEach(function(n){n.classList.remove('active');}); var nv=document.getElementById('kt-roy-nav'); if(nv)nv.classList.add('active'); var tt=document.querySelector('main.main .top-title'); if(tt)tt.textContent='Royalties'; sv.innerHTML='<div id="kt-roy-view"></div>'; document.getElementById('kt-roy-view').addEventListener('click',onClick); if(!ST.ym)ST.ym=curYM(); ST.data=null; load(); }
   window.__ktRoyOpen=openView;
-  function ensureNav(){ var nav=document.querySelector('#side nav.nav'); if(!nav) return; if(document.getElementById('kt-roy-nav')) return; var after=document.getElementById('nav-franchises')|| [].slice.call(nav.querySelectorAll('.nav-item')).filter(function(n){return n.getAttribute('data-view')==='franchises';})[0] || [].slice.call(nav.querySelectorAll('.nav-item')).filter(function(n){return n.getAttribute('data-view')==='pro';})[0]; var item=document.createElement('div'); item.className='nav-item'; item.id='kt-roy-nav'; item.innerHTML='<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg> Royalties'; item.addEventListener('click',function(ev){ev.stopPropagation();openView();}); if(after&&after.nextSibling){nav.insertBefore(item,after.nextSibling);}else{nav.appendChild(item);} }
+  function ensureNav(){ var nav=document.querySelector('#side nav.nav'); if(!nav) return; var _ss=null; try{_ss=JSON.parse(localStorage.getItem('kt_session')||'null');}catch(e){} if(_ss&&Array.isArray(_ss.tabs)&&_ss.tabs.indexOf('royalties')<0){ var _ex=document.getElementById('kt-roy-nav'); if(_ex)_ex.remove(); return; } if(document.getElementById('kt-roy-nav')) return; var after=document.getElementById('nav-franchises')|| [].slice.call(nav.querySelectorAll('.nav-item')).filter(function(n){return n.getAttribute('data-view')==='franchises';})[0] || [].slice.call(nav.querySelectorAll('.nav-item')).filter(function(n){return n.getAttribute('data-view')==='pro';})[0]; var item=document.createElement('div'); item.className='nav-item'; item.id='kt-roy-nav'; item.innerHTML='<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg> Royalties'; item.addEventListener('click',function(ev){ev.stopPropagation();openView();}); if(after&&after.nextSibling){nav.insertBefore(item,after.nextSibling);}else{nav.appendChild(item);} }
   window.__ktRoyTimer=setInterval(ensureNav,1000); ensureNav();
 })();</script>
 <script>(function(){
@@ -3721,6 +3761,177 @@ function setPayMode(m){ PAY_MODE=(m==='auto')?'auto':'manuel'; try{ localStorage
   }
   setInterval(inject, 1000);
   document.addEventListener('click', function(){ setTimeout(inject, 350); });
+})();
+</script>
+<script>
+/* KINGSTON — Comptes & Vendeurs.
+   « Comptes » (admin) : comptes FRANCHISES relies a plusieurs boutiques (cases a cocher) + vue de tous les vendeurs.
+   « Vendeurs » (franchises et boutiques) : creer des vendeurs et cocher les onglets qu'ils ont le droit d'ouvrir.
+   Module autonome (comme Activite/Royalties) : injecte ses entrees de menu et parle a /api/accounts, /api/franchisees, /api/sellers. */
+(function(){
+  if(window.__ktComptes)return;window.__ktComptes=true;
+  var TABL={dash:'Tableau de bord',activite:'Activité',pos:'Caisse',borne:'Borne',commandes:'Commandes',challenge:'Challenge',produits:'Produits',stock:'Stock (grammes)',fidelite:'Fidélité',journal:'Journal des ventes',factu:'Facturation',conformite:'Conformité',royalties:'Royalties',pro:'Réassort pro',ponts:'Ponts TPE'};
+  function ses(){try{return JSON.parse(localStorage.getItem('kt_session')||'null')||{};}catch(e){return {};}}
+  function esc(s){return (''+(s==null?'':s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+  function toast(m){var t=document.getElementById('toast');if(!t){alert(m);return;}t.textContent=m;t.className='toast show';setTimeout(function(){t.className='toast';},2600);}
+  function api(method,path,body){return fetch(path,{method:method,headers:{'content-type':'application/json','x-comptoir-token':(ses().token||'')},body:body?JSON.stringify(body):undefined}).then(function(r){return r.json().catch(function(){return {};}).then(function(d){if(!r.ok)throw new Error((d&&d.error)||('Erreur '+r.status));return d;});});}
+  function slug(s){return (''+(s||'')).trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'').slice(0,40);}
+  var ST={active:false,mode:'comptes',data:null,bqs:null,loading:false};
+  function myScope(){var s=ses();if(s.role==='admin')return null;if(s.kind==='franchise')return (s.boutiques||[]).map(function(b){return {id:b.id,label:b.label||b.id};});return [{id:s.boutiqueId,label:s.bqLabel||s.boutiqueId}];}
+  function bqLabel(id){var all=ST.bqs||myScope()||[];for(var i=0;i<all.length;i++){if(all[i].id===id)return all[i].label;}return id;}
+  function chips(ids){return (ids||[]).map(function(b){return '<span class="tag tag-ok" style="font-size:10.5px;margin:1px 2px 1px 0;display:inline-block">'+esc(bqLabel(b))+'</span>';}).join('');}
+  function tabChips(tabs){if(!tabs||!tabs.length)return '<span class="tag tag-low" style="font-size:10.5px">aucun onglet</span>';return tabs.map(function(t){return '<span class="tag" style="font-size:10.5px;margin:1px 2px 1px 0;display:inline-block;background:#efe9db;color:#6b5b34">'+esc(TABL[t]||t)+'</span>';}).join('');}
+  /* ---------- menu ---------- */
+  function mkItem(id,label,svg){var d=document.createElement('div');d.className='nav-item';d.id=id;d.innerHTML=svg+' '+label;return d;}
+  var SVG_ACC='<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="9" cy="8" r="3.4"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/><circle cx="17.5" cy="9.5" r="2.6"/><path d="M14.8 15.2a5.4 5.4 0 0 1 6.7 4.8"/></svg>';
+  var SVG_VND='<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="7.5" r="3.6"/><path d="M4.5 20.5a7.5 7.5 0 0 1 15 0"/><path d="M16.5 3.8l1.2 1.2M19.5 6.8l1.2 1.2"/></svg>';
+  function ensureNav(){
+    var nav=document.querySelector('#side nav.nav');if(!nav)return;var s=ses();
+    var acc=document.getElementById('kt-acc-nav'),vnd=document.getElementById('kt-vnd-nav');
+    var isAdmin=s.role==='admin'&&s.token;
+    var isMgr=s.role==='manager'&&s.kind!=='vendeur'&&s.token;
+    if(isAdmin){ if(!acc){ acc=mkItem('kt-acc-nav','Comptes',SVG_ACC); acc.addEventListener('click',function(ev){ev.stopPropagation();openView('comptes');}); var after=document.getElementById('nav-franchises'); if(after&&after.nextSibling)nav.insertBefore(acc,after.nextSibling);else nav.appendChild(acc); } }
+    else if(acc)acc.remove();
+    if(isMgr){ if(!vnd){ vnd=mkItem('kt-vnd-nav','Vendeurs',SVG_VND); vnd.addEventListener('click',function(ev){ev.stopPropagation();openView('vendeurs');}); var fid=[].slice.call(nav.querySelectorAll('.nav-item')).filter(function(n){return n.getAttribute('data-view')==='fidelite';})[0]; if(fid&&fid.nextSibling)nav.insertBefore(vnd,fid.nextSibling);else nav.appendChild(vnd); } }
+    else if(vnd)vnd.remove();
+  }
+  /* ---------- vue ---------- */
+  function openView(mode){
+    var sv=document.querySelector('main.main section.view');if(!sv)return;
+    ST.active=true;ST.mode=mode;ST.data=null;
+    document.querySelectorAll('#side .nav-item').forEach(function(n){n.classList.remove('active');});
+    var nv=document.getElementById(mode==='comptes'?'kt-acc-nav':'kt-vnd-nav');if(nv)nv.classList.add('active');
+    var tt=document.querySelector('main.main .top-title');if(tt)tt.textContent=(mode==='comptes'?'Comptes':'Vendeurs');
+    sv.innerHTML='<div id="kt-acc-view"><div class="muted" style="padding:20px">Chargement…</div></div>';
+    document.getElementById('kt-acc-view').addEventListener('click',onClick);
+    load();
+  }
+  function load(){
+    var s=ses();
+    var pAcc=api('GET','/api/accounts');
+    var pBq=(s.role==='admin')?api('GET','/api/boutiques').then(function(d){return (d.boutiques||[]).map(function(b){return {id:b.id,label:b.label||b.id};});}):Promise.resolve(null);
+    Promise.all([pAcc,pBq]).then(function(r){ST.data=r[0];ST.bqs=r[1];render();}).catch(function(e){var b=document.getElementById('kt-acc-view');if(b)b.innerHTML='<div class="card" style="padding:18px;color:#b4452f">'+esc(e.message||e)+'</div>';});
+  }
+  function frRows(){
+    var frs=(ST.data&&ST.data.franchisees)||[];
+    if(!frs.length)return '<div class="muted" style="padding:14px">Aucun compte franchisé pour le moment. Crée le premier : il pourra gérer plusieurs boutiques avec un seul identifiant.</div>';
+    return '<div class="tbl-scroll"><table class="tbl"><thead><tr><th>Franchisé</th><th>Boutiques</th><th>Statut</th><th style="text-align:right">Actions</th></tr></thead><tbody>'+frs.map(function(f){
+      return '<tr><td><b>'+esc(f.name)+'</b><br><span class="muted" style="font-size:11.5px">identifiant : '+esc(f.id)+(f.email?' · '+esc(f.email):'')+'</span></td>'+
+        '<td>'+chips(f.boutiques)+'</td>'+
+        '<td>'+(f.pending?'<span class="tag tag-low" style="font-size:10.5px">mot de passe provisoire</span>':'<span class="tag tag-ok" style="font-size:10.5px">actif</span>')+'</td>'+
+        '<td style="text-align:right;white-space:nowrap"><button class="btn" data-act="fr-edit" data-id="'+esc(f.id)+'" style="padding:6px 10px">✏ Modifier</button> <button class="btn" data-act="fr-pw" data-id="'+esc(f.id)+'" style="padding:6px 10px">🔑 Mot de passe</button> <button class="btn" data-act="fr-del" data-id="'+esc(f.id)+'" style="padding:6px 10px;color:#b4452f">🗑</button></td></tr>';
+    }).join('')+'</tbody></table></div>';
+  }
+  function slRows(){
+    var sls=(ST.data&&ST.data.sellers)||[];
+    if(!sls.length)return '<div class="muted" style="padding:14px">Aucun vendeur pour le moment. Crée un vendeur et coche les onglets qu\'il a le droit d\'utiliser — tout le reste lui sera interdit (même côté serveur).</div>';
+    return '<div class="tbl-scroll"><table class="tbl"><thead><tr><th>Vendeur</th><th>Boutiques</th><th>Onglets autorisés</th><th>Statut</th><th style="text-align:right">Actions</th></tr></thead><tbody>'+sls.map(function(v){
+      return '<tr><td><b>'+esc(v.name)+'</b><br><span class="muted" style="font-size:11.5px">identifiant : '+esc(v.id)+(v.email?' · '+esc(v.email):'')+'</span></td>'+
+        '<td>'+chips(v.boutiques)+'</td><td style="max-width:340px">'+tabChips(v.tabs)+'</td>'+
+        '<td>'+(v.pending?'<span class="tag tag-low" style="font-size:10.5px">mot de passe provisoire</span>':'<span class="tag tag-ok" style="font-size:10.5px">actif</span>')+'</td>'+
+        '<td style="text-align:right;white-space:nowrap"><button class="btn" data-act="sl-edit" data-id="'+esc(v.id)+'" style="padding:6px 10px">✏ Modifier</button> <button class="btn" data-act="sl-pw" data-id="'+esc(v.id)+'" style="padding:6px 10px">🔑 Mot de passe</button> <button class="btn" data-act="sl-del" data-id="'+esc(v.id)+'" style="padding:6px 10px;color:#b4452f">🗑</button></td></tr>';
+    }).join('')+'</tbody></table></div>';
+  }
+  function render(){
+    var box=document.getElementById('kt-acc-view');if(!box)return;
+    var s=ses();var h='';
+    if(ST.mode==='comptes'&&s.role==='admin'){
+      h+='<div class="vhead"><div><h1>Comptes</h1><p>Les comptes franchisés (une personne, plusieurs boutiques) et tous les comptes vendeurs du réseau. Les comptes boutique historiques restent dans « Franchisés ».</p></div></div>';
+      h+='<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin:2px 0 10px"><h3 style="font-family:var(--serif);margin:0">👑 Comptes franchisés <span class="muted" style="font-size:12.5px;font-weight:400">('+(((ST.data||{}).franchisees)||[]).length+')</span></h3><button class="btn btn-gold" data-act="fr-new">+ Créer un compte franchisé</button></div>';
+      h+='<div class="card" style="margin-bottom:22px">'+frRows()+'</div>';
+      h+='<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin:2px 0 10px"><h3 style="font-family:var(--serif);margin:0">🧑‍💼 Comptes vendeurs <span class="muted" style="font-size:12.5px;font-weight:400">('+(((ST.data||{}).sellers)||[]).length+')</span></h3><button class="btn btn-gold" data-act="sl-new">+ Créer un vendeur</button></div>';
+      h+='<div class="card">'+slRows()+'</div>';
+    } else {
+      h+='<div class="vhead"><div><h1>Vendeurs</h1><p>Tes employés : chacun a son identifiant, et tu coches les onglets qu\'il a le droit d\'ouvrir. Tout le reste lui est interdit, à l\'écran ET côté serveur.</p></div><button class="btn btn-gold" data-act="sl-new">+ Créer un vendeur</button></div>';
+      h+='<div class="card">'+slRows()+'</div>';
+    }
+    box.innerHTML=h;
+  }
+  /* ---------- modale ---------- */
+  function closeModal(){var m=document.getElementById('kt-acc-modal');if(m)m.remove();}
+  function openModal(html){
+    closeModal();
+    var w=document.createElement('div');w.id='kt-acc-modal';
+    w.setAttribute('style','position:fixed;inset:0;z-index:99998;background:rgba(20,16,10,.55);display:flex;align-items:center;justify-content:center;padding:16px');
+    w.innerHTML='<div style="background:#fdfbf6;border-radius:16px;max-width:560px;width:100%;max-height:92vh;overflow:auto;box-shadow:0 24px 70px rgba(0,0,0,.35)">'+html+'</div>';
+    w.addEventListener('click',function(e){if(e.target===w)closeModal();else onClick(e);});
+    document.body.appendChild(w);
+  }
+  function fld(id,label,val,ph,type){return '<div style="margin-bottom:12px"><label style="display:block;font-size:13px;margin-bottom:5px;color:#6d6759">'+label+'</label><input id="'+id+'" type="'+(type||'text')+'" value="'+esc(val||'')+'" placeholder="'+esc(ph||'')+'" style="width:100%;box-sizing:border-box;padding:10px 12px;border:1px solid #e2dccc;border-radius:10px;font-size:14.5px"/></div>';}
+  function ckList(name,items,checked){return '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:4px 10px;border:1px solid #e9e3d3;border-radius:12px;padding:10px 12px;background:#faf7ef">'+items.map(function(it){var on=(checked||[]).indexOf(it.id)>=0;return '<label style="display:flex;align-items:center;gap:8px;font-size:13.5px;padding:4px 2px;cursor:pointer"><input type="checkbox" class="'+name+'" value="'+esc(it.id)+'"'+(on?' checked':'')+'> '+esc(it.label)+'</label>';}).join('')+'</div>';}
+  function tempPwHtml(login,pw){
+    return '<div class="modal-h" style="padding:18px 20px 0;font-family:var(--serif);font-size:19px;font-weight:700">Compte prêt ✔</div><div style="padding:14px 20px 20px">'+
+      '<p style="font-size:13.5px;color:#6d6759;margin:0 0 12px">Transmets ces identifiants — le mot de passe est <b>provisoire</b>, il sera changé à la première connexion.</p>'+
+      '<div style="background:#141310;color:#e9c877;border-radius:12px;padding:14px 16px;font-size:15px;line-height:1.9"><div>Identifiant : <b style="user-select:all">'+esc(login)+'</b></div><div>Mot de passe : <b style="user-select:all;letter-spacing:1px">'+esc(pw)+'</b></div><div style="font-size:12px;color:#cbb98a">Adresse : '+esc(location.origin)+'</div></div>'+
+      '<button class="btn btn-gold" data-act="acc-close" style="width:100%;margin-top:14px">Fermer</button></div>';
+  }
+  function frModal(rec){
+    var all=ST.bqs||[];
+    openModal('<div class="modal-h" style="padding:18px 20px 0;font-family:var(--serif);font-size:19px;font-weight:700">'+(rec?'Modifier le compte franchisé':'Créer un compte franchisé')+'</div><div style="padding:14px 20px 20px">'+
+      fld('fr-name','Nom du franchisé',rec?rec.name:'','ex : Karim B.')+
+      (rec?'<div style="margin-bottom:12px"><label style="display:block;font-size:13px;margin-bottom:5px;color:#6d6759">Identifiant de connexion</label><div style="padding:10px 12px;border:1px dashed #e2dccc;border-radius:10px;background:#f6f2e7;font-size:14.5px">'+esc(rec.id)+'</div></div>':fld('fr-id','Identifiant de connexion (auto si vide)','','ex : karim'))+
+      fld('fr-email','E-mail (récupération du mot de passe)',rec?rec.email:'','ex : karim@exemple.fr','email')+
+      '<label style="display:block;font-size:13px;margin-bottom:5px;color:#6d6759">Ses boutiques (coche une ou plusieurs)</label>'+ckList('fr-bq',all,rec?rec.boutiques:[])+
+      '<div style="display:flex;gap:8px;margin-top:16px"><button class="btn" data-act="acc-close" style="flex:1">Annuler</button><button class="btn btn-gold" data-act="fr-save"'+(rec?' data-id="'+esc(rec.id)+'"':'')+' style="flex:2">'+(rec?'Enregistrer':'Créer le compte')+'</button></div></div>');
+  }
+  function slModal(rec){
+    var scope=ses().role==='admin'?(ST.bqs||[]):(myScope()||[]);
+    var tabs=((ST.data||{}).tabs)||Object.keys(TABL);
+    var tabItems=tabs.map(function(t){return {id:t,label:TABL[t]||t};});
+    openModal('<div class="modal-h" style="padding:18px 20px 0;font-family:var(--serif);font-size:19px;font-weight:700">'+(rec?'Modifier le vendeur':'Créer un vendeur')+'</div><div style="padding:14px 20px 20px">'+
+      fld('sl-name','Nom du vendeur',rec?rec.name:'','ex : Sarah')+
+      (rec?'<div style="margin-bottom:12px"><label style="display:block;font-size:13px;margin-bottom:5px;color:#6d6759">Identifiant de connexion</label><div style="padding:10px 12px;border:1px dashed #e2dccc;border-radius:10px;background:#f6f2e7;font-size:14.5px">'+esc(rec.id)+'</div></div>':fld('sl-id','Identifiant de connexion (auto si vide)','','ex : sarah'))+
+      fld('sl-email','E-mail (facultatif)',rec?rec.email:'','','email')+
+      (scope.length>1?('<label style="display:block;font-size:13px;margin-bottom:5px;color:#6d6759">Ses boutiques</label>'+ckList('sl-bq',scope,rec?rec.boutiques:[])):'<div class="muted" style="font-size:12.5px;margin-bottom:10px">Boutique : <b>'+esc((scope[0]||{}).label||'')+'</b></div>')+
+      '<div style="display:flex;justify-content:space-between;align-items:baseline;margin:12px 0 5px"><label style="font-size:13px;color:#6d6759">Onglets autorisés <span class="muted">(rien n\'est coché d\'office)</span></label><span style="font-size:12px"><a href="#" data-act="sl-all" style="color:#8a7a52">tout cocher</a> · <a href="#" data-act="sl-none" style="color:#8a7a52">tout décocher</a></span></div>'+ckList('sl-tab',tabItems,rec?rec.tabs:[])+
+      '<div style="display:flex;gap:8px;margin-top:16px"><button class="btn" data-act="acc-close" style="flex:1">Annuler</button><button class="btn btn-gold" data-act="sl-save"'+(rec?' data-id="'+esc(rec.id)+'"':'')+' style="flex:2">'+(rec?'Enregistrer':'Créer le vendeur')+'</button></div></div>');
+  }
+  function vals(cls){return [].slice.call(document.querySelectorAll('input.'+cls+':checked')).map(function(c){return c.value;});}
+  /* ---------- actions ---------- */
+  function onClick(e){
+    var el=e.target.closest('[data-act]');if(!el)return;
+    var a=el.getAttribute('data-act'),id=el.getAttribute('data-id');
+    if(a==='acc-close'){closeModal();return;}
+    if(a==='fr-new'){frModal(null);return;}
+    if(a==='sl-new'){slModal(null);return;}
+    if(a==='fr-edit'){var f=(ST.data.franchisees||[]).filter(function(x){return x.id===id;})[0];if(f)frModal(f);return;}
+    if(a==='sl-edit'){var v=(ST.data.sellers||[]).filter(function(x){return x.id===id;})[0];if(v)slModal(v);return;}
+    if(a==='sl-all'){e.preventDefault();document.querySelectorAll('input.sl-tab').forEach(function(c){c.checked=true;});return;}
+    if(a==='sl-none'){e.preventDefault();document.querySelectorAll('input.sl-tab').forEach(function(c){c.checked=false;});return;}
+    if(a==='fr-save'){
+      var nm=(document.getElementById('fr-name')||{}).value||'';var em=(document.getElementById('fr-email')||{}).value||'';var bqs=vals('fr-bq');
+      if(!nm.trim()){toast('Indique le nom du franchisé');return;}
+      if(!bqs.length){toast('Coche au moins une boutique');return;}
+      el.disabled=true;
+      if(id){api('PUT','/api/franchisees/'+encodeURIComponent(id),{name:nm,email:em,boutiques:bqs}).then(function(){closeModal();toast('Compte mis à jour');load();}).catch(function(err){el.disabled=false;toast('Échec : '+err.message);});}
+      else{var fid=(document.getElementById('fr-id')||{}).value||'';api('POST','/api/franchisees',{id:fid||slug(nm),name:nm,email:em,boutiques:bqs}).then(function(d){openModal(tempPwHtml(d.franchisee.id,d.tempPassword));load();}).catch(function(err){el.disabled=false;toast('Échec : '+err.message);});}
+      return;
+    }
+    if(a==='sl-save'){
+      var nm2=(document.getElementById('sl-name')||{}).value||'';var em2=(document.getElementById('sl-email')||{}).value||'';
+      var scope2=ses().role==='admin'?(ST.bqs||[]):(myScope()||[]);
+      var bqs2=scope2.length>1?vals('sl-bq'):scope2.map(function(b){return b.id;});
+      var tabs2=vals('sl-tab');
+      if(!nm2.trim()){toast('Indique le nom du vendeur');return;}
+      if(!bqs2.length){toast('Coche au moins une boutique');return;}
+      el.disabled=true;
+      if(id){api('PUT','/api/sellers/'+encodeURIComponent(id),{name:nm2,email:em2,boutiques:bqs2,tabs:tabs2}).then(function(){closeModal();toast('Vendeur mis à jour — appliqué immédiatement, même s\'il est connecté');load();}).catch(function(err){el.disabled=false;toast('Échec : '+err.message);});}
+      else{var sid=(document.getElementById('sl-id')||{}).value||'';api('POST','/api/sellers',{id:sid||slug(nm2),name:nm2,email:em2,boutiques:bqs2,tabs:tabs2}).then(function(d){openModal(tempPwHtml(d.seller.id,d.tempPassword));load();}).catch(function(err){el.disabled=false;toast('Échec : '+err.message);});}
+      return;
+    }
+    if(a==='fr-pw'||a==='sl-pw'){
+      if(!confirm('Générer un NOUVEAU mot de passe provisoire pour « '+id+' » ?\nL\'ancien ne fonctionnera plus et ses sessions seront déconnectées.'))return;
+      api('POST',(a==='fr-pw'?'/api/franchisees/':'/api/sellers/')+encodeURIComponent(id)+'/reset-password').then(function(d){openModal(tempPwHtml(id,d.tempPassword));load();}).catch(function(err){toast('Échec : '+err.message);});
+      return;
+    }
+    if(a==='fr-del'||a==='sl-del'){
+      if(!confirm('Supprimer le compte « '+id+'» ?\nIl ne pourra plus se connecter (les ventes et factures ne bougent pas).'))return;
+      api('DELETE',(a==='fr-del'?'/api/franchisees/':'/api/sellers/')+encodeURIComponent(id)).then(function(){toast('Compte supprimé');load();}).catch(function(err){toast('Échec : '+err.message);});
+      return;
+    }
+  }
+  document.addEventListener('click',function(e){var n=e.target.closest('.nav-item[data-view]');if(n){ST.active=false;}},true);
+  window.__ktComptesTimer=setInterval(ensureNav,1500);ensureNav();
 })();
 </script>
 
