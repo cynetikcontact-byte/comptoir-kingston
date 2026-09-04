@@ -658,20 +658,31 @@ function backupDaily() {
     }
   } catch (e) { console.error('Sauvegarde quotidienne impossible :', e.message); }
 }
+function writeDataFileNow() {
+  backupDaily(); // copie de sécurité du jour avant remplacement
+  // Écriture ATOMIQUE : fichier temporaire puis renommage -> jamais de fichier tronqué en cas de coupure.
+  // NB : fiscalKey n'est PLUS écrite ici (stockée à part, fichier protégé).
+  const tmp = DATA_FILE + '.tmp';
+  fs.writeFileSync(tmp, JSON.stringify({ v: 1, savedAt: new Date().toISOString(), pointsPerEuro: POINTS_PER_EURO, hideBaseCatalog, customProducts, stock, boutiques, invoiceSeq, lastHash, invoices, orderSeq, orders, fiscalEvents, fiscalSeq, lastFiscalSig, clotureSeq, gtPerpetuel, gtPerpetuelAvoirs, seqByB, gtByB, gtAvoirsByB, royaltiesRates, royaltiesStatus, clotureSeqByB, supplyOrders, supplySeq, stockMoves, proRate, pontDevices, sessions, proProducts, lastProSync, proLots, proStock, proBuyPrice, proSellPrice, proStockPush, proBlock, proExtras, proRename, entreprise, adminCred, adminEmail, backupState, franchisees, sellers }), 'utf8');
+  fs.renameSync(tmp, DATA_FILE);
+}
 function persist() {
   if (PG || persistTimer) return; // ecriture groupee (debounce ~200 ms)
   persistTimer = setTimeout(() => {
     persistTimer = null;
-    try {
-      backupDaily(); // copie de sécurité du jour avant remplacement
-      // Écriture ATOMIQUE : fichier temporaire puis renommage -> jamais de fichier tronqué en cas de coupure.
-      // NB : fiscalKey n'est PLUS écrite ici (stockée à part, fichier protégé).
-      const tmp = DATA_FILE + '.tmp';
-      fs.writeFileSync(tmp, JSON.stringify({ v: 1, savedAt: new Date().toISOString(), pointsPerEuro: POINTS_PER_EURO, hideBaseCatalog, customProducts, stock, boutiques, invoiceSeq, lastHash, invoices, orderSeq, orders, fiscalEvents, fiscalSeq, lastFiscalSig, clotureSeq, gtPerpetuel, gtPerpetuelAvoirs, seqByB, gtByB, gtAvoirsByB, royaltiesRates, royaltiesStatus, clotureSeqByB, supplyOrders, supplySeq, stockMoves, proRate, pontDevices, sessions, proProducts, lastProSync, proLots, proStock, proBuyPrice, proSellPrice, proStockPush, proBlock, proExtras, proRename, entreprise, adminCred, adminEmail, backupState, franchisees, sellers }), 'utf8');
-      fs.renameSync(tmp, DATA_FILE);
-    } catch (e) { console.error('Persistance impossible :', e.message); }
+    try { writeDataFileNow(); } catch (e) { console.error('Persistance impossible :', e.message); }
   }, 200);
 }
+// Arret du serveur (SIGTERM a chaque redeploiement, SIGINT en local) : on ecrit IMMEDIATEMENT
+// l'ecriture en attente — sinon les ~200 ms de donnees les plus recentes seraient perdues.
+let shuttingDown = false;
+function flushAndExit(sig) {
+  if (shuttingDown) return; shuttingDown = true;
+  try { if (persistTimer) { clearTimeout(persistTimer); persistTimer = null; if (!PG) writeDataFileNow(); } } catch (e) { try { console.error('Flush arret impossible :', e.message); } catch (e2) {} }
+  process.exit(0);
+}
+process.on('SIGTERM', function () { flushAndExit('SIGTERM'); });
+process.on('SIGINT', function () { flushAndExit('SIGINT'); });
 
 // ---- Sauvegarde EXTERNALISEE (stockage compatible S3 : Scaleway, Cloudflare R2, Backblaze B2, AWS...) ----
 // Chaque nuit (et a la demande), le fichier de donnees + la cle de scellement partent vers un stockage
@@ -1469,6 +1480,10 @@ const server = http.createServer(async (req, res) => {
 
   // Connexion : renvoie un jeton selon les identifiants (route publique)
   if (req.method === 'GET' && path === '/api/login-accounts') {
+    // Plus de liste publique : l'ecran de connexion demande identifiant + mot de passe.
+    // La liste reste disponible pour une session deja connectee (outillage/admin).
+    const laUser = sessionUser(req.headers['x-comptoir-token']);
+    if (!laUser) return send(res, 401, { error: 'Réservé aux sessions connectées.' });
     const list = Object.keys(accounts).map((k) => {
       const a = accounts[k];
       const label = a.role === 'admin' ? (a.name + ' \u2014 Admin r\u00e9seau') : ('Manager \u2014 ' + ((boutiques[a.boutiqueId] && boutiques[a.boutiqueId].label) || a.boutiqueId));

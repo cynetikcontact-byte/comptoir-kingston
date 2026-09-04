@@ -652,16 +652,22 @@ table.tbl tr:hover td{background:#faf9f5;}
   function boutiqueName(id){ if(st.user&&st.user.boutiqueId===id&&st.user.bqLabel)return st.user.bqLabel; return bqLabelFull(id); }
   function showLogin(){
     document.getElementById('login-root').innerHTML='<div class="login-bg"><div class="login-card"><div class="login-wm">'+crown()+' KINGSTON</div><div class="login-sub">Comptoir</div>'+
-      '<div class="fld" style="margin:20px 0 12px"><label>Compte</label><select id="lg-user"><option value="admin">Lenny K. — Admin réseau</option><option value="aix">Manager — Aix-en-Provence</option><option value="marseille">Manager — Marseille Prado</option></select></div>'+
-      '<div class="fld" style="margin-bottom:16px"><label>Mot de passe</label><input id="lg-pass" type="password" placeholder="mot de passe"/></div>'+
+      '<div class="fld" style="margin:20px 0 12px"><label>Identifiant</label><input id="lg-user" type="text" autocomplete="username" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="ton identifiant"/></div>'+
+      '<div class="fld" style="margin-bottom:16px"><label>Mot de passe</label><input id="lg-pass" type="password" autocomplete="current-password" placeholder="mot de passe"/></div>'+
       '<button class="btn btn-gold" style="width:100%" data-act="login">Se connecter</button>'+
       '<div id="lg-err" style="font-size:12px;margin-top:10px;text-align:center;color:#e0917a"></div>'+
       '<div style="text-align:center;margin-top:12px"><a href="#" data-act="forgot-open" style="font-size:12.5px;color:#8a7a52;text-decoration:underline;cursor:pointer">Mot de passe oublié ?</a></div>'+
       
       '</div></div>';
-    ktLoadLoginAccounts();
+    // Connexion par identifiant + mot de passe : la liste des comptes n'est plus exposée publiquement.
+    setTimeout(function(){
+      var u=document.getElementById('lg-user'),p=document.getElementById('lg-pass');
+      if(u)u.focus();
+      var go=function(ev){if(ev.key==='Enter'){var b=document.querySelector('[data-act="login"]');if(b)b.click();}};
+      if(u)u.addEventListener('keydown',go);
+      if(p)p.addEventListener('keydown',go);
+    },60);
   }
-  function ktLoadLoginAccounts(){try{fetch((API.base||'')+'/api/login-accounts').then(function(r){return r.ok?r.json():null;}).then(function(d){var sel=document.getElementById('lg-user');if(sel&&d&&d.accounts&&d.accounts.length){var cur=sel.value;sel.innerHTML=d.accounts.map(function(a){return '<option value="'+esc(a.key)+'">'+esc(a.label)+'</option>';}).join('');if(cur)sel.value=cur;}}).catch(function(){});}catch(e){}}
   function viewDashBoutique(){
     var nm=boutiqueName(st.user.boutiqueId);var b=boutiques.find(function(x){return x.name===nm;})||{ca:0,tickets:0};var avg=b.tickets?b.ca/b.tickets:0;
     return '<div class="vhead"><div><h1>Bonjour '+st.user.name+'</h1><p>Boutique '+nm+' · '+new Date().toLocaleDateString('fr-FR',{weekday:'long',day:'numeric',month:'long'})+'</p></div></div>'+
@@ -2691,7 +2697,8 @@ function setPayMode(m){ PAY_MODE=(m==='auto')?'auto':'manuel'; try{ localStorage
     if(a==='fc-xlsx'){exportComptableXlsx();return;}
     if(a==='fc-pdf'){pdfDetailsVentes();return;}
     if(a==='login'){
-      var ukey=document.getElementById('lg-user').value;var pass=(document.getElementById('lg-pass').value||'');
+      var ukey=(document.getElementById('lg-user').value||'').trim().toLowerCase();var pass=(document.getElementById('lg-pass').value||'');
+      if(!ukey){var e0=document.getElementById('lg-err');if(e0){e0.style.color='#e0917a';e0.textContent='Indique ton identifiant.';}return;}
       var er=document.getElementById('lg-err');if(er){er.style.color='#8a8273';er.textContent='Connexion…';}
       fetch((API.base||'')+'/api/login',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({user:ukey,password:pass})})
         .then(function(r){return r.json().then(function(d){if(!r.ok)throw new Error(d.error||'Identifiants invalides');return d;});})
