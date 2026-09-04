@@ -652,20 +652,43 @@ table.tbl tr:hover td{background:#faf9f5;}
   function boutiqueName(id){ if(st.user&&st.user.boutiqueId===id&&st.user.bqLabel)return st.user.bqLabel; return bqLabelFull(id); }
   function showLogin(){
     document.getElementById('login-root').innerHTML='<div class="login-bg"><div class="login-card"><div class="login-wm">'+crown()+' KINGSTON</div><div class="login-sub">Comptoir</div>'+
-      '<div class="fld" style="margin:20px 0 12px"><label>Identifiant</label><input id="lg-user" type="text" autocomplete="username" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="ton identifiant"/></div>'+
+      '<div class="fld" style="margin:20px 0 4px"><label>Identifiant</label><input id="lg-user" type="text" autocomplete="username" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="ton identifiant"/></div>'+
+      '<div style="text-align:right;margin:0 0 10px"><a href="#" id="lg-pick-link" style="font-size:12px;color:#8a7a52;text-decoration:underline;cursor:pointer">ou choisis ta boutique dans la liste ▾</a></div>'+
+      '<div id="lg-pick-wrap" style="display:none;margin-bottom:12px"><select id="lg-pick-sel" style="width:100%;box-sizing:border-box;padding:10px 12px;border:1px solid var(--line);border-radius:10px;font-size:14.5px;background:#fff"><option value="">Chargement…</option></select></div>'+
       '<div class="fld" style="margin-bottom:16px"><label>Mot de passe</label><input id="lg-pass" type="password" autocomplete="current-password" placeholder="mot de passe"/></div>'+
       '<button class="btn btn-gold" style="width:100%" data-act="login">Se connecter</button>'+
       '<div id="lg-err" style="font-size:12px;margin-top:10px;text-align:center;color:#e0917a"></div>'+
       '<div style="text-align:center;margin-top:12px"><a href="#" data-act="forgot-open" style="font-size:12.5px;color:#8a7a52;text-decoration:underline;cursor:pointer">Mot de passe oublié ?</a></div>'+
       
       '</div></div>';
-    // Connexion par identifiant + mot de passe : la liste des comptes n'est plus exposée publiquement.
+    // Connexion par identifiant + mot de passe. En option : une liste des BOUTIQUES uniquement
+    // (enseignes publiques) qui remplit l'identifiant — admin, franchisés et vendeurs tapent le leur.
     setTimeout(function(){
       var u=document.getElementById('lg-user'),p=document.getElementById('lg-pass');
       if(u)u.focus();
       var go=function(ev){if(ev.key==='Enter'){var b=document.querySelector('[data-act="login"]');if(b)b.click();}};
       if(u)u.addEventListener('keydown',go);
       if(p)p.addEventListener('keydown',go);
+      var pk=document.getElementById('lg-pick-link');
+      if(pk)pk.addEventListener('click',function(ev){
+        ev.preventDefault();
+        var w=document.getElementById('lg-pick-wrap');if(!w)return;
+        if(w.style.display!=='none'){w.style.display='none';return;}
+        w.style.display='';
+        var sel=document.getElementById('lg-pick-sel');
+        if(sel&&!sel.getAttribute('data-loaded')){
+          sel.setAttribute('data-loaded','1');
+          fetch((API.base||'')+'/api/login-boutiques').then(function(r){return r.ok?r.json():null;}).then(function(d){
+            if(!(d&&d.boutiques&&d.boutiques.length)){sel.innerHTML='<option value="">liste indisponible — tape ton identifiant</option>';return;}
+            sel.innerHTML='<option value="">— Choisis ta boutique —</option>'+d.boutiques.map(function(b){return '<option value="'+esc(b.key)+'">'+esc(b.label)+'</option>';}).join('');
+          }).catch(function(){sel.innerHTML='<option value="">liste indisponible — tape ton identifiant</option>';});
+          sel.addEventListener('change',function(){
+            if(!sel.value)return;
+            var u2=document.getElementById('lg-user');if(u2)u2.value=sel.value;
+            var p2=document.getElementById('lg-pass');if(p2)p2.focus();
+          });
+        }
+      });
     },60);
   }
   function viewDashBoutique(){

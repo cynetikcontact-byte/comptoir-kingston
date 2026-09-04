@@ -1479,6 +1479,12 @@ const server = http.createServer(async (req, res) => {
   }
 
   // Connexion : renvoie un jeton selon les identifiants (route publique)
+  // Liste PUBLIQUE volontairement limitee aux BOUTIQUES (enseignes physiques, deja publiques) pour le
+  // selecteur optionnel de l'ecran de connexion. Ni admin, ni comptes franchises, ni vendeurs : eux tapent leur identifiant.
+  if (req.method === 'GET' && path === '/api/login-boutiques') {
+    const list = boutiqueIds().map((id) => ({ key: id, label: (boutiques[id].label || id) }));
+    return send(res, 200, { boutiques: list });
+  }
   if (req.method === 'GET' && path === '/api/login-accounts') {
     // Plus de liste publique : l'ecran de connexion demande identifiant + mot de passe.
     // La liste reste disponible pour une session deja connectee (outillage/admin).
