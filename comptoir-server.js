@@ -623,6 +623,14 @@ let royaltiesRates = {};
 let royaltiesStatus = {};             // { boutiqueId: Grand Total perpetuel TTC de CETTE boutique }
 let gtAvoirsByB = {};       // { boutiqueId: cumul des avoirs de CETTE boutique }
 let clotureSeqByB = {};     // { boutiqueId: { Z, M, A } }
+
+// ---- Factures de ROYALTIES (franchiseur -> franchises) : registre SCELLE, numerotation dediee ----
+// Chaque redevance mensuelle facturee a une boutique devient une vraie facture B2B : numero continu
+// ROY-AAAA-NNNN, empreinte chainee (comme les tickets), identites FIGEES a l'emission, immuable ensuite
+// (toute correction passe par un avoir). Compatible facturation electronique 2026 via Factur-X (efacture.js).
+let royaltyInvoices = [];    // append-only : factures + avoirs de redevance
+let roySeq = 0;              // numerotation continue dediee (jamais remise a zero)
+let royLastHash = 'GENESIS'; // chaine d'empreintes PROPRE aux factures de royalties
 function fb(id) { if (seqByB[id] == null) seqByB[id] = 0; if (gtByB[id] == null) gtByB[id] = 0; if (gtAvoirsByB[id] == null) gtAvoirsByB[id] = 0; if (!clotureSeqByB[id]) clotureSeqByB[id] = { Z: 0, M: 0, A: 0 }; return id; }
 
 /* ----------------------------- Identite vendeur (e-facture / e-reporting) ---------------------------- */
@@ -663,7 +671,7 @@ function writeDataFileNow() {
   // Écriture ATOMIQUE : fichier temporaire puis renommage -> jamais de fichier tronqué en cas de coupure.
   // NB : fiscalKey n'est PLUS écrite ici (stockée à part, fichier protégé).
   const tmp = DATA_FILE + '.tmp';
-  fs.writeFileSync(tmp, JSON.stringify({ v: 1, savedAt: new Date().toISOString(), pointsPerEuro: POINTS_PER_EURO, hideBaseCatalog, customProducts, stock, boutiques, invoiceSeq, lastHash, invoices, orderSeq, orders, fiscalEvents, fiscalSeq, lastFiscalSig, clotureSeq, gtPerpetuel, gtPerpetuelAvoirs, seqByB, gtByB, gtAvoirsByB, royaltiesRates, royaltiesStatus, clotureSeqByB, supplyOrders, supplySeq, stockMoves, proRate, pontDevices, sessions, proProducts, lastProSync, proLots, proStock, proBuyPrice, proSellPrice, proStockPush, proBlock, proExtras, proRename, entreprise, adminCred, adminEmail, backupState, franchisees, sellers }), 'utf8');
+  fs.writeFileSync(tmp, JSON.stringify({ v: 1, savedAt: new Date().toISOString(), pointsPerEuro: POINTS_PER_EURO, hideBaseCatalog, customProducts, stock, boutiques, invoiceSeq, lastHash, invoices, orderSeq, orders, fiscalEvents, fiscalSeq, lastFiscalSig, clotureSeq, gtPerpetuel, gtPerpetuelAvoirs, seqByB, gtByB, gtAvoirsByB, royaltiesRates, royaltiesStatus, clotureSeqByB, supplyOrders, supplySeq, stockMoves, proRate, pontDevices, sessions, proProducts, lastProSync, proLots, proStock, proBuyPrice, proSellPrice, proStockPush, proBlock, proExtras, proRename, entreprise, adminCred, adminEmail, backupState, franchisees, sellers, royaltyInvoices, roySeq, royLastHash }), 'utf8');
   fs.renameSync(tmp, DATA_FILE);
 }
 function persist() {
@@ -840,6 +848,9 @@ function loadPersisted() {
     if (d.sessions && typeof d.sessions === 'object') { const _now = Date.now(); for (const t in d.sessions) { const s = d.sessions[t]; if (s && s.exp > _now) sessions[t] = s; } } // garde les connexions actives apres un redemarrage
     if (d.franchisees && typeof d.franchisees === 'object') franchisees = d.franchisees;   // comptes franchises (multi-boutiques)
     if (d.sellers && typeof d.sellers === 'object') sellers = d.sellers;                   // comptes vendeurs (onglets autorises)
+    if (Array.isArray(d.royaltyInvoices)) royaltyInvoices = d.royaltyInvoices;             // factures de redevance (scellees)
+    if (typeof d.roySeq === 'number') roySeq = d.roySeq;
+    if (typeof d.royLastHash === 'string') royLastHash = d.royLastHash;
     if (Array.isArray(d.proProducts)) { proProducts = d.proProducts; proProducts.forEach(ensureStock); }
     if (d.proLots && typeof d.proLots === 'object') proLots = d.proLots;
     if (d.entreprise && typeof d.entreprise === 'object') Object.assign(entreprise, d.entreprise);
@@ -1267,6 +1278,23 @@ function royaltiesCaHT(boutiqueId, ym){
   });
   return Math.round(sum * 100) / 100;
 }
+
+/* ------------------ Factures de royalties : scellement + acces ------------------ */
+// Corps scelle d'une facture de redevance : tout ce qui est IMMUABLE apres emission.
+// (status / regleeAt / avoirNum sont des metadonnees de suivi, hors empreinte — comme 'source' des tickets.)
+function royBody(f){ return JSON.stringify([f.seq, f.num, f.type, f.boutiqueId, f.ym, f.baseAuto, f.baseRetenue, f.motif, f.rate, f.ht, f.tva, f.ttc, f.date, f.echeance, f.seller, f.buyer, f.avoirDe || null, f.prevHash]); }
+function royMonthLabel(ym){ var MO=['janvier','février','mars','avril','mai','juin','juillet','août','septembre','octobre','novembre','décembre']; var p=String(ym||'').split('-'); return (MO[(+p[1]||1)-1]||'')+' '+(p[0]||''); }
+// Identite du FRANCHISEUR (emetteur) figee a l'emission — celle des Reglages « Identite de l'entreprise ».
+function roySellerSnapshot(){ return { name: entreprise.denomination||'', siren:(entreprise.siret||'').replace(/\D/g,'').slice(0,9), siret: entreprise.siret||'', vat: entreprise.tva||'', address: entreprise.adresse||'', zip: entreprise.codePostal||'', city: entreprise.ville||'', country:'FR', telephone: entreprise.telephone||'' }; }
+// Identite du FRANCHISE (destinataire) figee a l'emission — l'identite legale de la boutique.
+function royBuyerSnapshot(bId){ var b=boutiques[bId]||{}; var s=b.seller||{}; return { name: s.name||b.label||bId, siren:(s.siren||'').replace(/\D/g,'').slice(0,9), vat: s.vat||'', address: s.address||'', zip: s.zip||'', city: s.city||'', country: s.country||'FR', label: b.label||bId, email: b.email||'' }; }
+// Boutiques visibles : admin -> toutes (null) ; franchise -> ses boutiques ; compte boutique/vendeur -> la sienne.
+function royAllowedBoutiques(user){ if (user.role==='admin') return null; if (Array.isArray(user.boutiques)&&user.boutiques.length) return user.boutiques.map(String); return user.boutiqueId?[String(user.boutiqueId)]:[]; }
+function royCanSee(user, rec){ var al=royAllowedBoutiques(user); return al===null || al.indexOf(rec.boutiqueId)>=0; }
+function royPublicView(rec){ var b=boutiques[rec.boutiqueId]||{}; return { num:rec.num, type:rec.type, boutiqueId:rec.boutiqueId, label:(rec.buyer&&rec.buyer.label)||b.label||rec.boutiqueId, ym:rec.ym, baseAuto:rec.baseAuto, baseRetenue:rec.baseRetenue, motif:rec.motif||'', rate:rec.rate, ht:rec.ht, tva:rec.tva, ttc:rec.ttc, date:rec.date, echeance:rec.echeance, status:rec.status, regleeAt:rec.regleeAt||null, regleePar:rec.regleePar||null, avoirDe:rec.avoirDe||null, avoirNum:rec.avoirNum||null, annuleeAt:rec.annuleeAt||null, par:rec.par||'' }; }
+function royActiveInvoice(bId, ym){ return royaltyInvoices.find(function(r){ return r.type==='facture' && r.boutiqueId===bId && r.ym===ym && r.status!=='annulee'; }); }
+function royCreate(fields, meta){ var body=royBody(fields); var hash=sha256(body); var rec=Object.assign({}, fields, { hash:hash, seal:sealInvoice(body,hash) }, meta||{}); royaltyInvoices.push(rec); royLastHash=hash; return rec; }
+function royVerifyChain(){ var prev='GENESIS'; for (var i=0;i<royaltyInvoices.length;i++){ var r=royaltyInvoices[i]; if (r.prevHash!==prev) return false; if (sha256(royBody(r))!==r.hash) return false; prev=r.hash; } return prev===royLastHash; }
 
 const server = http.createServer(async (req, res) => {
   res._cors = corsFor(req);
@@ -1946,6 +1974,139 @@ const server = http.createServer(async (req, res) => {
       royaltiesSetStatus(String((rsb&&rsb.ym)||''), String((rsb&&rsb.boutiqueId)||''), rpatch);
       return send(res, 200, { ok:true });
     }
+
+    // ================== FACTURATION DES ROYALTIES (factures scellees ROY-AAAA-NNNN) ==================
+    // Liste des factures de redevance. Admin : tout le reseau ; boutique / franchise / vendeur : ses boutiques.
+    if (req.method === 'GET' && path === '/api/royalties/invoices') {
+      var rfYm = String(u.searchParams.get('ym')||'').trim();
+      var rfBq = String(u.searchParams.get('boutique')||'').trim();
+      var rfAl = royAllowedBoutiques(user);
+      var rfList = royaltyInvoices.filter(function(r){
+        if (rfAl !== null && rfAl.indexOf(r.boutiqueId) < 0) return false;
+        if (rfYm && r.ym !== rfYm) return false;
+        if (rfBq && r.boutiqueId !== rfBq) return false;
+        return true;
+      }).map(royPublicView);
+      rfList.sort(function(a,b){ return a.date < b.date ? 1 : -1; });
+      return send(res, 200, { role:user.role, invoices:rfList, chainOk: royVerifyChain(), entrepriseOk: !!(entreprise.denomination && entreprise.siret) });
+    }
+    // Donnees completes d'UNE facture de redevance (pour la facture imprimable cote client).
+    if (req.method === 'GET' && path === '/api/royalties/invoice') {
+      var rvNum = String(u.searchParams.get('num')||'').trim();
+      var rvRec = royaltyInvoices.find(function(r){ return r.num === rvNum; });
+      if (!rvRec) return send(res, 404, { error:'Facture introuvable.' });
+      if (!royCanSee(user, rvRec)) return send(res, 403, { error:'Hors de vos boutiques.' });
+      var rvView = royPublicView(rvRec);
+      rvView.seller = rvRec.seller; rvView.buyer = rvRec.buyer; rvView.moisLabel = royMonthLabel(rvRec.ym); rvView.hash = rvRec.hash;
+      return send(res, 200, rvView);
+    }
+    // Generation A LA DEMANDE (admin) : base = CA HT du mois calcule automatiquement, ajustable a la main
+    // avec MOTIF OBLIGATOIRE (les deux montants restent traces). Taux de la boutique FIGE a l'emission.
+    // TVA 20 % — echeance a 30 jours — immuable ensuite (correction par avoir uniquement).
+    if (req.method === 'POST' && path === '/api/royalties/invoice') {
+      if (user.role !== 'admin') return send(res, 403, { error:'Action réservée à l\'administrateur.' });
+      var rgB = await readJson(req);
+      var rgYm = String((rgB&&rgB.ym)||'').trim();
+      var rgId = String((rgB&&rgB.boutiqueId)||'').trim();
+      if (!/^\d{4}-\d{2}$/.test(rgYm)) return send(res, 400, { error:'Mois invalide (AAAA-MM).' });
+      if (!boutiques[rgId]) return send(res, 404, { error:'Boutique inconnue.' });
+      if (!(entreprise.denomination && entreprise.siret)) return send(res, 400, { error:'Renseigne d\'abord l\'identité de l\'entreprise (dénomination + SIRET) dans Réglages → Identité de l\'entreprise.' });
+      var rgExist = royActiveInvoice(rgId, rgYm);
+      if (rgExist) return send(res, 409, { error:'Une facture existe déjà pour ce mois : '+rgExist.num+'. Émets d\'abord un avoir pour la corriger.', num:rgExist.num });
+      var RG2 = function(n){ return Math.round((Number(n)||0)*100)/100; };
+      var rgAuto = royaltiesCaHT(rgId, rgYm);
+      var rgBase = rgAuto, rgMotif = '';
+      if (rgB && rgB.base != null && rgB.base !== '') {
+        var rgRaw = Number(rgB.base);
+        if (!isFinite(rgRaw) || rgRaw < 0) return send(res, 400, { error:'Base HT invalide.' });
+        rgBase = RG2(rgRaw);
+        if (Math.abs(rgBase - rgAuto) >= 0.005) {
+          rgMotif = String((rgB&&rgB.motif)||'').trim();
+          if (rgMotif.length < 3) return send(res, 400, { error:'Motif obligatoire (3 caractères minimum) quand la base est ajustée à la main.' });
+        }
+      }
+      var rgRate = royaltiesRateFor(rgId);
+      var rgHt = RG2(rgBase * rgRate / 100);
+      if (!(rgHt > 0)) return send(res, 400, { error:'Rien à facturer : redevance nulle pour ce mois ('+rgBase.toFixed(2).replace('.',',')+' € HT × '+rgRate+' %).' });
+      var rgTva = RG2(rgHt * 0.20);
+      var rgTtc = RG2(rgHt + rgTva);
+      var rgDate = new Date();
+      var rgEch = new Date(rgDate.getTime() + 30*24*3600*1000);
+      var rgSeq = ++roySeq;
+      var rgNum = 'ROY-' + rgDate.getFullYear() + '-' + String(rgSeq).padStart(4,'0');
+      var rgRec = royCreate({
+        seq: rgSeq, num: rgNum, type: 'facture', boutiqueId: rgId, ym: rgYm,
+        baseAuto: rgAuto, baseRetenue: rgBase, motif: rgMotif, rate: rgRate,
+        ht: rgHt, tva: rgTva, ttc: rgTtc, tvaRate: 0.20,
+        date: rgDate.toISOString(), echeance: rgEch.toISOString(),
+        seller: roySellerSnapshot(), buyer: royBuyerSnapshot(rgId),
+        avoirDe: null, prevHash: royLastHash,
+      }, { status: 'emise', par: user.name || 'admin' });
+      logFiscalEvent('FACTURE_ROYALTIES', rgId, { numero: rgNum, mois: rgYm, baseAuto: rgAuto, baseRetenue: rgBase, motif: rgMotif, taux: rgRate, ht: rgHt, tva: rgTva, ttc: rgTtc, echeance: rgEch.toISOString(), par: user.name || 'admin' });
+      return send(res, 201, { ok:true, invoice: royPublicView(rgRec) });
+    }
+    // AVOIR sur une facture de redevance : l'original passe « annulée » (trace), l'avoir est scelle a son tour.
+    if (req.method === 'POST' && path === '/api/royalties/invoice/avoir') {
+      if (user.role !== 'admin') return send(res, 403, { error:'Action réservée à l\'administrateur.' });
+      var raB = await readJson(req);
+      var raNum = String((raB&&raB.num)||'').trim();
+      var raMotif = String((raB&&raB.motif)||'').trim();
+      if (raMotif.length < 3) return send(res, 400, { error:'Motif obligatoire (3 caractères minimum) pour émettre un avoir.' });
+      var raOrig = royaltyInvoices.find(function(r){ return r.num === raNum; });
+      if (!raOrig) return send(res, 404, { error:'Facture introuvable.' });
+      if (raOrig.type !== 'facture') return send(res, 400, { error:'Un avoir ne peut viser qu\'une facture.' });
+      if (raOrig.status === 'annulee') return send(res, 409, { error:'Cette facture est déjà annulée par l\'avoir '+(raOrig.avoirNum||'')+'.' });
+      var raDate = new Date();
+      var raSeq = ++roySeq;
+      var raNewNum = 'ROY-' + raDate.getFullYear() + '-' + String(raSeq).padStart(4,'0');
+      var raRec = royCreate({
+        seq: raSeq, num: raNewNum, type: 'avoir', boutiqueId: raOrig.boutiqueId, ym: raOrig.ym,
+        baseAuto: -raOrig.baseRetenue, baseRetenue: -raOrig.baseRetenue, motif: raMotif, rate: raOrig.rate,
+        ht: -raOrig.ht, tva: -raOrig.tva, ttc: -raOrig.ttc, tvaRate: 0.20,
+        date: raDate.toISOString(), echeance: raDate.toISOString(),
+        seller: raOrig.seller, buyer: raOrig.buyer,
+        avoirDe: raOrig.num, prevHash: royLastHash,
+      }, { status: 'emise', par: user.name || 'admin' });
+      raOrig.status = 'annulee'; raOrig.annuleeAt = raDate.toISOString(); raOrig.avoirNum = raNewNum;
+      logFiscalEvent('AVOIR_ROYALTIES', raOrig.boutiqueId, { numero: raNewNum, factureOrigine: raOrig.num, mois: raOrig.ym, motif: raMotif, ht: -raOrig.ht, ttc: -raOrig.ttc, par: user.name || 'admin' });
+      return send(res, 201, { ok:true, invoice: royPublicView(raRec), origine: royPublicView(raOrig) });
+    }
+    // Suivi de reglement : émise <-> réglée (jamais sur une facture annulee ni sur un avoir).
+    if (req.method === 'POST' && path === '/api/royalties/invoice/status') {
+      if (user.role !== 'admin') return send(res, 403, { error:'Action réservée à l\'administrateur.' });
+      var rsB2 = await readJson(req);
+      var rsNum = String((rsB2&&rsB2.num)||'').trim();
+      var rsSt = String((rsB2&&rsB2.status)||'');
+      if (['emise','reglee'].indexOf(rsSt) < 0) return send(res, 400, { error:'Statut invalide (emise | reglee).' });
+      var rsRec = royaltyInvoices.find(function(r){ return r.num === rsNum; });
+      if (!rsRec) return send(res, 404, { error:'Facture introuvable.' });
+      if (rsRec.type !== 'facture') return send(res, 400, { error:'Le statut ne se change que sur une facture (pas un avoir).' });
+      if (rsRec.status === 'annulee') return send(res, 409, { error:'Facture annulée par avoir — statut figé.' });
+      if (rsSt === 'reglee') { rsRec.status='reglee'; rsRec.regleeAt=new Date().toISOString(); rsRec.regleePar=user.name||'admin'; }
+      else { rsRec.status='emise'; rsRec.regleeAt=null; rsRec.regleePar=null; }
+      logFiscalEvent('ROYALTIES_REGLEMENT', rsRec.boutiqueId, { numero: rsRec.num, statut: rsSt, par: user.name || 'admin' });
+      return send(res, 200, { ok:true, invoice: royPublicView(rsRec) });
+    }
+    // Export Factur-X (XML CII / EN16931) d'une facture de redevance — le coeur de la facture electronique 2026.
+    if (req.method === 'GET' && path === '/api/royalties/invoice/facturx') {
+      var rxNum = String(u.searchParams.get('num')||'').trim();
+      var rxRec = royaltyInvoices.find(function(r){ return r.num === rxNum; });
+      if (!rxRec) return send(res, 404, { error:'Facture introuvable.' });
+      if (!royCanSee(user, rxRec)) return send(res, 403, { error:'Hors de vos boutiques.' });
+      var rxAvoir = rxRec.type === 'avoir';
+      var rxLabel = 'Redevance de franchise — ' + royMonthLabel(rxRec.ym) + ' — ' + ((rxRec.buyer&&rxRec.buyer.label)||rxRec.boutiqueId) + (rxAvoir ? (' (avoir sur ' + (rxRec.avoirDe||'') + ')') : '');
+      var rxXml = efacture.facturxXML({
+        number: rxRec.num,
+        typeCode: rxAvoir ? 381 : 380,          // 380 = facture, 381 = avoir (EN16931)
+        date: (rxRec.date||'').slice(0,10).replace(/-/g,''),
+        seller: { name: rxRec.seller.name, siren: rxRec.seller.siren, vat: rxRec.seller.vat, address: rxRec.seller.address, zip: rxRec.seller.zip, city: rxRec.seller.city, country: 'FR' },
+        buyer: { name: rxRec.buyer.name, siren: rxRec.buyer.siren, address: rxRec.buyer.address, zip: rxRec.buyer.zip, city: rxRec.buyer.city, country: rxRec.buyer.country || 'FR' },
+        lines: [{ label: rxLabel, qty: 1, ttc: Math.abs(rxRec.ttc), vat: 0.20 }],
+      });
+      res.writeHead(200, Object.assign({ 'content-type':'application/xml; charset=utf-8', 'content-disposition':'attachment; filename="'+rxRec.num+'.xml"' }, res._cors));
+      return res.end(rxXml);
+    }
+
     // ---- Terminal de paiement via le relais (caisse -> serveur -> pont -> TPE) ----
     if (req.method === 'POST' && path === '/api/terminal/pay') {
       if (user.role !== 'admin' && user.role !== 'manager') return send(res, 403, { error: 'Non autorise' });

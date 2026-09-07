@@ -3357,10 +3357,10 @@ function setPayMode(m){ PAY_MODE=(m==='auto')?'auto':'manuel'; try{ localStorage
   var old=document.getElementById('kt-roy-nav'); if(old) old.remove();
   if(!document.getElementById('kt-roy-css')){
     var st=document.createElement('style'); st.id='kt-roy-css';
-    st.textContent=["#kt-roy-view{max-width:1180px}","#kt-roy-view .rh{font-size:26px;font-weight:800;margin:0 0 4px;color:#1a1a1a}","#kt-roy-view .rh .m{color:#9a7b2f;text-transform:capitalize;font-style:italic;font-weight:600}","#kt-roy-view .rsub{color:#9a9085;font-size:13px;margin-bottom:18px}","#kt-roy-view .rbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:18px}","#kt-roy-view .rseg{display:flex;gap:4px;background:#efeae1;border-radius:12px;padding:4px}","#kt-roy-view .rseg button{padding:8px 18px;border:none;background:transparent;border-radius:9px;font-weight:700;font-size:14px;color:#7a7064;cursor:pointer}","#kt-roy-view .rseg button.on{background:#fff;color:#161310;box-shadow:0 1px 4px rgba(0,0,0,.08)}","#kt-roy-view .rmnav{display:flex;gap:6px;align-items:center;margin-left:auto}","#kt-roy-view .rmnav button{padding:8px 14px;border:1px solid #e6e0d6;background:#fff;border-radius:10px;font-weight:700;cursor:pointer;color:#3a342c}","#kt-roy-view .rstats{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:20px}","#kt-roy-view .rstat{background:#fff;border:1px solid #ece7df;border-radius:14px;padding:16px 18px}","#kt-roy-view .rstat .l{font-size:12px;color:#9a9085}","#kt-roy-view .rstat .v{font-size:23px;font-weight:800;color:#1a1a1a;margin-top:4px}","#kt-roy-view .rcard{background:#fff;border:1px solid #ece7df;border-radius:16px;padding:18px 20px;margin-bottom:12px;display:grid;grid-template-columns:1fr minmax(220px,260px);gap:20px;align-items:center}","#kt-roy-view .rtop{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:14px}","#kt-roy-view .rname{font-size:19px;font-weight:800;color:#1a1a1a}","#kt-roy-view .rbadge{font-size:11px;font-weight:700;padding:4px 10px;border-radius:999px;border:1px solid}","#kt-roy-view .rmet{display:flex;gap:28px;flex-wrap:wrap}","#kt-roy-view .rm .l{font-size:11px;color:#9a9085;text-transform:uppercase;letter-spacing:.04em}","#kt-roy-view .rm .v{font-size:16px;font-weight:700;color:#1a1a1a;margin-top:4px}","#kt-roy-view .rm .v.gold{color:#b5872f;font-size:20px}","#kt-roy-view .rpill{display:inline-flex;align-items:center;gap:6px;background:#f4efe6;border:1px solid #e6e0d6;border-radius:9px;padding:6px 11px;font-weight:700;font-size:15px;color:#1a1a1a}","#kt-roy-view .rpill.edit{cursor:pointer}#kt-roy-view .rpill.edit:hover{border-color:#d9b873}","#kt-roy-view .rpill .hint{font-size:10px;color:#9a9085;font-weight:500}","#kt-roy-view .rin{width:64px;padding:6px 8px;border:1px solid #d9b873;border-radius:8px;font-size:15px;font-weight:700}","#kt-roy-view .rpipe{display:flex;align-items:center;gap:5px;margin-top:14px}","#kt-roy-view .rpd{width:11px;height:11px;border-radius:50%;border:1px solid}","#kt-roy-view .rpl{font-size:12px}#kt-roy-view .rpb{height:2px;width:26px;border-radius:2px}","#kt-roy-view .ract{display:flex;flex-direction:column;gap:8px}","#kt-roy-view .rbtn{padding:11px 14px;border-radius:11px;font-weight:700;font-size:14px;cursor:pointer;border:1px solid #e6e0d6;background:#fff;color:#1a1a1a}","#kt-roy-view .rbtn.gold{background:#161310;color:#e6c884;border-color:#161310}","#kt-roy-view .rbtn.link{background:none;border:none;color:#9a7b2f;text-decoration:underline;font-size:12.5px;padding:2px;cursor:pointer}","#kt-roy-view .rnote{font-size:12.5px;color:#9a9085}","#kt-roy-view .rfoot{margin-top:24px;font-size:12px;color:#b3a892;text-align:center}"].join("");
+    st.textContent=["#kt-roy-view{max-width:1180px}","#kt-roy-view .rh{font-size:26px;font-weight:800;margin:0 0 4px;color:#1a1a1a}","#kt-roy-view .rh .m{color:#9a7b2f;text-transform:capitalize;font-style:italic;font-weight:600}","#kt-roy-view .rsub{color:#9a9085;font-size:13px;margin-bottom:18px}","#kt-roy-view .rbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:18px}","#kt-roy-view .rseg{display:flex;gap:4px;background:#efeae1;border-radius:12px;padding:4px}","#kt-roy-view .rseg button{padding:8px 18px;border:none;background:transparent;border-radius:9px;font-weight:700;font-size:14px;color:#7a7064;cursor:pointer}","#kt-roy-view .rseg button.on{background:#fff;color:#161310;box-shadow:0 1px 4px rgba(0,0,0,.08)}","#kt-roy-view .rmnav{display:flex;gap:6px;align-items:center;margin-left:auto}","#kt-roy-view .rmnav button{padding:8px 14px;border:1px solid #e6e0d6;background:#fff;border-radius:10px;font-weight:700;cursor:pointer;color:#3a342c}","#kt-roy-view .rstats{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:20px}","#kt-roy-view .rstat{background:#fff;border:1px solid #ece7df;border-radius:14px;padding:16px 18px}","#kt-roy-view .rstat .l{font-size:12px;color:#9a9085}","#kt-roy-view .rstat .v{font-size:23px;font-weight:800;color:#1a1a1a;margin-top:4px}","#kt-roy-view .rcard{background:#fff;border:1px solid #ece7df;border-radius:16px;padding:18px 20px;margin-bottom:12px;display:grid;grid-template-columns:1fr minmax(220px,260px);gap:20px;align-items:center}","#kt-roy-view .rtop{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:14px}","#kt-roy-view .rname{font-size:19px;font-weight:800;color:#1a1a1a}","#kt-roy-view .rbadge{font-size:11px;font-weight:700;padding:4px 10px;border-radius:999px;border:1px solid}","#kt-roy-view .rmet{display:flex;gap:28px;flex-wrap:wrap}","#kt-roy-view .rm .l{font-size:11px;color:#9a9085;text-transform:uppercase;letter-spacing:.04em}","#kt-roy-view .rm .v{font-size:16px;font-weight:700;color:#1a1a1a;margin-top:4px}","#kt-roy-view .rm .v.gold{color:#b5872f;font-size:20px}","#kt-roy-view .rpill{display:inline-flex;align-items:center;gap:6px;background:#f4efe6;border:1px solid #e6e0d6;border-radius:9px;padding:6px 11px;font-weight:700;font-size:15px;color:#1a1a1a}","#kt-roy-view .rpill.edit{cursor:pointer}#kt-roy-view .rpill.edit:hover{border-color:#d9b873}","#kt-roy-view .rpill .hint{font-size:10px;color:#9a9085;font-weight:500}","#kt-roy-view .rin{width:64px;padding:6px 8px;border:1px solid #d9b873;border-radius:8px;font-size:15px;font-weight:700}","#kt-roy-view .rpipe{display:flex;align-items:center;gap:5px;margin-top:14px}","#kt-roy-view .rpd{width:11px;height:11px;border-radius:50%;border:1px solid}","#kt-roy-view .rpl{font-size:12px}#kt-roy-view .rpb{height:2px;width:26px;border-radius:2px}","#kt-roy-view .ract{display:flex;flex-direction:column;gap:8px}","#kt-roy-view .rbtn{padding:11px 14px;border-radius:11px;font-weight:700;font-size:14px;cursor:pointer;border:1px solid #e6e0d6;background:#fff;color:#1a1a1a}","#kt-roy-view .rbtn.gold{background:#161310;color:#e6c884;border-color:#161310}","#kt-roy-view .rbtn.link{background:none;border:none;color:#9a7b2f;text-decoration:underline;font-size:12.5px;padding:2px;cursor:pointer}","#kt-roy-view .rnote{font-size:12.5px;color:#9a9085}","#kt-roy-view .rfoot{margin-top:24px;font-size:12px;color:#b3a892;text-align:center}","#kt-roy-view .rinv{border:1px solid #e9e2d4;background:#faf7f0;border-radius:12px;padding:12px 14px;margin-top:12px;font-size:13px}","#kt-roy-view .rinv .rline{display:flex;gap:8px;align-items:center;flex-wrap:wrap}","#kt-roy-view .rtag{font-size:11px;font-weight:700;padding:3px 9px;border-radius:999px;border:1px solid}","#kt-roy-view .rtag.emise{color:#9a6b00;background:#fdf4dd;border-color:#e2c579}","#kt-roy-view .rtag.reglee{color:#1a7f37;background:#e7f6ec;border-color:#9ed6ae}","#kt-roy-view .rtag.annulee{color:#8a8077;background:#f1ede5;border-color:#d8d0c2}","#kt-roy-view .rtag.avoir{color:#b4452f;background:#fdeae5;border-color:#eab4a5}","#kt-roy-view .rtag.retard{color:#b4452f;background:#fdeae5;border-color:#eab4a5}","#kt-roy-view .rsmall{padding:7px 11px;border-radius:9px;font-weight:700;font-size:12.5px;cursor:pointer;border:1px solid #e6e0d6;background:#fff;color:#1a1a1a}","#kt-roy-view .rsmall.gold{background:#161310;color:#e6c884;border-color:#161310}","#kt-roy-view .rgin{width:130px;padding:7px 9px;border:1px solid #d9b873;border-radius:8px;font-size:14px;font-weight:700;text-align:right}","#kt-roy-view .rgmot{flex:1;min-width:220px;padding:7px 9px;border:1px solid #e6e0d6;border-radius:8px;font-size:13px}","#kt-roy-view .rerr{color:#b4452f;font-size:12.5px;font-weight:600;margin-top:6px}","#kt-roy-view .rtbl{width:100%;border-collapse:collapse;background:#fff;border:1px solid #ece7df;border-radius:14px;overflow:hidden;font-size:13px}","#kt-roy-view .rtbl th{background:#f4efe6;text-align:left;padding:10px 12px;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:#8a8077}","#kt-roy-view .rtbl td{padding:9px 12px;border-top:1px solid #f0ebe2;vertical-align:middle}","#kt-roy-view .rtbl .num{white-space:nowrap;font-weight:700}","#kt-roy-view .rtbl .money{text-align:right;white-space:nowrap}","#kt-roy-view .rtblwrap{overflow-x:auto;margin-top:10px}","#kt-roy-view .rmotif{font-size:11.5px;color:#9a6b00;background:#fdf4dd;border-radius:7px;padding:3px 8px;display:inline-block;margin-top:4px}","#kt-roy-view .rwarn{border:1px solid #eab4a5;background:#fdeae5;color:#8c3a2f;border-radius:12px;padding:12px 15px;font-size:13px;margin-bottom:14px}"].join("");
     document.head.appendChild(st);
   }
-  var ST=window.__ktRoy||(window.__ktRoy={ym:null,view:'franchiseur',data:null,loading:false,editRate:null});
+  var ST=window.__ktRoy||(window.__ktRoy={ym:null,view:'franchiseur',data:null,loading:false,editRate:null,invData:null,gen:null,avoir:null});
   function tok(){ var t=localStorage.getItem('kt_session')||''; try{var o=JSON.parse(t);return o.token||t;}catch(e){return t;} }
   function euro2(n){ return (Math.round((n||0)*100)/100).toLocaleString('fr-FR',{minimumFractionDigits:2,maximumFractionDigits:2})+' €'; }
   var MO=['janvier','février','mars','avril','mai','juin','juillet','août','septembre','octobre','novembre','décembre'];
@@ -3370,8 +3370,60 @@ function setPayMode(m){ PAY_MODE=(m==='auto')?'auto':'manuel'; try{ localStorage
   function fmtDate(iso){ return iso? new Date(iso).toLocaleDateString('fr-FR',{day:'2-digit',month:'short'}):''; }
   var BADGE={ a_payer:{t:'À régler',c:'#8a8077',b:'#f3efe7'}, declare:{t:'Virement déclaré',c:'#b07d10',b:'#fbf3df'}, valide:{t:'Réception validée',c:'#1a7f37',b:'#e7f6ec'} };
   function api(p,body){ return fetch(p,{method:body?'POST':'GET',headers:Object.assign({'x-comptoir-token':tok()},body?{'Content-Type':'application/json'}:{}),body:body?JSON.stringify(body):undefined}).then(function(r){return r.json().then(function(j){return {s:r.status,j:j};}).catch(function(){return {s:r.status,j:{}};});}); }
-  function load(cb){ ST.loading=true; render(); api('/api/royalties?ym='+(ST.ym||curYM())).then(function(o){ if(o.s===200){ST.data=o.j;ST.ym=o.j.ym;} ST.loading=false; cb&&cb(); render(); }); }
+  function load(cb){ ST.loading=true; render(); Promise.all([api('/api/royalties?ym='+(ST.ym||curYM())), api('/api/royalties/invoices')]).then(function(rr){ var o=rr[0], oi=rr[1]; if(o.s===200){ST.data=o.j;ST.ym=o.j.ym;} if(oi.s===200){ST.invData=oi.j;} ST.loading=false; cb&&cb(); render(); }); }
   function act(p,body){ api(p,body).then(function(){ ST.editRate=null; load(); }); }
+  function esc2(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+  function fmtD2(iso){ return iso? new Date(iso).toLocaleDateString('fr-FR'):''; }
+  function invFor(bId){ var d=ST.invData; if(!d||!d.invoices) return null; var ym=ST.ym||curYM(); var f=null; d.invoices.forEach(function(r){ if(r.type==='facture'&&r.boutiqueId===bId&&r.ym===ym&&r.status!=='annulee'&&!f) f=r; }); return f; }
+  function invStatusTag(r){
+    if(r.type==='avoir') return '<span class="rtag avoir">Avoir sur '+esc2(r.avoirDe||'')+'</span>';
+    if(r.status==='annulee') return '<span class="rtag annulee">Annulée · avoir '+esc2(r.avoirNum||'')+'</span>';
+    if(r.status==='reglee') return '<span class="rtag reglee">Réglée le '+fmtD2(r.regleeAt)+'</span>';
+    var late = r.echeance && new Date(r.echeance).getTime() < Date.now();
+    return late ? '<span class="rtag retard">En retard · échéance '+fmtD2(r.echeance)+'</span>' : '<span class="rtag emise">Émise · échéance '+fmtD2(r.echeance)+'</span>';
+  }
+  function genPreview(base, rate){ var ht=Math.round(base*rate)/100; var tva=Math.round(ht*20)/100; var ttc=Math.round((ht+tva)*100)/100; return 'Redevance '+rate+' % → <b>'+euro2(ht)+' HT</b> + TVA 20 % '+euro2(tva)+' = <b>'+euro2(ttc)+' TTC</b> · échéance 30 jours'; }
+  function dlFacturx(num){ fetch('/api/royalties/invoice/facturx?num='+encodeURIComponent(num),{headers:{'x-comptoir-token':tok()}}).then(function(r){ if(!r.ok) throw new Error('HTTP '+r.status); return r.blob(); }).then(function(b){ var url=URL.createObjectURL(b); var a=document.createElement('a'); a.href=url; a.download=num+'.xml'; document.body.appendChild(a); a.click(); a.remove(); setTimeout(function(){URL.revokeObjectURL(url);},1500); }).catch(function(){ alert('Téléchargement Factur-X impossible.'); }); }
+  function printRoyInvoice(num){
+    api('/api/royalties/invoice?num='+encodeURIComponent(num)).then(function(o){
+      if(o.s!==200){ alert((o.j&&o.j.error)||'Facture indisponible.'); return; }
+      var d=o.j, s=d.seller||{}, b=d.buyer||{}, avoir=d.type==='avoir';
+      var sL=[]; if(s.name)sL.push('<b>'+esc2(s.name)+'</b>'); if(s.address)sL.push(esc2(s.address)); if(s.zip||s.city)sL.push(esc2((s.zip||'')+' '+(s.city||''))); if(s.siret)sL.push('SIRET : '+esc2(s.siret)); else if(s.siren)sL.push('SIREN : '+esc2(s.siren)); if(s.vat)sL.push('TVA : '+esc2(s.vat)); if(s.telephone)sL.push('Tél : '+esc2(s.telephone));
+      var bL=[]; bL.push('<b>'+esc2(b.name||d.label)+'</b>'); if(b.label&&b.name&&b.label!==b.name)bL.push(esc2(b.label)); if(b.address)bL.push(esc2(b.address)); if(b.zip||b.city)bL.push(esc2((b.zip||'')+' '+(b.city||''))); if(b.siren)bL.push('SIREN : '+esc2(b.siren)); if(b.vat)bL.push('TVA : '+esc2(b.vat));
+      var assiette = avoir
+        ? 'Avoir sur la facture '+esc2(d.avoirDe||'')+' — motif : '+esc2(d.motif||'')
+        : 'Assiette : CA HT '+esc2(d.moisLabel||d.ym)+' = '+euro2(d.baseRetenue)+' × taux '+d.rate+' %'
+          +(Math.abs((d.baseRetenue||0)-(d.baseAuto||0))>=0.01?('<br><span class="aj">Base ajustée manuellement (CA calculé : '+euro2(d.baseAuto)+') — motif : '+esc2(d.motif||'')+'</span>'):'');
+      var html='<!doctype html><html lang="fr"><head><meta charset="utf-8"><title>'+esc2(d.num)+'</title><style>'
+        +'body{font-family:Arial,Helvetica,sans-serif;color:#161310;margin:0;background:#f4f1ea}.sheet{max-width:760px;margin:24px auto;background:#fff;padding:44px 48px;box-shadow:0 2px 14px rgba(0,0,0,.08)}'
+        +'.top{display:flex;justify-content:space-between;gap:24px}.em{font-size:13px;line-height:1.65;color:#3a342c}.hd{text-align:right}.big{font-family:Georgia,serif;font-size:26px;letter-spacing:.14em;font-weight:700}'
+        +'.ti{font-size:20px;font-weight:800;margin-top:8px;letter-spacing:.06em}.meta{font-size:13px;color:#555;margin-top:4px;line-height:1.6}'
+        +'.bx{display:flex;gap:18px;margin:26px 0 8px}.bx>div{flex:1;border:1px solid #e8e2d6;border-radius:10px;padding:13px 15px;font-size:13px;line-height:1.65}'
+        +'.lab{font-size:10.5px;text-transform:uppercase;letter-spacing:.09em;color:#9a8f7d;margin-bottom:5px}'
+        +'table{width:100%;border-collapse:collapse;margin:18px 0 6px;font-size:13.5px}th{background:#f4efe6;text-align:left;padding:9px 11px;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:#7a7064}td{padding:11px;border-bottom:1px solid #eee7da;vertical-align:top}.r{text-align:right;white-space:nowrap}'
+        +'.note{font-size:12px;color:#7a7064;padding:2px 11px 10px}.aj{color:#9a6b00}'
+        +'.tot{margin-left:auto;width:280px;font-size:13.5px}.tot div{display:flex;justify-content:space-between;padding:5px 0}.tot .ttc{border-top:2px solid #161310;font-size:17px;font-weight:800;padding-top:9px;margin-top:4px}'
+        +'.pay{margin-top:20px;font-size:13px;background:#faf7f0;border:1px solid #e9e2d4;border-radius:10px;padding:12px 15px;line-height:1.6}'
+        +'.leg{margin-top:16px;font-size:10.5px;color:#8a8077;line-height:1.65}'
+        +'.seal{margin-top:10px;font-size:9.5px;color:#b3a892;word-break:break-all}'
+        +'.btn{display:block;margin:22px auto 0;padding:12px 26px;font-size:14px;font-weight:700;border:0;border-radius:10px;background:#161310;color:#e6c884;cursor:pointer}'
+        +'@media print{body{background:#fff}.sheet{box-shadow:none;margin:0;max-width:none}.btn{display:none}}'
+        +'</style></head><body><div class="sheet">'
+        +'<div class="top"><div class="em">'+sL.join('<br>')+'</div><div class="hd"><div class="big">KINGSTON</div><div class="ti">'+(avoir?'AVOIR':'FACTURE')+'</div><div class="meta">N° <b>'+esc2(d.num)+'</b><br>Émise le '+fmtD2(d.date)+(avoir?'':'<br>Période : '+esc2(d.moisLabel||d.ym))+(avoir?'<br>réf. '+esc2(d.avoirDe||''):'')+'</div></div></div>'
+        +'<div class="bx"><div><div class="lab">Émetteur (franchiseur)</div>'+sL.join('<br>')+'</div><div><div class="lab">Facturé à (franchisé)</div>'+bL.join('<br>')+'</div></div>'
+        +'<table><thead><tr><th>Désignation</th><th class="r">Base HT</th><th class="r">Taux</th><th class="r">Montant HT</th></tr></thead><tbody>'
+        +'<tr><td>Redevance de franchise — '+esc2(d.moisLabel||d.ym)+' — '+esc2(d.label||'')+(avoir?' (avoir)':'')+'</td><td class="r">'+euro2(d.baseRetenue)+'</td><td class="r">'+d.rate+' %</td><td class="r">'+euro2(d.ht)+'</td></tr>'
+        +'</tbody></table><div class="note">'+assiette+'</div>'
+        +'<div class="tot"><div><span>Total HT</span><b>'+euro2(d.ht)+'</b></div><div><span>TVA 20 %</span><b>'+euro2(d.tva)+'</b></div><div class="ttc"><span>Total TTC</span><span>'+euro2(d.ttc)+'</span></div></div>'
+        +'<div class="pay">'+(avoir?('Avoir à déduire ou à rembourser — émis le '+fmtD2(d.date)+'.'):('Paiement par virement — <b>échéance le '+fmtD2(d.echeance)+'</b> (30 jours).'+(d.status==='reglee'?' <b style="color:#1a7f37">Réglée le '+fmtD2(d.regleeAt)+'.</b>':'')))+'</div>'
+        +'<div class="leg">En cas de retard de paiement : pénalités exigibles au taux directeur de la BCE majoré de 10 points (art. L441-10 C. com.) et indemnité forfaitaire de recouvrement de 40 €. Pas d\'escompte pour paiement anticipé. TVA acquittée d\'après les encaissements.</div>'
+        +'<div class="seal">Document scellé — empreinte '+esc2((d.hash||'').slice(0,20))+'… · format Factur-X (EN16931) disponible depuis KINGTOOLS · facturation électronique 2026</div>'
+        +'<button class="btn" onclick="window.print()">Imprimer / Enregistrer en PDF</button>'
+        +'</div><script>setTimeout(function(){try{window.print()}catch(e){}},400);<\/script></body></html>';
+      var w=window.open('','_blank'); if(!w){ alert('Autorise les pop-ups pour afficher la facture.'); return; }
+      w.document.open(); w.document.write(html); w.document.close();
+    });
+  }
   function pipe(status){ var steps=['a_payer','declare','valide'],labs=['À régler','Déclaré','Validé'],idx=steps.indexOf(status); var h='<div class="rpipe">'; for(var i=0;i<3;i++){ var on=i<=idx; var col=on?(i===2?'#1a7f37':'#b5872f'):'#d8d0c2'; h+='<span class="rpd" style="background:'+(on?col:'#fff')+';border-color:'+col+'"></span><span class="rpl" style="color:'+(on?'#3a342c':'#bcb3a4')+'">'+labs[i]+'</span>'; if(i<2){ h+='<span class="rpb" style="background:'+(i<idx?'#b5872f':'#e6e0d6')+'"></span>'; } } return h+'</div>'; }
   function actionHtml(b, admin, view){ var s=b.status;
     if(view==='franchise'){
@@ -3383,6 +3435,57 @@ function setPayMode(m){ PAY_MODE=(m==='auto')?'auto':'manuel'; try{ localStorage
     if(s==='declare') return '<span class="rnote" style="color:#b07d10">Virement déclaré · '+fmtDate(b.declaredAt)+'</span><button class="rbtn gold" data-act="kt-roy-validate" data-id="'+b.id+'">Valider la réception</button><button class="rbtn link" data-act="kt-roy-reset" data-id="'+b.id+'">Annuler la déclaration</button>';
     return '<span class="rnote" style="color:#1a7f37"><b>✓ Validé le '+fmtDate(b.validatedAt)+'</b></span><button class="rbtn link" data-act="kt-roy-cancel" data-id="'+b.id+'">Annuler la validation</button>';
   }
+  // Bloc facture de redevance d'une carte boutique (facture du mois affiché, génération, avoir).
+  function invStrip(b, admin, view){
+    var ym=ST.ym||curYM(); var f=invFor(b.id); var canAdm=admin&&view==='franchiseur';
+    if(canAdm && ST.gen && ST.gen.id===b.id){
+      var g=ST.gen;
+      var rawB=(g.base!=null&&g.base!=='')?String(g.base):String(b.caHT);
+      var numB=Number(rawB.replace(/\s/g,'').replace(',','.')); if(!isFinite(numB)) numB=b.caHT;
+      var needMotif=Math.abs(numB-b.caHT)>=0.005;
+      return '<div class="rinv" id="kt-roy-genp">'
+        +'<div style="font-weight:800;margin-bottom:8px">Générer la facture de redevance · '+ymLabel(ym)+'</div>'
+        +'<div class="rline"><span>Base HT :</span><input class="rgin" id="kt-roy-gbase" data-rate="'+b.rate+'" data-auto="'+b.caHT+'" value="'+esc2(rawB)+'"/><span class="rnote">CA HT calculé : '+euro2(b.caHT)+' — modifiable</span></div>'
+        +'<div class="rline" id="kt-roy-gmotif-w" style="margin-top:8px'+(needMotif?'':';display:none')+'"><span>Motif :</span><input class="rgmot" id="kt-roy-gmotif" placeholder="obligatoire quand la base est ajustée" value="'+esc2(g.motif||'')+'"/></div>'
+        +'<div class="rnote" id="kt-roy-gprev" style="margin-top:8px">'+genPreview(numB,b.rate)+'</div>'
+        +(g.err?'<div class="rerr">'+esc2(g.err)+'</div>':'')
+        +'<div class="rline" style="margin-top:10px"><button class="rsmall gold" data-act="kt-roy-gen-go" data-id="'+b.id+'">Émettre la facture</button><button class="rbtn link" data-act="kt-roy-gen-cancel">annuler</button></div>'
+        +'</div>';
+    }
+    if(f){
+      var s='<div class="rinv"><div class="rline"><b>'+esc2(f.num)+'</b>'+invStatusTag(f)+'<span class="rnote">'+euro2(f.ht)+' HT · TVA '+euro2(f.tva)+' · <b>'+euro2(f.ttc)+' TTC</b></span></div>';
+      if(f.motif) s+='<div class="rmotif">Base ajustée : '+euro2(f.baseRetenue)+' (CA calculé '+euro2(f.baseAuto)+') — '+esc2(f.motif)+'</div>';
+      s+='<div class="rline" style="margin-top:8px"><button class="rsmall" data-act="kt-roy-inv-print" data-num="'+esc2(f.num)+'">Facture (PDF)</button><button class="rsmall" data-act="kt-roy-inv-fx" data-num="'+esc2(f.num)+'">Factur-X</button>';
+      if(canAdm){
+        if(f.status==='emise') s+='<button class="rsmall gold" data-act="kt-roy-inv-regle" data-num="'+esc2(f.num)+'">Marquer réglée</button>';
+        else if(f.status==='reglee') s+='<button class="rbtn link" data-act="kt-roy-inv-unregle" data-num="'+esc2(f.num)+'">repasser à « émise »</button>';
+        s+='<button class="rbtn link" data-act="kt-roy-inv-avoir" data-num="'+esc2(f.num)+'">annuler (avoir)</button>';
+      }
+      s+='</div>';
+      if(canAdm && ST.avoir && ST.avoir.num===f.num){
+        s+='<div class="rline" style="margin-top:8px"><input class="rgmot" id="kt-roy-amotif" placeholder="Motif de l\'avoir (obligatoire)"/><button class="rsmall gold" data-act="kt-roy-avoir-go" data-num="'+esc2(f.num)+'">Confirmer l\'avoir</button><button class="rbtn link" data-act="kt-roy-avoir-cancel">annuler</button></div>'
+          +(ST.avoir.err?'<div class="rerr">'+esc2(ST.avoir.err)+'</div>':'');
+      }
+      return s+'</div>';
+    }
+    if(canAdm) return '<div class="rinv"><div class="rline"><span class="rnote">Aucune facture émise pour '+ymLabel(ym)+'.</span><button class="rsmall gold" data-act="kt-roy-gen" data-id="'+esc2(b.id)+'">Générer la facture</button></div></div>';
+    return '';
+  }
+  // Tableau de TOUTES les factures de redevance visibles (admin : réseau entier ; franchisé : ses boutiques).
+  function invTable(admin){
+    var d=ST.invData; var list=(d&&d.invoices)||[];
+    if(!list.length) return admin?'<div class="rnote" style="margin-top:20px">Aucune facture de redevance émise pour l\'instant — le bouton « Générer la facture » de chaque boutique crée la facture du mois affiché.</div>':'';
+    var h='<div style="margin-top:28px"><div style="font-size:17px;font-weight:800">'+(admin?'Toutes les factures de redevance':'Mes factures de redevance')+'</div><div class="rnote">Numérotation continue scellée (ROY-) · export Factur-X EN16931 — prêt pour la facturation électronique 2026.</div>';
+    h+='<div class="rtblwrap"><table class="rtbl"><thead><tr><th>N°</th><th>Boutique</th><th>Mois</th><th class="money">HT</th><th class="money">TVA</th><th class="money">TTC</th><th>Émise le</th><th>Statut</th><th></th></tr></thead><tbody>';
+    list.forEach(function(r){
+      h+='<tr><td class="num">'+esc2(r.num)+(r.type==='avoir'?' <span class="rtag avoir">AVOIR</span>':'')+'</td><td>'+esc2(r.label)+'</td><td>'+ymLabel(r.ym)+'</td>'
+        +'<td class="money">'+euro2(r.ht)+'</td><td class="money">'+euro2(r.tva)+'</td><td class="money"><b>'+euro2(r.ttc)+'</b></td>'
+        +'<td>'+fmtD2(r.date)+'</td><td>'+invStatusTag(r)+'</td>'
+        +'<td style="white-space:nowrap"><button class="rsmall" data-act="kt-roy-inv-print" data-num="'+esc2(r.num)+'">Voir</button> <button class="rsmall" data-act="kt-roy-inv-fx" data-num="'+esc2(r.num)+'">Factur-X</button></td></tr>';
+      if(admin&&r.motif) h+='<tr><td></td><td colspan="8" style="border-top:0;padding-top:0"><span class="rmotif">'+(r.type==='avoir'?'Motif de l\'avoir':'Base ajustée ('+euro2(r.baseAuto)+' → '+euro2(r.baseRetenue)+')')+' : '+esc2(r.motif)+' · par '+esc2(r.par||'admin')+'</span></td></tr>';
+    });
+    return h+'</tbody></table></div></div>';
+  }
   function render(){ var box=document.getElementById('kt-roy-view'); if(!box) return;
     if(ST.loading && !ST.data){ box.innerHTML='<div class="rh">Royalties</div><div class="rnote">Chargement…</div>'; return; }
     var d=ST.data||{boutiques:[],totals:{},role:'admin'}; var admin=d.role==='admin'; var view=admin?ST.view:'franchise';
@@ -3391,6 +3494,8 @@ function setPayMode(m){ PAY_MODE=(m==='auto')?'auto':'manuel'; try{ localStorage
     h+='<div class="rbar">';
     if(admin){ h+='<div class="rseg"><button class="'+(view==="franchiseur"?"on":"")+'" data-act="kt-roy-view" data-v="franchiseur">Vue franchiseur</button><button class="'+(view==="franchise"?"on":"")+'" data-act="kt-roy-view" data-v="franchise">Vue franchisé</button></div>'; }
     h+='<div class="rmnav"><button data-act="kt-roy-prev">‹</button><button data-act="kt-roy-cur">Mois en cours</button><button data-act="kt-roy-next">›</button></div></div>';
+    if(admin && view==='franchiseur' && ST.invData && !ST.invData.entrepriseOk) h+='<div class="rwarn">⚠️ Identité de l\'entreprise incomplète (dénomination + SIRET). Renseigne-la dans <b>Réglages → Identité de l\'entreprise</b> avant de générer des factures de redevance.</div>';
+    if(admin && ST.invData && ST.invData.chainOk===false) h+='<div class="rwarn">⚠️ Alerte intégrité : la chaîne scellée des factures de redevance ne se vérifie plus.</div>';
     if(admin && view==='franchiseur'){ var t=d.totals||{}; h+='<div class="rstats"><div class="rstat"><div class="l">CA HT réseau du mois</div><div class="v">'+euro2(t.caHT)+'</div></div><div class="rstat"><div class="l">Royalties dues</div><div class="v" style="color:#b5872f">'+euro2(t.royalties)+'</div></div><div class="rstat"><div class="l">Encaissé (validé)</div><div class="v" style="color:#1a7f37">'+euro2(t.encaisse)+'</div></div><div class="rstat"><div class="l">En attente</div><div class="v" style="color:#b07d10">'+euro2(t.attente)+'</div></div></div>'; }
     (d.boutiques||[]).forEach(function(b){ var bd=BADGE[b.status]||BADGE.a_payer;
       h+='<div class="rcard"><div><div class="rtop"><span class="rname">'+b.label+'</span><span class="rbadge" style="color:'+bd.c+';background:'+bd.b+';border-color:'+bd.c+'">'+bd.t+'</span></div><div class="rmet">';
@@ -3401,7 +3506,7 @@ function setPayMode(m){ PAY_MODE=(m==='auto')?'auto':'manuel'; try{ localStorage
       else { h+='<div class="v" style="margin-top:4px">'+b.rate+'%</div>'; }
       h+='</div>';
       h+='<div class="rm"><div class="l">Royalties à reverser</div><div class="v gold">'+euro2(b.royalty)+'</div></div>';
-      h+='</div>'+pipe(b.status);
+      h+='</div>'+pipe(b.status)+invStrip(b,admin,view);
       if(ST.detail && ST.detail.id===b.id && ST.detail.ym===(ST.ym||curYM()) && ST.detail.data){
         var dd=ST.detail.data;
         h+='<div style="border:1px dashed #d8d0c2;border-radius:11px;padding:12px 14px;margin-top:10px;font-size:13px;line-height:1.7">'+
@@ -3421,16 +3526,36 @@ function setPayMode(m){ PAY_MODE=(m==='auto')?'auto':'manuel'; try{ localStorage
       h+='</div><div class="ract">'+actionHtml(b,admin,view)+'</div></div>';
     });
     if(!(d.boutiques||[]).length) h+='<div class="rnote">Aucune boutique.</div>';
-    h+='<div class="rfoot">Royalties = CA HT du mois × taux · calcul automatique · données partagées entre franchiseur et franchisés.</div>';
+    h+=invTable(admin&&view==='franchiseur');
+    h+='<div class="rfoot">Royalties = CA HT du mois × taux · calcul automatique · factures scellées, corrigées uniquement par avoir · données partagées entre franchiseur et franchisés.</div>';
     box.innerHTML=h;
   }
-  function onClick(e){ var t=e.target.closest('[data-act]'); if(!t) return; var a=t.getAttribute('data-act'); var id=t.getAttribute('data-id'); var ym=ST.ym||curYM();
-    if(a==='kt-roy-view'){ ST.view=t.getAttribute('data-v'); ST.editRate=null; render(); return; }
+  function onClick(e){ var t=e.target.closest('[data-act]'); if(!t) return; var a=t.getAttribute('data-act'); var id=t.getAttribute('data-id'); var num=t.getAttribute('data-num'); var ym=ST.ym||curYM();
+    if(a==='kt-roy-gen'){ ST.gen={id:id,base:null,motif:'',err:null}; ST.avoir=null; render(); var gi=document.getElementById('kt-roy-gbase'); if(gi){gi.focus();gi.select();} return; }
+    if(a==='kt-roy-gen-cancel'){ ST.gen=null; render(); return; }
+    if(a==='kt-roy-gen-go'){
+      var gb=document.getElementById('kt-roy-gbase'); var gm=document.getElementById('kt-roy-gmotif');
+      var baseStr=(gb&&gb.value||'').replace(/\s/g,'').replace(',','.');
+      var body={ym:ym,boutiqueId:id,motif:(gm&&gm.value||'').trim()};
+      if(baseStr!=='') body.base=Number(baseStr);
+      if(ST.gen){ ST.gen.base=(gb&&gb.value)||''; ST.gen.motif=body.motif; }
+      api('/api/royalties/invoice',body).then(function(o){ if(o.s===201){ ST.gen=null; load(); } else { if(ST.gen){ST.gen.err=(o.j&&o.j.error)||'Erreur inconnue.';} render(); } });
+      return; }
+    if(a==='kt-roy-inv-print'){ printRoyInvoice(num); return; }
+    if(a==='kt-roy-inv-fx'){ dlFacturx(num); return; }
+    if(a==='kt-roy-inv-regle'){ api('/api/royalties/invoice/status',{num:num,status:'reglee'}).then(function(){load();}); return; }
+    if(a==='kt-roy-inv-unregle'){ api('/api/royalties/invoice/status',{num:num,status:'emise'}).then(function(){load();}); return; }
+    if(a==='kt-roy-inv-avoir'){ ST.avoir={num:num,err:null}; ST.gen=null; render(); var am=document.getElementById('kt-roy-amotif'); if(am)am.focus(); return; }
+    if(a==='kt-roy-avoir-cancel'){ ST.avoir=null; render(); return; }
+    if(a==='kt-roy-avoir-go'){ var am2=document.getElementById('kt-roy-amotif'); var mv=(am2&&am2.value||'').trim();
+      api('/api/royalties/invoice/avoir',{num:num,motif:mv}).then(function(o){ if(o.s>=200&&o.s<300){ ST.avoir=null; load(); } else { if(ST.avoir){ST.avoir.err=(o.j&&o.j.error)||'Erreur inconnue.';} render(); } });
+      return; }
+    if(a==='kt-roy-view'){ ST.view=t.getAttribute('data-v'); ST.editRate=null; ST.gen=null; ST.avoir=null; render(); return; }
     if(a==='kt-roy-detail'){ if(ST.detail&&ST.detail.id===id&&ST.detail.ym===ym){ST.detail=null;render();return;} api('/api/royalties/detail?ym='+ym+'&boutique='+encodeURIComponent(id)).then(function(o){ if(o.s===200){ ST.detail={id:id,ym:ym,data:o.j}; render(); } }); return; }
     if(a==='kt-roy-detail-close'){ ST.detail=null; render(); return; }
-    if(a==='kt-roy-prev'){ ST.ym=shiftYM(ym,-1); ST.data=null; ST.detail=null; load(); return; }
-    if(a==='kt-roy-next'){ ST.ym=shiftYM(ym,1); ST.data=null; ST.detail=null; load(); return; }
-    if(a==='kt-roy-cur'){ ST.ym=curYM(); ST.data=null; ST.detail=null; load(); return; }
+    if(a==='kt-roy-prev'){ ST.ym=shiftYM(ym,-1); ST.data=null; ST.detail=null; ST.gen=null; ST.avoir=null; load(); return; }
+    if(a==='kt-roy-next'){ ST.ym=shiftYM(ym,1); ST.data=null; ST.detail=null; ST.gen=null; ST.avoir=null; load(); return; }
+    if(a==='kt-roy-cur'){ ST.ym=curYM(); ST.data=null; ST.detail=null; ST.gen=null; ST.avoir=null; load(); return; }
     if(a==='kt-roy-rate-edit'){ ST.editRate=id; render(); var i=document.getElementById('kt-roy-rin'); if(i)i.focus(); return; }
     if(a==='kt-roy-rate-save'){ var inp=document.getElementById('kt-roy-rin'); var rate=Math.max(0,Math.min(100,Number(inp&&inp.value)||0)); act('/api/royalties/rate',{boutiqueId:id,rate:rate}); return; }
     if(a==='kt-roy-declare'){ act('/api/royalties/declare',{ym:ym,boutiqueId:id}); return; }
@@ -3438,7 +3563,17 @@ function setPayMode(m){ PAY_MODE=(m==='auto')?'auto':'manuel'; try{ localStorage
     if(a==='kt-roy-cancel'){ act('/api/royalties/status',{ym:ym,boutiqueId:id,status:'declare'}); return; }
     if(a==='kt-roy-reset'){ act('/api/royalties/status',{ym:ym,boutiqueId:id,status:'a_payer'}); return; }
   }
-  function openView(){ var sv=document.querySelector('main.main section.view'); if(!sv)return; document.querySelectorAll('#side .nav-item').forEach(function(n){n.classList.remove('active');}); var nv=document.getElementById('kt-roy-nav'); if(nv)nv.classList.add('active'); var tt=document.querySelector('main.main .top-title'); if(tt)tt.textContent='Royalties'; sv.innerHTML='<div id="kt-roy-view"></div>'; document.getElementById('kt-roy-view').addEventListener('click',onClick); if(!ST.ym)ST.ym=curYM(); ST.data=null; load(); }
+  function onInput(e){ var t=e.target; if(!t) return;
+    if(t.id==='kt-roy-gbase'){
+      if(ST.gen) ST.gen.base=t.value;
+      var rate=Number(t.getAttribute('data-rate'))||0; var auto=Number(t.getAttribute('data-auto'))||0;
+      var v=Number(String(t.value).replace(/\s/g,'').replace(',','.'));
+      var pv=document.getElementById('kt-roy-gprev'); if(pv) pv.innerHTML=isFinite(v)?genPreview(v,rate):'<span class="rerr">Montant illisible</span>';
+      var mw=document.getElementById('kt-roy-gmotif-w'); if(mw) mw.style.display=(isFinite(v)&&Math.abs(v-auto)>=0.005)?'':'none';
+    }
+    if(t.id==='kt-roy-gmotif'&&ST.gen) ST.gen.motif=t.value;
+  }
+  function openView(){ var sv=document.querySelector('main.main section.view'); if(!sv)return; document.querySelectorAll('#side .nav-item').forEach(function(n){n.classList.remove('active');}); var nv=document.getElementById('kt-roy-nav'); if(nv)nv.classList.add('active'); var tt=document.querySelector('main.main .top-title'); if(tt)tt.textContent='Royalties'; sv.innerHTML='<div id="kt-roy-view"></div>'; var bx=document.getElementById('kt-roy-view'); bx.addEventListener('click',onClick); bx.addEventListener('input',onInput); if(!ST.ym)ST.ym=curYM(); ST.data=null; ST.invData=null; ST.gen=null; ST.avoir=null; load(); }
   window.__ktRoyOpen=openView;
   function ensureNav(){ var nav=document.querySelector('#side nav.nav'); if(!nav) return; var _ss=null; try{_ss=JSON.parse(localStorage.getItem('kt_session')||'null');}catch(e){} if(_ss&&Array.isArray(_ss.tabs)&&_ss.tabs.indexOf('royalties')<0){ var _ex=document.getElementById('kt-roy-nav'); if(_ex)_ex.remove(); return; } if(document.getElementById('kt-roy-nav')) return; var after=document.getElementById('nav-franchises')|| [].slice.call(nav.querySelectorAll('.nav-item')).filter(function(n){return n.getAttribute('data-view')==='franchises';})[0] || [].slice.call(nav.querySelectorAll('.nav-item')).filter(function(n){return n.getAttribute('data-view')==='pro';})[0]; var item=document.createElement('div'); item.className='nav-item'; item.id='kt-roy-nav'; item.innerHTML='<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg> Royalties'; item.addEventListener('click',function(ev){ev.stopPropagation();openView();}); if(after&&after.nextSibling){nav.insertBefore(item,after.nextSibling);}else{nav.appendChild(item);} }
   window.__ktRoyTimer=setInterval(ensureNav,1000); ensureNav();
