@@ -3248,7 +3248,7 @@ const server = http.createServer(async (req, res) => {
         if (proConnector && typeof proConnector.createSupplyOrder === 'function') {
           const sl = sellerFor(bId);
           const shipAddr = o.ship ? { name: o.ship.name || sl.name, address: o.ship.address, zip: o.ship.zip, city: o.ship.city, country: 'FR', phone: o.ship.phone || '' } : null;
-          const wr = await proConnector.createSupplyOrder({ items: o.items, boutique: (boutiques[bId] && (boutiques[bId].label || bId)) || bId, numero: o.numero, by: o.by, billing: { name: sl.name, address: sl.address, zip: sl.zip, city: sl.city, country: sl.country || 'FR' }, shipping: shipAddr });
+          const wr = await proConnector.createSupplyOrder({ items: o.items, boutique: (boutiques[bId] && (boutiques[bId].label || bId)) || bId, numero: o.numero, by: o.by, email: (boutiques[bId] && boutiques[bId].email) || '', billing: { name: sl.name, address: sl.address, zip: sl.zip, city: sl.city, country: sl.country || 'FR' }, shipping: shipAddr });
           if (wr && wr.order_id) { o.wooOrderId = wr.order_id; o.wooUrl = wr.admin_url || null; o.payUrl = wr.pay_url || null; o.wooStatus = wr.status || null; persist(); }
         }
       } catch (e) { o.wooError = String((e && e.message) || e); }
