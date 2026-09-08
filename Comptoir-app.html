@@ -3382,7 +3382,22 @@ function setPayMode(m){ PAY_MODE=(m==='auto')?'auto':'manuel'; try{ localStorage
     var late = r.echeance && new Date(r.echeance).getTime() < Date.now();
     return late ? '<span class="rtag retard">En retard · échéance '+fmtD2(r.echeance)+'</span>' : '<span class="rtag emise">Émise · échéance '+fmtD2(r.echeance)+'</span>';
   }
-  function genPreview(base, rate){ var ht=Math.round(base*rate)/100; var tva=Math.round(ht*20)/100; var ttc=Math.round((ht+tva)*100)/100; return 'Redevance '+rate+' % → <b>'+euro2(ht)+' HT</b> + TVA 20 % '+euro2(tva)+' = <b>'+euro2(ttc)+' TTC</b> · échéance 30 jours'; }
+  function genPreview(ht){ ht=Math.round((ht||0)*100)/100; var tva=Math.round(ht*20)/100; var ttc=Math.round((ht+tva)*100)/100; return 'Facture : <b>'+euro2(ht)+' HT</b> + TVA 20 % '+euro2(tva)+' = <b>'+euro2(ttc)+' TTC</b> · échéance 30 jours'; }
+  function num(v){ return Number(String(v==null?'':v).replace(/\s/g,'').replace(',','.')); }
+  // Synchronise le panneau de génération : la redevance suit la base tant qu'elle n'a pas été modifiée à la main.
+  function genSync(src){
+    var gb=document.getElementById('kt-roy-gbase'), gm=document.getElementById('kt-roy-gmontant'); if(!gb||!gm) return;
+    var rate=Number(gb.getAttribute('data-rate'))||0, autoB=Number(gb.getAttribute('data-auto'))||0;
+    var vB=num(gb.value); if(!isFinite(vB)) vB=autoB;
+    var autoHt=Math.round(vB*rate)/100;
+    if(src==='montant'){ gm.setAttribute('data-touched','1'); }
+    if(gm.getAttribute('data-touched')!=='1'){ gm.value=String(autoHt); }
+    var vM=num(gm.value); if(!isFinite(vM)) vM=autoHt;
+    if(ST.gen){ ST.gen.base=gb.value; ST.gen.montant=gm.value; ST.gen.touched=gm.getAttribute('data-touched')==='1'; }
+    var gc=document.getElementById('kt-roy-gcalc'); if(gc) gc.textContent='calculé : '+euro2(autoHt)+' (base × '+rate+' %) — modifiable';
+    var pv=document.getElementById('kt-roy-gprev'); if(pv) pv.innerHTML=genPreview(vM);
+    var mw=document.getElementById('kt-roy-gmotif-w'); if(mw) mw.style.display=(Math.abs(vB-autoB)>=0.005||Math.abs(vM-autoHt)>=0.005)?'':'none';
+  }
   function dlFacturx(num){ fetch('/api/royalties/invoice/facturx?num='+encodeURIComponent(num),{headers:{'x-comptoir-token':tok()}}).then(function(r){ if(!r.ok) throw new Error('HTTP '+r.status); return r.blob(); }).then(function(b){ var url=URL.createObjectURL(b); var a=document.createElement('a'); a.href=url; a.download=num+'.xml'; document.body.appendChild(a); a.click(); a.remove(); setTimeout(function(){URL.revokeObjectURL(url);},1500); }).catch(function(){ alert('Téléchargement Factur-X impossible.'); }); }
   function printRoyInvoice(num){
     api('/api/royalties/invoice?num='+encodeURIComponent(num)).then(function(o){
@@ -3390,10 +3405,15 @@ function setPayMode(m){ PAY_MODE=(m==='auto')?'auto':'manuel'; try{ localStorage
       var d=o.j, s=d.seller||{}, b=d.buyer||{}, avoir=d.type==='avoir';
       var sL=[]; if(s.name)sL.push('<b>'+esc2(s.name)+'</b>'); if(s.address)sL.push(esc2(s.address)); if(s.zip||s.city)sL.push(esc2((s.zip||'')+' '+(s.city||''))); if(s.siret)sL.push('SIRET : '+esc2(s.siret)); else if(s.siren)sL.push('SIREN : '+esc2(s.siren)); if(s.vat)sL.push('TVA : '+esc2(s.vat)); if(s.telephone)sL.push('Tél : '+esc2(s.telephone));
       var bL=[]; bL.push('<b>'+esc2(b.name||d.label)+'</b>'); if(b.label&&b.name&&b.label!==b.name)bL.push(esc2(b.label)); if(b.address)bL.push(esc2(b.address)); if(b.zip||b.city)bL.push(esc2((b.zip||'')+' '+(b.city||''))); if(b.siren)bL.push('SIREN : '+esc2(b.siren)); if(b.vat)bL.push('TVA : '+esc2(b.vat));
-      var assiette = avoir
-        ? 'Avoir sur la facture '+esc2(d.avoirDe||'')+' — motif : '+esc2(d.motif||'')
-        : 'Assiette : CA HT '+esc2(d.moisLabel||d.ym)+' = '+euro2(d.baseRetenue)+' × taux '+d.rate+' %'
-          +(Math.abs((d.baseRetenue||0)-(d.baseAuto||0))>=0.01?('<br><span class="aj">Base ajustée manuellement (CA calculé : '+euro2(d.baseAuto)+') — motif : '+esc2(d.motif||'')+'</span>'):'');
+      var assiette;
+      if(avoir){ assiette='Avoir sur la facture '+esc2(d.avoirDe||'')+' — motif : '+esc2(d.motif||''); }
+      else {
+        var ajs=[];
+        if(Math.abs((d.baseRetenue||0)-(d.baseAuto||0))>=0.005) ajs.push('Base ajustée manuellement (CA calculé : '+euro2(d.baseAuto)+')');
+        if(d.htAuto!=null&&Math.abs(d.htAuto-d.ht)>=0.005) ajs.push('Redevance calculée : '+euro2(d.htAuto)+' — montant retenu : '+euro2(d.ht));
+        assiette='Assiette : CA HT '+esc2(d.moisLabel||d.ym)+' = '+euro2(d.baseRetenue)+' × taux '+d.rate+' %'
+          +(ajs.length?('<br><span class="aj">'+ajs.join('. ')+(d.motif?' — motif : '+esc2(d.motif):'')+'</span>'):'');
+      }
       var html='<!doctype html><html lang="fr"><head><meta charset="utf-8"><title>'+esc2(d.num)+'</title><style>'
         +'body{font-family:Arial,Helvetica,sans-serif;color:#161310;margin:0;background:#f4f1ea}.sheet{max-width:760px;margin:24px auto;background:#fff;padding:44px 48px;box-shadow:0 2px 14px rgba(0,0,0,.08)}'
         +'.top{display:flex;justify-content:space-between;gap:24px}.em{font-size:13px;line-height:1.65;color:#3a342c}.hd{text-align:right}.big{font-family:Georgia,serif;font-size:26px;letter-spacing:.14em;font-weight:700}'
@@ -3435,6 +3455,16 @@ function setPayMode(m){ PAY_MODE=(m==='auto')?'auto':'manuel'; try{ localStorage
     if(s==='declare') return '<span class="rnote" style="color:#b07d10">Virement déclaré · '+fmtDate(b.declaredAt)+'</span><button class="rbtn gold" data-act="kt-roy-validate" data-id="'+b.id+'">Valider la réception</button><button class="rbtn link" data-act="kt-roy-reset" data-id="'+b.id+'">Annuler la déclaration</button>';
     return '<span class="rnote" style="color:#1a7f37"><b>✓ Validé le '+fmtDate(b.validatedAt)+'</b></span><button class="rbtn link" data-act="kt-roy-cancel" data-id="'+b.id+'">Annuler la validation</button>';
   }
+  // Panneau d'AJUSTEMENT EXCEPTIONNEL du montant du mois (admin) : montant HT retenu + motif obligatoire.
+  function adjPanel(b, admin, view){
+    if(!(admin&&view==='franchiseur'&&ST.adj&&ST.adj.id===b.id)) return '';
+    var ov=b.override; var cur=(ST.adj.ht!=null&&ST.adj.ht!=='')?String(ST.adj.ht):String(ov?ov.ht:b.royaltyAuto);
+    return '<div class="rinv" id="kt-roy-adjp"><div style="font-weight:800;margin-bottom:8px">Ajuster le montant des royalties · '+ymLabel(ST.ym||curYM())+' <span class="rnote">(situation exceptionnelle)</span></div>'
+      +'<div class="rline"><span>Montant HT retenu :</span><input class="rgin" id="kt-roy-adj-ht" value="'+esc2(cur)+'"/><span class="rnote">calculé : '+euro2(b.royaltyAuto)+' ('+euro2(b.caHT)+' × '+b.rate+' %)</span></div>'
+      +'<div class="rline" style="margin-top:8px"><span>Motif :</span><input class="rgmot" id="kt-roy-adj-motif" placeholder="obligatoire — ex. geste commercial, fermeture pour travaux…" value="'+esc2(ST.adj.motif!=null?ST.adj.motif:(ov?ov.motif:''))+'"/></div>'
+      +(ST.adj.err?'<div class="rerr">'+esc2(ST.adj.err)+'</div>':'')
+      +'<div class="rline" style="margin-top:10px"><button class="rsmall gold" data-act="kt-roy-adj-save" data-id="'+esc2(b.id)+'">Enregistrer l\'ajustement</button><button class="rbtn link" data-act="kt-roy-adj-cancel">annuler</button></div></div>';
+  }
   // Bloc facture de redevance d'une carte boutique (facture du mois affiché, génération, avoir).
   function invStrip(b, admin, view){
     var ym=ST.ym||curYM(); var f=invFor(b.id); var canAdm=admin&&view==='franchiseur';
@@ -3442,12 +3472,16 @@ function setPayMode(m){ PAY_MODE=(m==='auto')?'auto':'manuel'; try{ localStorage
       var g=ST.gen;
       var rawB=(g.base!=null&&g.base!=='')?String(g.base):String(b.caHT);
       var numB=Number(rawB.replace(/\s/g,'').replace(',','.')); if(!isFinite(numB)) numB=b.caHT;
-      var needMotif=Math.abs(numB-b.caHT)>=0.005;
+      var autoHt=Math.round(numB*b.rate)/100;
+      var rawM=(g.montant!=null&&g.montant!=='')?String(g.montant):String((b.override&&!b.invoice)?b.override.ht:autoHt);
+      var numM=Number(rawM.replace(/\s/g,'').replace(',','.')); if(!isFinite(numM)) numM=autoHt;
+      var needMotif=Math.abs(numB-b.caHT)>=0.005 || Math.abs(numM-autoHt)>=0.005;
       return '<div class="rinv" id="kt-roy-genp">'
         +'<div style="font-weight:800;margin-bottom:8px">Générer la facture de redevance · '+ymLabel(ym)+'</div>'
         +'<div class="rline"><span>Base HT :</span><input class="rgin" id="kt-roy-gbase" data-rate="'+b.rate+'" data-auto="'+b.caHT+'" value="'+esc2(rawB)+'"/><span class="rnote">CA HT calculé : '+euro2(b.caHT)+' — modifiable</span></div>'
-        +'<div class="rline" id="kt-roy-gmotif-w" style="margin-top:8px'+(needMotif?'':';display:none')+'"><span>Motif :</span><input class="rgmot" id="kt-roy-gmotif" placeholder="obligatoire quand la base est ajustée" value="'+esc2(g.motif||'')+'"/></div>'
-        +'<div class="rnote" id="kt-roy-gprev" style="margin-top:8px">'+genPreview(numB,b.rate)+'</div>'
+        +'<div class="rline" style="margin-top:8px"><span>Redevance HT :</span><input class="rgin" id="kt-roy-gmontant" data-touched="'+((g.touched||(b.override&&!b.invoice))?'1':'0')+'" value="'+esc2(rawM)+'"/><span class="rnote" id="kt-roy-gcalc">calculé : '+euro2(autoHt)+' (base × '+b.rate+' %) — modifiable</span></div>'
+        +'<div class="rline" id="kt-roy-gmotif-w" style="margin-top:8px'+(needMotif?'':';display:none')+'"><span>Motif :</span><input class="rgmot" id="kt-roy-gmotif" placeholder="obligatoire dès qu\'un montant est ajusté" value="'+esc2(g.motif!=null?g.motif:((b.override&&!b.invoice)?b.override.motif:''))+'"/></div>'
+        +'<div class="rnote" id="kt-roy-gprev" style="margin-top:8px">'+genPreview(numM)+'</div>'
         +(g.err?'<div class="rerr">'+esc2(g.err)+'</div>':'')
         +'<div class="rline" style="margin-top:10px"><button class="rsmall gold" data-act="kt-roy-gen-go" data-id="'+b.id+'">Émettre la facture</button><button class="rbtn link" data-act="kt-roy-gen-cancel">annuler</button></div>'
         +'</div>';
@@ -3482,7 +3516,8 @@ function setPayMode(m){ PAY_MODE=(m==='auto')?'auto':'manuel'; try{ localStorage
         +'<td class="money">'+euro2(r.ht)+'</td><td class="money">'+euro2(r.tva)+'</td><td class="money"><b>'+euro2(r.ttc)+'</b></td>'
         +'<td>'+fmtD2(r.date)+'</td><td>'+invStatusTag(r)+'</td>'
         +'<td style="white-space:nowrap"><button class="rsmall" data-act="kt-roy-inv-print" data-num="'+esc2(r.num)+'">Voir</button> <button class="rsmall" data-act="kt-roy-inv-fx" data-num="'+esc2(r.num)+'">Factur-X</button></td></tr>';
-      if(admin&&r.motif) h+='<tr><td></td><td colspan="8" style="border-top:0;padding-top:0"><span class="rmotif">'+(r.type==='avoir'?'Motif de l\'avoir':'Base ajustée ('+euro2(r.baseAuto)+' → '+euro2(r.baseRetenue)+')')+' : '+esc2(r.motif)+' · par '+esc2(r.par||'admin')+'</span></td></tr>';
+      var parts=[]; if(r.type!=='avoir'){ if(Math.abs((r.baseRetenue||0)-(r.baseAuto||0))>=0.005) parts.push('base ajustée ('+euro2(r.baseAuto)+' → '+euro2(r.baseRetenue)+')'); if(r.htAuto!=null&&Math.abs(r.htAuto-r.ht)>=0.005) parts.push('redevance ajustée (calculée '+euro2(r.htAuto)+' → retenue '+euro2(r.ht)+')'); }
+      if(admin&&(r.motif||parts.length)) h+='<tr><td></td><td colspan="8" style="border-top:0;padding-top:0"><span class="rmotif">'+(r.type==='avoir'?'Motif de l\'avoir':(parts.join(', ')||'Ajustement'))+(r.motif?' : '+esc2(r.motif):'')+' · par '+esc2(r.par||'admin')+'</span></td></tr>';
     });
     return h+'</tbody></table></div></div>';
   }
@@ -3505,8 +3540,13 @@ function setPayMode(m){ PAY_MODE=(m==='auto')?'auto':'manuel'; try{ localStorage
       else if(admin && view==='franchiseur'){ h+='<div style="margin-top:4px"><span class="rpill edit" data-act="kt-roy-rate-edit" data-id="'+b.id+'">'+b.rate+'% <span class="hint">modifier</span></span></div>'; }
       else { h+='<div class="v" style="margin-top:4px">'+b.rate+'%</div>'; }
       h+='</div>';
-      h+='<div class="rm"><div class="l">Royalties à reverser</div><div class="v gold">'+euro2(b.royalty)+'</div></div>';
-      h+='</div>'+pipe(b.status)+invStrip(b,admin,view);
+      var canAdj=admin&&view==='franchiseur';
+      h+='<div class="rm"><div class="l">Royalties à reverser</div><div class="v gold">'+euro2(b.royalty)+(b.override&&!b.invoice?' <span class="rtag emise" style="vertical-align:middle;font-size:10px">ajusté</span>':'')+'</div>';
+      if(b.invoice){ h+='<div class="rnote" style="margin-top:3px">facturé · '+esc2(b.invoice.num)+'</div>'; }
+      else if(b.override){ h+='<div class="rnote" style="margin-top:3px;max-width:340px">calculé : '+euro2(b.royaltyAuto)+' · '+esc2(b.override.motif)+(canAdj?' · <a style="cursor:pointer;text-decoration:underline" data-act="kt-roy-adjust" data-id="'+esc2(b.id)+'">modifier</a> · <a style="cursor:pointer;text-decoration:underline" data-act="kt-roy-adj-clear" data-id="'+esc2(b.id)+'">revenir au calcul</a>':' · ajusté par le franchiseur')+'</div>'; }
+      else if(canAdj){ h+='<div style="margin-top:3px"><a style="cursor:pointer;text-decoration:underline;font-size:12px;color:#8a8077" data-act="kt-roy-adjust" data-id="'+esc2(b.id)+'">ajuster le montant</a></div>'; }
+      h+='</div>';
+      h+='</div>'+pipe(b.status)+adjPanel(b,admin,view)+invStrip(b,admin,view);
       if(ST.detail && ST.detail.id===b.id && ST.detail.ym===(ST.ym||curYM()) && ST.detail.data){
         var dd=ST.detail.data;
         h+='<div style="border:1px dashed #d8d0c2;border-radius:11px;padding:12px 14px;margin-top:10px;font-size:13px;line-height:1.7">'+
@@ -3531,16 +3571,27 @@ function setPayMode(m){ PAY_MODE=(m==='auto')?'auto':'manuel'; try{ localStorage
     box.innerHTML=h;
   }
   function onClick(e){ var t=e.target.closest('[data-act]'); if(!t) return; var a=t.getAttribute('data-act'); var id=t.getAttribute('data-id'); var num=t.getAttribute('data-num'); var ym=ST.ym||curYM();
-    if(a==='kt-roy-gen'){ ST.gen={id:id,base:null,motif:'',err:null}; ST.avoir=null; render(); var gi=document.getElementById('kt-roy-gbase'); if(gi){gi.focus();gi.select();} return; }
+    if(a==='kt-roy-gen'){ ST.gen={id:id,base:null,montant:null,touched:false,motif:null,err:null}; ST.avoir=null; ST.adj=null; render(); var gi=document.getElementById('kt-roy-gbase'); if(gi){gi.focus();gi.select();} return; }
     if(a==='kt-roy-gen-cancel'){ ST.gen=null; render(); return; }
     if(a==='kt-roy-gen-go'){
-      var gb=document.getElementById('kt-roy-gbase'); var gm=document.getElementById('kt-roy-gmotif');
-      var baseStr=(gb&&gb.value||'').replace(/\s/g,'').replace(',','.');
+      var gb=document.getElementById('kt-roy-gbase'); var gmo=document.getElementById('kt-roy-gmontant'); var gm=document.getElementById('kt-roy-gmotif');
+      var baseStr=(gb&&gb.value||'').replace(/\s/g,'').replace(',','.'); var montStr=(gmo&&gmo.value||'').replace(/\s/g,'').replace(',','.');
       var body={ym:ym,boutiqueId:id,motif:(gm&&gm.value||'').trim()};
       if(baseStr!=='') body.base=Number(baseStr);
-      if(ST.gen){ ST.gen.base=(gb&&gb.value)||''; ST.gen.motif=body.motif; }
+      if(montStr!=='') body.montant=Number(montStr);
+      if(ST.gen){ ST.gen.base=(gb&&gb.value)||''; ST.gen.montant=(gmo&&gmo.value)||''; ST.gen.touched=!!(gmo&&gmo.getAttribute('data-touched')==='1'); ST.gen.motif=body.motif; }
       api('/api/royalties/invoice',body).then(function(o){ if(o.s===201){ ST.gen=null; load(); } else { if(ST.gen){ST.gen.err=(o.j&&o.j.error)||'Erreur inconnue.';} render(); } });
       return; }
+    if(a==='kt-roy-adjust'){ ST.adj={id:id,ht:null,motif:null,err:null}; ST.gen=null; ST.avoir=null; render(); var ai=document.getElementById('kt-roy-adj-ht'); if(ai){ai.focus();ai.select();} return; }
+    if(a==='kt-roy-adj-cancel'){ ST.adj=null; render(); return; }
+    if(a==='kt-roy-adj-save'){
+      var ah=document.getElementById('kt-roy-adj-ht'); var amo=document.getElementById('kt-roy-adj-motif');
+      var hs=(ah&&ah.value||'').replace(/\s/g,'').replace(',','.');
+      var abody={ym:ym,boutiqueId:id,ht:(hs===''?null:Number(hs)),motif:(amo&&amo.value||'').trim()};
+      if(ST.adj){ ST.adj.ht=(ah&&ah.value)||''; ST.adj.motif=abody.motif; }
+      api('/api/royalties/override',abody).then(function(o){ if(o.s===200){ ST.adj=null; load(); } else { if(ST.adj){ST.adj.err=(o.j&&o.j.error)||'Erreur inconnue.';} render(); } });
+      return; }
+    if(a==='kt-roy-adj-clear'){ api('/api/royalties/override',{ym:ym,boutiqueId:id,ht:null,motif:''}).then(function(o){ if(o.s===200){ ST.adj=null; load(); } else { alert((o.j&&o.j.error)||'Erreur inconnue.'); } }); return; }
     if(a==='kt-roy-inv-print'){ printRoyInvoice(num); return; }
     if(a==='kt-roy-inv-fx'){ dlFacturx(num); return; }
     if(a==='kt-roy-inv-regle'){ api('/api/royalties/invoice/status',{num:num,status:'reglee'}).then(function(){load();}); return; }
@@ -3550,12 +3601,12 @@ function setPayMode(m){ PAY_MODE=(m==='auto')?'auto':'manuel'; try{ localStorage
     if(a==='kt-roy-avoir-go'){ var am2=document.getElementById('kt-roy-amotif'); var mv=(am2&&am2.value||'').trim();
       api('/api/royalties/invoice/avoir',{num:num,motif:mv}).then(function(o){ if(o.s>=200&&o.s<300){ ST.avoir=null; load(); } else { if(ST.avoir){ST.avoir.err=(o.j&&o.j.error)||'Erreur inconnue.';} render(); } });
       return; }
-    if(a==='kt-roy-view'){ ST.view=t.getAttribute('data-v'); ST.editRate=null; ST.gen=null; ST.avoir=null; render(); return; }
+    if(a==='kt-roy-view'){ ST.view=t.getAttribute('data-v'); ST.editRate=null; ST.gen=null; ST.avoir=null; ST.adj=null; render(); return; }
     if(a==='kt-roy-detail'){ if(ST.detail&&ST.detail.id===id&&ST.detail.ym===ym){ST.detail=null;render();return;} api('/api/royalties/detail?ym='+ym+'&boutique='+encodeURIComponent(id)).then(function(o){ if(o.s===200){ ST.detail={id:id,ym:ym,data:o.j}; render(); } }); return; }
     if(a==='kt-roy-detail-close'){ ST.detail=null; render(); return; }
-    if(a==='kt-roy-prev'){ ST.ym=shiftYM(ym,-1); ST.data=null; ST.detail=null; ST.gen=null; ST.avoir=null; load(); return; }
-    if(a==='kt-roy-next'){ ST.ym=shiftYM(ym,1); ST.data=null; ST.detail=null; ST.gen=null; ST.avoir=null; load(); return; }
-    if(a==='kt-roy-cur'){ ST.ym=curYM(); ST.data=null; ST.detail=null; ST.gen=null; ST.avoir=null; load(); return; }
+    if(a==='kt-roy-prev'){ ST.ym=shiftYM(ym,-1); ST.data=null; ST.detail=null; ST.gen=null; ST.avoir=null; ST.adj=null; load(); return; }
+    if(a==='kt-roy-next'){ ST.ym=shiftYM(ym,1); ST.data=null; ST.detail=null; ST.gen=null; ST.avoir=null; ST.adj=null; load(); return; }
+    if(a==='kt-roy-cur'){ ST.ym=curYM(); ST.data=null; ST.detail=null; ST.gen=null; ST.avoir=null; ST.adj=null; load(); return; }
     if(a==='kt-roy-rate-edit'){ ST.editRate=id; render(); var i=document.getElementById('kt-roy-rin'); if(i)i.focus(); return; }
     if(a==='kt-roy-rate-save'){ var inp=document.getElementById('kt-roy-rin'); var rate=Math.max(0,Math.min(100,Number(inp&&inp.value)||0)); act('/api/royalties/rate',{boutiqueId:id,rate:rate}); return; }
     if(a==='kt-roy-declare'){ act('/api/royalties/declare',{ym:ym,boutiqueId:id}); return; }
@@ -3564,16 +3615,13 @@ function setPayMode(m){ PAY_MODE=(m==='auto')?'auto':'manuel'; try{ localStorage
     if(a==='kt-roy-reset'){ act('/api/royalties/status',{ym:ym,boutiqueId:id,status:'a_payer'}); return; }
   }
   function onInput(e){ var t=e.target; if(!t) return;
-    if(t.id==='kt-roy-gbase'){
-      if(ST.gen) ST.gen.base=t.value;
-      var rate=Number(t.getAttribute('data-rate'))||0; var auto=Number(t.getAttribute('data-auto'))||0;
-      var v=Number(String(t.value).replace(/\s/g,'').replace(',','.'));
-      var pv=document.getElementById('kt-roy-gprev'); if(pv) pv.innerHTML=isFinite(v)?genPreview(v,rate):'<span class="rerr">Montant illisible</span>';
-      var mw=document.getElementById('kt-roy-gmotif-w'); if(mw) mw.style.display=(isFinite(v)&&Math.abs(v-auto)>=0.005)?'':'none';
-    }
+    if(t.id==='kt-roy-gbase'){ genSync('base'); return; }
+    if(t.id==='kt-roy-gmontant'){ genSync('montant'); return; }
     if(t.id==='kt-roy-gmotif'&&ST.gen) ST.gen.motif=t.value;
+    if(t.id==='kt-roy-adj-ht'&&ST.adj) ST.adj.ht=t.value;
+    if(t.id==='kt-roy-adj-motif'&&ST.adj) ST.adj.motif=t.value;
   }
-  function openView(){ var sv=document.querySelector('main.main section.view'); if(!sv)return; document.querySelectorAll('#side .nav-item').forEach(function(n){n.classList.remove('active');}); var nv=document.getElementById('kt-roy-nav'); if(nv)nv.classList.add('active'); var tt=document.querySelector('main.main .top-title'); if(tt)tt.textContent='Royalties'; sv.innerHTML='<div id="kt-roy-view"></div>'; var bx=document.getElementById('kt-roy-view'); bx.addEventListener('click',onClick); bx.addEventListener('input',onInput); if(!ST.ym)ST.ym=curYM(); ST.data=null; ST.invData=null; ST.gen=null; ST.avoir=null; load(); }
+  function openView(){ var sv=document.querySelector('main.main section.view'); if(!sv)return; document.querySelectorAll('#side .nav-item').forEach(function(n){n.classList.remove('active');}); var nv=document.getElementById('kt-roy-nav'); if(nv)nv.classList.add('active'); var tt=document.querySelector('main.main .top-title'); if(tt)tt.textContent='Royalties'; sv.innerHTML='<div id="kt-roy-view"></div>'; var bx=document.getElementById('kt-roy-view'); bx.addEventListener('click',onClick); bx.addEventListener('input',onInput); if(!ST.ym)ST.ym=curYM(); ST.data=null; ST.invData=null; ST.gen=null; ST.avoir=null; ST.adj=null; load(); }
   window.__ktRoyOpen=openView;
   function ensureNav(){ var nav=document.querySelector('#side nav.nav'); if(!nav) return; var _ss=null; try{_ss=JSON.parse(localStorage.getItem('kt_session')||'null');}catch(e){} if(_ss&&Array.isArray(_ss.tabs)&&_ss.tabs.indexOf('royalties')<0){ var _ex=document.getElementById('kt-roy-nav'); if(_ex)_ex.remove(); return; } if(document.getElementById('kt-roy-nav')) return; var after=document.getElementById('nav-franchises')|| [].slice.call(nav.querySelectorAll('.nav-item')).filter(function(n){return n.getAttribute('data-view')==='franchises';})[0] || [].slice.call(nav.querySelectorAll('.nav-item')).filter(function(n){return n.getAttribute('data-view')==='pro';})[0]; var item=document.createElement('div'); item.className='nav-item'; item.id='kt-roy-nav'; item.innerHTML='<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg> Royalties'; item.addEventListener('click',function(ev){ev.stopPropagation();openView();}); if(after&&after.nextSibling){nav.insertBefore(item,after.nextSibling);}else{nav.appendChild(item);} }
   window.__ktRoyTimer=setInterval(ensureNav,1000); ensureNav();

@@ -419,6 +419,15 @@ async function syncProCatalog() {
 // jour les prix des produits déjà liés au site. Ne touche PAS au nom, à la catégorie, ni au prix de
 // gros (proPrice) fixé manuellement par l'admin. Tourne au démarrage puis toutes les heures. ----
 let lastWooSync = 0, lastWooSyncInfo = null, wooSyncing = false;
+// Categorie d'un produit du site : la premiere VRAIE categorie WooCommerce. Les rubriques generiques
+// (« Boutique » = racine du shop, « Non classe »...) ne comptent pas. Sans categorie : un produit au
+// gramme est une FLEUR, sinon « Divers » — avant, tout tombait dans une categorie « Boutique » sans sens
+// en caisse (les fleurs du site n'ayant pas de categorie WooCommerce y atterrissaient toutes).
+function wooCatName(wp, unit) {
+  const names = ((wp && wp.categories) || []).map((c) => String((c && c.name) || '').trim()).filter((n) => n && !/^(boutique|non class|uncategor|shop)/i.test(n));
+  if (names.length) return names[0];
+  return unit === 'g' ? 'Fleurs' : 'Divers';
+}
 async function syncWooCatalog(opts) {
   opts = opts || {};
   if (PG) return { error: 'mode PostgreSQL : synchro gérée ailleurs' };
@@ -466,7 +475,7 @@ async function syncWooCatalog(opts) {
         } else {
           const prod = {
             id: 'cp' + Date.now().toString(36) + created, wooId: wp.id, source: 'woo', custom: true, name: name,
-            cat: (wp.categories && wp.categories[0] && wp.categories[0].name) || 'Boutique',
+            cat: wooCatName(wp, unit),
             img: (wp.images && wp.images[0] && wp.images[0].src) || '',
             desc: (wp.short_description || wp.description || '').replace(/<[^>]*>/g, ' ').replace(/&[a-z]+;/gi, ' ').replace(/\s+/g, ' ').trim().slice(0, 140),
           };
@@ -819,6 +828,8 @@ function loadPersisted() {
     if (typeof d.pointsPerEuro === 'number') { POINTS_PER_EURO = d.pointsPerEuro; if (loyalty) loyalty.pointsPerEuro = POINTS_PER_EURO; }
     if (typeof d.hideBaseCatalog === 'boolean') hideBaseCatalog = d.hideBaseCatalog;
     if (Array.isArray(d.customProducts)) { customProducts = d.customProducts; customProducts.forEach(ensureStock); }
+    // Migration : les fleurs importees du site sans categorie WooCommerce etaient rangees dans « Boutique ».
+    customProducts.forEach((p) => { if (p.source === 'woo' && p.cat === 'Boutique' && p.unit === 'g') p.cat = 'Fleurs'; });
     if (d.stock && typeof d.stock === 'object') { for (const b in d.stock) { stock[b] = d.stock[b]; } }
     if (Array.isArray(d.invoices)) { invoices.length = 0; d.invoices.forEach((i) => invoices.push(i)); }
     if (typeof d.invoiceSeq === 'number') invoiceSeq = d.invoiceSeq;
@@ -1237,6 +1248,17 @@ function resetEmailHtml(code, who) {
 }
 function royaltiesRateFor(boutiqueId){ var r=royaltiesRates[boutiqueId]; return (typeof r==='number')?r:6; }
 function royaltiesRec(ym, boutiqueId){ var m=royaltiesStatus[ym]||{}; return m[boutiqueId]||{status:'a_payer',declaredAt:null,validatedAt:null}; }
+// Ajustement EXCEPTIONNEL du montant du mois (admin, motif obligatoire, trace dans le JET) : { ht, auto, motif, by, at }.
+function royaltiesOverride(ym, boutiqueId){ var r=royaltiesRec(ym, boutiqueId); return (r.override && typeof r.override.ht==='number') ? r.override : null; }
+// Montant HT de la redevance d'un mois. Priorite : facture deja emise (figee) > ajustement manuel > calcul CA HT x taux.
+function royaltiesAmount(ym, boutiqueId){
+  var caHT=royaltiesCaHT(boutiqueId, ym), rate=royaltiesRateFor(boutiqueId);
+  var auto=Math.round(caHT*rate)/100;
+  var inv=royActiveInvoice(boutiqueId, ym);
+  var ov=royaltiesOverride(ym, boutiqueId);
+  var ht = inv ? inv.ht : (ov ? ov.ht : auto);
+  return { caHT:caHT, rate:rate, auto:auto, ht:Math.round(ht*100)/100, override: ov ? { ht:ov.ht, auto:(typeof ov.auto==='number'?ov.auto:auto), motif:ov.motif||'', by:ov.by||'', at:ov.at||null } : null, invoice: inv ? { num:inv.num, ht:inv.ht, status:inv.status } : null };
+}
 function royaltiesSetStatus(ym, boutiqueId, patch){ if(!royaltiesStatus[ym]) royaltiesStatus[ym]={}; var cur=royaltiesStatus[ym][boutiqueId]||{status:'a_payer',declaredAt:null,validatedAt:null}; royaltiesStatus[ym][boutiqueId]=Object.assign({},cur,patch); persist(); }
 // Mois d'une facture en HEURE DE PARIS (le serveur tourne en UTC : sans ca, les ventes de debut de
 // nuit glissaient sur le mauvais mois en bordure de mois).
@@ -1282,7 +1304,7 @@ function royaltiesCaHT(boutiqueId, ym){
 /* ------------------ Factures de royalties : scellement + acces ------------------ */
 // Corps scelle d'une facture de redevance : tout ce qui est IMMUABLE apres emission.
 // (status / regleeAt / avoirNum sont des metadonnees de suivi, hors empreinte — comme 'source' des tickets.)
-function royBody(f){ return JSON.stringify([f.seq, f.num, f.type, f.boutiqueId, f.ym, f.baseAuto, f.baseRetenue, f.motif, f.rate, f.ht, f.tva, f.ttc, f.date, f.echeance, f.seller, f.buyer, f.avoirDe || null, f.prevHash]); }
+function royBody(f){ var a=[f.seq, f.num, f.type, f.boutiqueId, f.ym, f.baseAuto, f.baseRetenue, f.motif, f.rate, f.ht, f.tva, f.ttc, f.date, f.echeance, f.seller, f.buyer, f.avoirDe || null, f.prevHash]; if (f.htAuto != null) a.push(f.htAuto); /* redevance calculee (ajoutee apres coup : absente des premieres factures, d'ou le test de presence) */ return JSON.stringify(a); }
 function royMonthLabel(ym){ var MO=['janvier','février','mars','avril','mai','juin','juillet','août','septembre','octobre','novembre','décembre']; var p=String(ym||'').split('-'); return (MO[(+p[1]||1)-1]||'')+' '+(p[0]||''); }
 // Identite du FRANCHISEUR (emetteur) figee a l'emission — celle des Reglages « Identite de l'entreprise ».
 function roySellerSnapshot(){ return { name: entreprise.denomination||'', siren:(entreprise.siret||'').replace(/\D/g,'').slice(0,9), siret: entreprise.siret||'', vat: entreprise.tva||'', address: entreprise.adresse||'', zip: entreprise.codePostal||'', city: entreprise.ville||'', country:'FR', telephone: entreprise.telephone||'' }; }
@@ -1291,7 +1313,7 @@ function royBuyerSnapshot(bId){ var b=boutiques[bId]||{}; var s=b.seller||{}; re
 // Boutiques visibles : admin -> toutes (null) ; franchise -> ses boutiques ; compte boutique/vendeur -> la sienne.
 function royAllowedBoutiques(user){ if (user.role==='admin') return null; if (Array.isArray(user.boutiques)&&user.boutiques.length) return user.boutiques.map(String); return user.boutiqueId?[String(user.boutiqueId)]:[]; }
 function royCanSee(user, rec){ var al=royAllowedBoutiques(user); return al===null || al.indexOf(rec.boutiqueId)>=0; }
-function royPublicView(rec){ var b=boutiques[rec.boutiqueId]||{}; return { num:rec.num, type:rec.type, boutiqueId:rec.boutiqueId, label:(rec.buyer&&rec.buyer.label)||b.label||rec.boutiqueId, ym:rec.ym, baseAuto:rec.baseAuto, baseRetenue:rec.baseRetenue, motif:rec.motif||'', rate:rec.rate, ht:rec.ht, tva:rec.tva, ttc:rec.ttc, date:rec.date, echeance:rec.echeance, status:rec.status, regleeAt:rec.regleeAt||null, regleePar:rec.regleePar||null, avoirDe:rec.avoirDe||null, avoirNum:rec.avoirNum||null, annuleeAt:rec.annuleeAt||null, par:rec.par||'' }; }
+function royPublicView(rec){ var b=boutiques[rec.boutiqueId]||{}; return { num:rec.num, type:rec.type, boutiqueId:rec.boutiqueId, label:(rec.buyer&&rec.buyer.label)||b.label||rec.boutiqueId, ym:rec.ym, baseAuto:rec.baseAuto, baseRetenue:rec.baseRetenue, motif:rec.motif||'', rate:rec.rate, htAuto:(rec.htAuto!=null?rec.htAuto:rec.ht), ht:rec.ht, tva:rec.tva, ttc:rec.ttc, date:rec.date, echeance:rec.echeance, status:rec.status, regleeAt:rec.regleeAt||null, regleePar:rec.regleePar||null, avoirDe:rec.avoirDe||null, avoirNum:rec.avoirNum||null, annuleeAt:rec.annuleeAt||null, par:rec.par||'' }; }
 function royActiveInvoice(bId, ym){ return royaltyInvoices.find(function(r){ return r.type==='facture' && r.boutiqueId===bId && r.ym===ym && r.status!=='annulee'; }); }
 function royCreate(fields, meta){ var body=royBody(fields); var hash=sha256(body); var rec=Object.assign({}, fields, { hash:hash, seal:sealInvoice(body,hash) }, meta||{}); royaltyInvoices.push(rec); royLastHash=hash; return rec; }
 function royVerifyChain(){ var prev='GENESIS'; for (var i=0;i<royaltyInvoices.length;i++){ var r=royaltyInvoices[i]; if (r.prevHash!==prev) return false; if (sha256(royBody(r))!==r.hash) return false; prev=r.hash; } return prev===royLastHash; }
@@ -1917,7 +1939,7 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && path === '/api/royalties') {
       var rym = (u.searchParams.get('ym') || '').trim(); if(!rym){ var dN=new Date(); rym=dN.getFullYear()+'-'+('0'+(dN.getMonth()+1)).slice(-2); }
       var rids = boutiqueIds(); if (user.role !== 'admin') rids = rids.filter(function(id){ return id===user.boutiqueId; });
-      var rlist = rids.map(function(id){ var b=boutiques[id]||{}; var rate=royaltiesRateFor(id); var caHT=royaltiesCaHT(id, rym); var rec=royaltiesRec(rym,id); return { id:id, label:(b.label||id), rate:rate, caHT:caHT, royalty: Math.round(caHT*rate)/100, status:rec.status, declaredAt:rec.declaredAt||null, validatedAt:rec.validatedAt||null }; });
+      var rlist = rids.map(function(id){ var b=boutiques[id]||{}; var am=royaltiesAmount(rym, id); var rec=royaltiesRec(rym,id); return { id:id, label:(b.label||id), rate:am.rate, caHT:am.caHT, royalty:am.ht, royaltyAuto:am.auto, override:am.override, invoice:am.invoice, status:rec.status, declaredAt:rec.declaredAt||null, validatedAt:rec.validatedAt||null }; });
       var rtot = rlist.reduce(function(a,x){ a.caHT+=x.caHT; a.royalties+=x.royalty; if(x.status==='valide')a.encaisse+=x.royalty; else a.attente+=x.royalty; return a; }, {caHT:0,royalties:0,encaisse:0,attente:0});
       Object.keys(rtot).forEach(function(k){ rtot[k]=Math.round(rtot[k]*100)/100; });
       return send(res, 200, { role:user.role, ym:rym, boutiques:rlist, totals:rtot });
@@ -1943,11 +1965,13 @@ const server = http.createServer(async (req, res) => {
       drows.sort(function (a, b) { return a.date < b.date ? -1 : 1; });
       var drate = royaltiesRateFor(dbid);
       var dca = Math.round(dht * 100) / 100;
+      var dam = royaltiesAmount(dym, dbid);
       return send(res, 200, {
         ym: dym, boutiqueId: dbid, label: (boutiques[dbid].label || dbid),
         bruteTTC: Math.round(dbrut * 100) / 100, avoirsTTC: Math.round(davoirs * 100) / 100,
         netTTC: Math.round((dbrut + davoirs) * 100) / 100, caHT: dca,
         rate: drate, royalty: Math.round(dca * drate) / 100,
+        montantRetenu: dam.ht, override: dam.override, invoice: dam.invoice,
         nbVentes: drows.filter(function (r) { return !r.avoir; }).length,
         nbAvoirs: drows.filter(function (r) { return r.avoir; }).length,
         factures: drows.slice(0, 2000),
@@ -1973,6 +1997,34 @@ const server = http.createServer(async (req, res) => {
       var rpatch={status:rsst}; if(rsst==='a_payer'){rpatch.declaredAt=null;rpatch.validatedAt=null;} if(rsst==='valide'){rpatch.validatedAt=new Date().toISOString();} if(rsst==='declare'){rpatch.validatedAt=null;}
       royaltiesSetStatus(String((rsb&&rsb.ym)||''), String((rsb&&rsb.boutiqueId)||''), rpatch);
       return send(res, 200, { ok:true });
+    }
+    // Ajustement EXCEPTIONNEL du montant du mois (admin) : montant HT retenu + motif obligatoire, trace dans le JET.
+    // ht = null -> retour au calcul automatique. Impossible une fois la facture du mois emise (montant fige -> avoir).
+    if (req.method === 'POST' && path === '/api/royalties/override') {
+      if (user.role !== 'admin') return send(res, 403, { error: 'Action réservée à l\'administrateur.' });
+      var rob = await readJson(req);
+      var roYm = String((rob&&rob.ym)||'').trim(); var roId = String((rob&&rob.boutiqueId)||'').trim();
+      if (!/^\d{4}-\d{2}$/.test(roYm)) return send(res, 400, { error: 'Mois invalide (AAAA-MM).' });
+      if (!boutiques[roId]) return send(res, 404, { error: 'Boutique inconnue.' });
+      var roInv = royActiveInvoice(roId, roYm);
+      if (roInv) return send(res, 409, { error: 'La facture ' + roInv.num + ' est déjà émise pour ce mois : le montant est figé. Émets un avoir pour la corriger.' });
+      var roMotif = String((rob&&rob.motif)||'').trim();
+      var roAuto = Math.round(royaltiesCaHT(roId, roYm) * royaltiesRateFor(roId)) / 100;
+      var roBy = user.name || 'admin', roAt = new Date().toISOString();
+      if (rob && (rob.ht === null || rob.ht === '')) {   // retour au calcul automatique
+        var roPrev = royaltiesOverride(roYm, roId);
+        royaltiesSetStatus(roYm, roId, { override: null });
+        if (roPrev) logFiscalEvent('ROYALTIES_AJUSTEMENT_ANNULE', roId, { mois: roYm, calcule: roAuto, ancienRetenu: roPrev.ht, motif: roMotif, par: roBy });
+        return send(res, 200, { ok:true, override: null, royalty: roAuto });
+      }
+      var roHt = Number(rob && rob.ht);
+      if (!isFinite(roHt) || roHt < 0) return send(res, 400, { error: 'Montant HT invalide.' });
+      roHt = Math.round(roHt * 100) / 100;
+      if (roMotif.length < 3) return send(res, 400, { error: 'Motif obligatoire (3 caractères minimum) pour ajuster le montant.' });
+      var roOv = { ht: roHt, auto: roAuto, motif: roMotif, by: roBy, at: roAt };
+      royaltiesSetStatus(roYm, roId, { override: roOv });
+      logFiscalEvent('ROYALTIES_AJUSTEMENT', roId, { mois: roYm, calcule: roAuto, retenu: roHt, motif: roMotif, par: roBy });
+      return send(res, 200, { ok:true, override: roOv, royalty: roHt });
     }
 
     // ================== FACTURATION DES ROYALTIES (factures scellees ROY-AAAA-NNNN) ==================
@@ -2026,7 +2078,24 @@ const server = http.createServer(async (req, res) => {
         }
       }
       var rgRate = royaltiesRateFor(rgId);
-      var rgHt = RG2(rgBase * rgRate / 100);
+      var rgHtAuto = RG2(rgBase * rgRate / 100);          // redevance CALCULEE (base retenue x taux)
+      var rgHt = rgHtAuto;                                  // redevance RETENUE (ajustable, motif obligatoire)
+      var rgOv = royaltiesOverride(rgYm, rgId);
+      if (rgB && rgB.montant != null && rgB.montant !== '') {
+        var rgMRaw = Number(rgB.montant);
+        if (!isFinite(rgMRaw) || rgMRaw < 0) return send(res, 400, { error:'Montant HT invalide.' });
+        rgHt = RG2(rgMRaw);
+        if (Math.abs(rgHt - rgHtAuto) >= 0.005) {
+          var rgM2 = String((rgB&&rgB.motif)||'').trim();
+          var rgSameAsOv = !!(rgOv && Math.abs(rgOv.ht - rgHt) < 0.005 && rgOv.motif);   // reprend l'ajustement du mois deja motive
+          if (rgM2.length < 3 && !rgSameAsOv) return send(res, 400, { error:'Motif obligatoire (3 caractères minimum) quand le montant de la redevance est ajusté à la main.' });
+          rgMotif = rgM2.length >= 3 ? rgM2 : rgOv.motif;
+        }
+      } else if (rgOv) {
+        // Pas de montant saisi : l'ajustement exceptionnel du mois (deja motive et trace) fait foi.
+        rgHt = RG2(rgOv.ht);
+        if (Math.abs(rgHt - rgHtAuto) >= 0.005) rgMotif = [rgMotif, rgOv.motif].filter(Boolean).join(' · ');
+      }
       if (!(rgHt > 0)) return send(res, 400, { error:'Rien à facturer : redevance nulle pour ce mois ('+rgBase.toFixed(2).replace('.',',')+' € HT × '+rgRate+' %).' });
       var rgTva = RG2(rgHt * 0.20);
       var rgTtc = RG2(rgHt + rgTva);
@@ -2040,9 +2109,9 @@ const server = http.createServer(async (req, res) => {
         ht: rgHt, tva: rgTva, ttc: rgTtc, tvaRate: 0.20,
         date: rgDate.toISOString(), echeance: rgEch.toISOString(),
         seller: roySellerSnapshot(), buyer: royBuyerSnapshot(rgId),
-        avoirDe: null, prevHash: royLastHash,
+        avoirDe: null, prevHash: royLastHash, htAuto: rgHtAuto,
       }, { status: 'emise', par: user.name || 'admin' });
-      logFiscalEvent('FACTURE_ROYALTIES', rgId, { numero: rgNum, mois: rgYm, baseAuto: rgAuto, baseRetenue: rgBase, motif: rgMotif, taux: rgRate, ht: rgHt, tva: rgTva, ttc: rgTtc, echeance: rgEch.toISOString(), par: user.name || 'admin' });
+      logFiscalEvent('FACTURE_ROYALTIES', rgId, { numero: rgNum, mois: rgYm, baseAuto: rgAuto, baseRetenue: rgBase, redevanceCalculee: rgHtAuto, motif: rgMotif, taux: rgRate, ht: rgHt, tva: rgTva, ttc: rgTtc, echeance: rgEch.toISOString(), par: user.name || 'admin' });
       return send(res, 201, { ok:true, invoice: royPublicView(rgRec) });
     }
     // AVOIR sur une facture de redevance : l'original passe « annulée » (trace), l'avoir est scelle a son tour.
@@ -2065,7 +2134,7 @@ const server = http.createServer(async (req, res) => {
         ht: -raOrig.ht, tva: -raOrig.tva, ttc: -raOrig.ttc, tvaRate: 0.20,
         date: raDate.toISOString(), echeance: raDate.toISOString(),
         seller: raOrig.seller, buyer: raOrig.buyer,
-        avoirDe: raOrig.num, prevHash: royLastHash,
+        avoirDe: raOrig.num, prevHash: royLastHash, htAuto: (typeof raOrig.htAuto === 'number' ? -raOrig.htAuto : undefined),
       }, { status: 'emise', par: user.name || 'admin' });
       raOrig.status = 'annulee'; raOrig.annuleeAt = raDate.toISOString(); raOrig.avoirNum = raNewNum;
       logFiscalEvent('AVOIR_ROYALTIES', raOrig.boutiqueId, { numero: raNewNum, factureOrigine: raOrig.num, mois: raOrig.ym, motif: raMotif, ht: -raOrig.ht, ttc: -raOrig.ttc, par: user.name || 'admin' });
