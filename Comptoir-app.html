@@ -3429,7 +3429,7 @@ function setPayMode(m){ PAY_MODE=(m==='auto')?'auto':'manuel'; try{ localStorage
         +'.btn{display:block;margin:22px auto 0;padding:12px 26px;font-size:14px;font-weight:700;border:0;border-radius:10px;background:#161310;color:#e6c884;cursor:pointer}'
         +'@media print{body{background:#fff}.sheet{box-shadow:none;margin:0;max-width:none}.btn{display:none}}'
         +'</style></head><body><div class="sheet">'
-        +'<div class="top"><div class="em">'+sL.join('<br>')+'</div><div class="hd"><div class="big">KINGSTON</div><div class="ti">'+(avoir?'AVOIR':'FACTURE')+'</div><div class="meta">N° <b>'+esc2(d.num)+'</b><br>Émise le '+fmtD2(d.date)+(avoir?'':'<br>Période : '+esc2(d.moisLabel||d.ym))+(avoir?'<br>réf. '+esc2(d.avoirDe||''):'')+'</div></div></div>'
+        +'<div class="top"><div class="em">'+sL.join('<br>')+'</div><div class="hd"><div class="big">BASE CAMP</div><div class="ti">'+(avoir?'AVOIR':'FACTURE')+'</div><div class="meta">N° <b>'+esc2(d.num)+'</b><br>Émise le '+fmtD2(d.date)+(avoir?'':'<br>Période : '+esc2(d.moisLabel||d.ym))+(avoir?'<br>réf. '+esc2(d.avoirDe||''):'')+'</div></div></div>'
         +'<div class="bx"><div><div class="lab">Émetteur (franchiseur)</div>'+sL.join('<br>')+'</div><div><div class="lab">Facturé à (franchisé)</div>'+bL.join('<br>')+'</div></div>'
         +'<table><thead><tr><th>Désignation</th><th class="r">Base HT</th><th class="r">Taux</th><th class="r">Montant HT</th></tr></thead><tbody>'
         +'<tr><td>Redevance de franchise — '+esc2(d.moisLabel||d.ym)+' — '+esc2(d.label||'')+(avoir?' (avoir)':'')+'</td><td class="r">'+euro2(d.baseRetenue)+'</td><td class="r">'+d.rate+' %</td><td class="r">'+euro2(d.ht)+'</td></tr>'
