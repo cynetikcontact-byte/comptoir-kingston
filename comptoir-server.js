@@ -1306,6 +1306,9 @@ function royaltiesCaHT(boutiqueId, ym){
 // (status / regleeAt / avoirNum sont des metadonnees de suivi, hors empreinte — comme 'source' des tickets.)
 function royBody(f){ var a=[f.seq, f.num, f.type, f.boutiqueId, f.ym, f.baseAuto, f.baseRetenue, f.motif, f.rate, f.ht, f.tva, f.ttc, f.date, f.echeance, f.seller, f.buyer, f.avoirDe || null, f.prevHash]; if (f.htAuto != null) a.push(f.htAuto); /* redevance calculee (ajoutee apres coup : absente des premieres factures, d'ou le test de presence) */ return JSON.stringify(a); }
 function royMonthLabel(ym){ var MO=['janvier','février','mars','avril','mai','juin','juillet','août','septembre','octobre','novembre','décembre']; var p=String(ym||'').split('-'); return (MO[(+p[1]||1)-1]||'')+' '+(p[0]||''); }
+// Identite du FRANCHISEUR requise pour facturer (emetteur legal, mentions obligatoires B2B + Factur-X) : ce qui manque.
+function royEntrepriseManque(){ var m=[]; if(!(entreprise.denomination||'').trim()) m.push('dénomination'); if(!(entreprise.siret||'').replace(/\D/g,'')) m.push('SIRET'); if(!(entreprise.tva||'').trim()) m.push('n° de TVA'); return m; }
+function royEntrepriseMsg(m){ return 'Il manque, pour TON entreprise (le franchiseur, émetteur de la facture — pas le franchisé) : ' + m.join(', ') + '. Renseigne-le dans Réglages → Identité de l\'entreprise, puis reviens ici.'; }
 // Identite du FRANCHISEUR (emetteur) figee a l'emission — celle des Reglages « Identite de l'entreprise ».
 function roySellerSnapshot(){ return { name: entreprise.denomination||'', siren:(entreprise.siret||'').replace(/\D/g,'').slice(0,9), siret: entreprise.siret||'', vat: entreprise.tva||'', address: entreprise.adresse||'', zip: entreprise.codePostal||'', city: entreprise.ville||'', country:'FR', telephone: entreprise.telephone||'' }; }
 // Identite du FRANCHISE (destinataire) figee a l'emission — l'identite legale de la boutique.
@@ -2040,7 +2043,8 @@ const server = http.createServer(async (req, res) => {
         return true;
       }).map(royPublicView);
       rfList.sort(function(a,b){ return a.date < b.date ? 1 : -1; });
-      return send(res, 200, { role:user.role, invoices:rfList, chainOk: royVerifyChain(), entrepriseOk: !!(entreprise.denomination && entreprise.siret) });
+      var rfManque = royEntrepriseManque();
+      return send(res, 200, { role:user.role, invoices:rfList, chainOk: royVerifyChain(), entrepriseOk: rfManque.length === 0, entrepriseManque: rfManque });
     }
     // Donnees completes d'UNE facture de redevance (pour la facture imprimable cote client).
     if (req.method === 'GET' && path === '/api/royalties/invoice') {
@@ -2062,7 +2066,8 @@ const server = http.createServer(async (req, res) => {
       var rgId = String((rgB&&rgB.boutiqueId)||'').trim();
       if (!/^\d{4}-\d{2}$/.test(rgYm)) return send(res, 400, { error:'Mois invalide (AAAA-MM).' });
       if (!boutiques[rgId]) return send(res, 404, { error:'Boutique inconnue.' });
-      if (!(entreprise.denomination && entreprise.siret)) return send(res, 400, { error:'Renseigne d\'abord l\'identité de l\'entreprise (dénomination + SIRET) dans Réglages → Identité de l\'entreprise.' });
+      var rgManque = royEntrepriseManque();
+      if (rgManque.length) return send(res, 400, { error: royEntrepriseMsg(rgManque), manque: rgManque });
       var rgExist = royActiveInvoice(rgId, rgYm);
       if (rgExist) return send(res, 409, { error:'Une facture existe déjà pour ce mois : '+rgExist.num+'. Émets d\'abord un avoir pour la corriger.', num:rgExist.num });
       var RG2 = function(n){ return Math.round((Number(n)||0)*100)/100; };
