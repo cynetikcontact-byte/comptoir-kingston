@@ -1987,7 +1987,25 @@ function setPayMode(m){ PAY_MODE=(m==='auto')?'auto':'manuel'; try{ localStorage
       '<div style="margin-top:18px"><button class="btn" data-act="closemodal">Fermer</button></div>'+
     '</div>');
   }
-  function proStatusLabel(s){ return ({attente:'En attente de paiement',envoyee:'Validée (payée)',preparee:'Préparée',expediee:'Expédiée',recue:'Reçue ✓',annulee:'Annulée'})[s]||s; }
+  function proStatusLabel(s){ return ({attente:'En attente de paiement',envoyee:'Payée · à préparer',preparation:'En préparation',preparee:'Terminée · prête',expediee:'Envoyée (La Poste)',retrait:'À récupérer sur place',recue:'Reçue ✓',annulee:'Annulée'})[s]||s; }
+  // « il y a 2 j 4 h » / « il y a 35 min »
+  function agoFr(ts){ if(!ts) return ''; var m=Math.max(0,Math.floor((Date.now()-ts)/60000)); if(m<60) return 'il y a '+m+' min'; var h=Math.floor(m/60); if(h<24) return 'il y a '+h+' h'+(m%60?' '+(m%60)+' min':''); var d=Math.floor(h/24); return 'il y a '+d+' j'+(h%24?' '+(h%24)+' h':''); }
+  function fmtShortTs(ts){ var d=new Date(ts); return d.toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit'})+' '+d.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'}); }
+  // Frise d'une commande de réassort (même lecture pour le franchisé et Base Camp) :
+  // Payée → En préparation → Terminée → Envoyée (La Poste) / À récupérer → Reçue.
+  function proTimeline(o){
+    if(!o||o.status==='attente'||o.status==='annulee') return '';
+    var sa=o.stepAt||{}; var ship=o.shipMode||o.shipChoice||null;
+    var livr=ship==='retrait'?'À récupérer':(ship==='poste'?'Envoyée':'Envoyée / à récupérer');
+    var steps=[{l:'Payée',at:o.paidAt||o.ts},{l:'En préparation',at:sa.preparation},{l:'Terminée',at:sa.preparee},{l:livr,at:sa.expediee||sa.retrait},{l:'Reçue',at:o.receivedAt||sa.recue}];
+    var idx=({envoyee:0,preparation:1,preparee:2,expediee:3,retrait:3,recue:4})[o.status]; if(idx==null) idx=0;
+    var h='<div class="pro-tl" style="display:flex;align-items:center;gap:4px;flex-wrap:wrap;margin-top:6px;font-size:11px;line-height:1.4">';
+    steps.forEach(function(s,i){ var on=i<=idx, cur=i===idx, col=on?(i===4?'#1a7f37':'#b5872f'):'#d8d0c2';
+      h+='<span style="display:inline-flex;align-items:center;gap:4px;color:'+(on?'#3a342c':'#bcb3a4')+(cur?';font-weight:700':'')+'"><span style="width:9px;height:9px;border-radius:50%;display:inline-block;background:'+(on?col:'#fff')+';border:1px solid '+col+'"></span>'+s.l+(on&&s.at?' <span style="color:#9a9085;font-weight:400">'+fmtShortTs(s.at)+'</span>':'')+'</span>';
+      if(i<4) h+='<span style="width:14px;height:2px;background:'+(i<idx?'#b5872f':'#e6e0d6')+';display:inline-block"></span>';
+    });
+    return h+'</div>';
+  }
   function proUnitSym(u){ return u==='g'?'g':'u'; }
   function orderHasReserves(o){ return (o.items||[]).some(function(it){ return (it.note&&(''+it.note).trim()) || (it.qtyConfirmed!=null&&it.qtyConfirmed!==it.qty); }) || (o.note&&(''+o.note).trim()); }
   function proItemsSummary(o){
@@ -2021,9 +2039,11 @@ function setPayMode(m){ PAY_MODE=(m==='auto')?'auto':'manuel'; try{ localStorage
       else if(isAttente && ownerOwn){ var payB=o.payUrl?'<a class="btn btn-gold" href="'+esc(o.payUrl)+'" target="_blank" rel="noopener" onclick="event.stopPropagation()" title="Payer pour valider la commande" style="text-decoration:none;margin-right:6px">💳 Payer pour valider</a>':'<span class="muted" style="font-size:12px;margin-right:6px">lien indisponible</span>'; act=payB+'<button class="btn" data-act="pro-cancel" data-id="'+o.id+'" style="color:#b4452f">Annuler</button>'; }
       else if(ownerCanRecv){ act='<input id="prolot-'+o.id+'" placeholder="n° de lot (opt.)" style="width:118px;margin-right:6px;padding:6px 8px;border:1px solid var(--line);border-radius:8px;font-size:12px"/><button class="btn btn-gold" data-act="pro-recue" data-id="'+o.id+'">Commande reçue</button>'; }
       else { act='<span class="muted" style="font-size:12px">'+(o.status==='recue'?'stock ajouté ✓':proStatusLabel(o.status))+'</span>'; }
-      return '<tr'+(isAdmin?' style="cursor:pointer" data-act="pro-open" data-id="'+o.id+'"':'')+'><td><b>'+esc(o.numero)+'</b>'+resv+(isAdmin?'<br><span class="muted" style="font-size:11.5px">'+esc(o.boutiqueId)+'</span>':'')+'</td>'+
+      var when=isAttente?'':'<br><span class="muted" style="font-size:11px">commandée '+esc(agoFr(o.paidAt||o.ts))+'</span>';
+      var shipTag=(!isAttente&&(o.shipMode||o.shipChoice))?' <span class="tag" style="font-size:10px;vertical-align:middle">'+((o.shipMode||o.shipChoice)==='retrait'?'🏪 retrait sur place':'📮 La Poste')+'</span>':'';
+      return '<tr'+(isAdmin?' style="cursor:pointer" data-act="pro-open" data-id="'+o.id+'"':'')+'><td><b>'+esc(o.numero)+'</b>'+resv+(isAdmin?'<br><span class="muted" style="font-size:11.5px">'+esc(o.boutiqueId)+'</span>':'')+when+'</td>'+
         '<td style="font-size:12.5px">'+items+'</td><td>'+tot+'</td>'+
-        '<td>'+statusCell+'</td>'+
+        '<td>'+statusCell+shipTag+proTimeline(o)+'</td>'+
         '<td style="text-align:right;white-space:nowrap">'+act+'</td></tr>';
     }).join('')||'<tr><td colspan="5" class="muted" style="padding:12px">Aucune commande de réassort pour le moment.</td></tr>';
     el.innerHTML='<table class="tbl"><thead><tr><th>N°</th><th>Articles</th><th>Total</th><th>Statut</th><th></th></tr></thead><tbody>'+rows+'</tbody></table>'+
@@ -2046,9 +2066,9 @@ function setPayMode(m){ PAY_MODE=(m==='auto')?'auto':'manuel'; try{ localStorage
       foot='<button class="btn" data-act="closemodal">Fermer</button><span class="muted" style="margin-left:auto;align-self:center;font-size:12.5px">Reçue'+(o.receivedAt?' le '+new Date(o.receivedAt).toLocaleDateString('fr-FR'):'')+' · stock ajouté ✓</span>';
     } else {
       foot='<button class="btn" data-act="closemodal">Fermer</button>'+
-        (o.status==='expediee'
+        ((o.status==='expediee'||o.status==='retrait')
           ? '<input id="po-lot" placeholder="n° de lot (opt.)" style="width:140px;margin-left:auto;margin-right:8px;padding:8px;border:1px solid var(--line);border-radius:8px"/><button class="btn" data-act="pro-recue-modal" data-id="'+o.id+'">Marquer reçue</button>'
-          : '<button class="btn" data-act="pro-ship" style="margin-left:auto">Marquer expédiée 🚚</button>')+
+          : '<button class="btn" data-act="pro-ship" data-mode="poste" style="margin-left:auto">Envoyée (La Poste) 📮</button><button class="btn" data-act="pro-ship" data-mode="retrait" style="margin-left:6px">Prête à récupérer 🏪</button>')+
         '<button class="btn btn-gold" data-act="pro-confirm">'+(o.status==='envoyee'?'Confirmer la commande':'Enregistrer')+'</button>';
     }
     openModal('<div class="modal-h">Commande '+esc(o.numero)+' — '+esc(blabel)+'</div>'+
@@ -2993,7 +3013,7 @@ function setPayMode(m){ PAY_MODE=(m==='auto')?'auto':'manuel'; try{ localStorage
     if(a==='pro-open'){ openProOrder(el.getAttribute('data-id')); return; }
     if(a==='pro-rupture'){ var rpid=el.getAttribute('data-pid'); var rq=document.getElementById('poq-'+rpid), rn=document.getElementById('pon-'+rpid); if(rq)rq.value=0; if(rn&&!rn.value.trim())rn.value='Rupture de stock'; return; }
     if(a==='pro-confirm'){ var pc=proCollect(); if(!pc||!proData.cur)return; pc.status='preparee'; apiPost('/api/pro/orders/'+proData.cur.id+'/status',pc).then(function(){closeModal();toast('Commande confirmée ✓');proData.loaded=false;proData.loading=false;loadPro();}).catch(function(e){toast('Échec : '+(e.message||e));}); return; }
-    if(a==='pro-ship'){ var ps=proCollect(); if(!ps||!proData.cur)return; ps.status='expediee'; apiPost('/api/pro/orders/'+proData.cur.id+'/status',ps).then(function(){closeModal();toast('Commande marquée expédiée 🚚');proData.loaded=false;proData.loading=false;loadPro();}).catch(function(e){toast('Échec : '+(e.message||e));}); return; }
+    if(a==='pro-ship'){ var ps=proCollect(); if(!ps||!proData.cur)return; var psRet=el.getAttribute('data-mode')==='retrait'; ps.status=psRet?'retrait':'expediee'; apiPost('/api/pro/orders/'+proData.cur.id+'/status',ps).then(function(){closeModal();toast(psRet?'Commande prête à récupérer 🏪':'Commande envoyée par La Poste 📮');proData.loaded=false;proData.loading=false;loadPro();}).catch(function(e){toast('Échec : '+(e.message||e));}); return; }
     if(a==='pro-recue-modal'){ var mrid=el.getAttribute('data-id'); var mlot=document.getElementById('po-lot'); var mb={status:'recue'}; if(mlot&&mlot.value.trim())mb.lot=mlot.value.trim(); apiPost('/api/pro/orders/'+mrid+'/status',mb).then(function(){closeModal();toast('Stock reçu et ajouté ✓');proData.loaded=false;proData.loading=false;loadPro();}).catch(function(e){toast('Échec : '+(e.message||e));}); return; }
     if(a==='pro-newprod'){ openProEntrant(); return; }
     if(a==='pro-saveentrant'){ saveProEntrant(); return; }
@@ -4148,5 +4168,100 @@ function setPayMode(m){ PAY_MODE=(m==='auto')?'auto':'manuel'; try{ localStorage
 })();
 </script>
 
+<script>(function(){
+  /* ===================== BASE CAMP — tableau de bord franchiseur (admin) ===================== */
+  if(window.__ktBcTimer) clearInterval(window.__ktBcTimer);
+  if(window.__ktBcRefresh) clearInterval(window.__ktBcRefresh);
+  var old=document.getElementById('kt-bc-nav'); if(old) old.remove();
+  if(!document.getElementById('kt-bc-css')){
+    var st=document.createElement('style'); st.id='kt-bc-css';
+    st.textContent=["#kt-bc-view{max-width:1180px}","#kt-bc-view .bh{font-size:26px;font-weight:800;margin:0 0 4px;color:#1a1a1a}","#kt-bc-view .bh .m{color:#9a7b2f;font-style:italic;font-weight:600}","#kt-bc-view .bsub{color:#9a9085;font-size:13px;margin-bottom:18px}","#kt-bc-view .bk{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;margin-bottom:22px}","#kt-bc-view .bkpi{background:#fff;border:1px solid #ece7df;border-radius:14px;padding:16px 18px}","#kt-bc-view .bkpi .l{font-size:12px;color:#9a9085}","#kt-bc-view .bkpi .v{font-size:28px;font-weight:800;color:#1a1a1a;margin-top:4px;line-height:1.1}","#kt-bc-view .bkpi .s{font-size:12px;color:#9a9085;margin-top:4px}","#kt-bc-view .bkpi.red{border-color:#eab4a5;background:#fdf3f0}","#kt-bc-view .bkpi.red .v{color:#b4452f}","#kt-bc-view .bsec{font-size:18px;font-weight:800;margin:26px 0 10px;color:#1a1a1a;display:flex;align-items:center;gap:10px}","#kt-bc-view .bsec .n{font-size:12px;font-weight:700;background:#161310;color:#e6c884;border-radius:999px;padding:3px 10px}","#kt-bc-view .bo{background:#fff;border:1px solid #ece7df;border-radius:16px;padding:16px 18px;margin-bottom:10px;display:grid;grid-template-columns:1fr auto;gap:16px;align-items:center}","#kt-bc-view .bo.late{border-color:#eab4a5;box-shadow:inset 4px 0 0 #b4452f}","#kt-bc-view .bo .t{display:flex;align-items:center;gap:10px;flex-wrap:wrap}","#kt-bc-view .bo .nm{font-size:17px;font-weight:800;color:#1a1a1a}","#kt-bc-view .bo .num{font-size:12px;color:#9a9085;font-weight:700}","#kt-bc-view .bpill{font-size:11px;font-weight:700;padding:4px 10px;border-radius:999px;border:1px solid}","#kt-bc-view .bpill.envoyee{color:#9a6b00;background:#fdf4dd;border-color:#e2c579}","#kt-bc-view .bpill.preparation{color:#1d5fb0;background:#e8f0fc;border-color:#a9c4ee}","#kt-bc-view .bpill.preparee{color:#1a7f37;background:#e7f6ec;border-color:#9ed6ae}","#kt-bc-view .bpill.expediee,#kt-bc-view .bpill.retrait{color:#5b4b8a;background:#efeafc;border-color:#c9bdf0}","#kt-bc-view .bage{font-size:13px;font-weight:700;color:#3a342c}","#kt-bc-view .bage.late{color:#b4452f}","#kt-bc-view .bship{font-size:12px;font-weight:700;color:#3a342c;background:#f4efe6;border:1px solid #e6e0d6;border-radius:9px;padding:4px 9px}","#kt-bc-view .bship.unk{color:#9a9085;font-weight:500}","#kt-bc-view .bit{font-size:13px;color:#5a5248;margin-top:8px;line-height:1.5}","#kt-bc-view .bnote{font-size:12.5px;color:#9a6b00;background:#fdf4dd;border-radius:8px;padding:5px 9px;margin-top:6px;display:inline-block}","#kt-bc-view .bact{display:flex;flex-direction:column;gap:8px;min-width:230px}","#kt-bc-view .bbtn{padding:12px 16px;border-radius:12px;font-weight:800;font-size:14px;cursor:pointer;border:1px solid #e6e0d6;background:#fff;color:#1a1a1a;text-align:center}","#kt-bc-view .bbtn.gold{background:#161310;color:#e6c884;border-color:#161310}","#kt-bc-view .bbtn.green{background:#1a7f37;color:#fff;border-color:#1a7f37}","#kt-bc-view .blink{background:none;border:none;color:#9a7b2f;text-decoration:underline;font-size:12.5px;cursor:pointer;padding:2px}","#kt-bc-view .bwait{font-size:12.5px;color:#5b4b8a;text-align:center}","#kt-bc-view .bempty{background:#e7f6ec;border:1px solid #bfe6cb;color:#1a7f37;border-radius:14px;padding:16px 18px;font-weight:700}","#kt-bc-view .btbl{width:100%;border-collapse:collapse;background:#fff;border:1px solid #ece7df;border-radius:14px;overflow:hidden;font-size:13.5px}","#kt-bc-view .btbl th{background:#f4efe6;text-align:left;padding:10px 12px;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:#8a8077}","#kt-bc-view .btbl td{padding:10px 12px;border-top:1px solid #f0ebe2;vertical-align:middle}","#kt-bc-view .btbl .money{text-align:right;white-space:nowrap;font-weight:700}","#kt-bc-view .bet{font-size:11px;font-weight:700;padding:3px 9px;border-radius:999px;border:1px solid;white-space:nowrap}","#kt-bc-view .bet.non_facturee{color:#8a8077;background:#f1ede5;border-color:#d8d0c2}","#kt-bc-view .bet.facturee{color:#9a6b00;background:#fdf4dd;border-color:#e2c579}","#kt-bc-view .bet.retard{color:#b4452f;background:#fdeae5;border-color:#eab4a5}","#kt-bc-view .bet.declare{color:#1d5fb0;background:#e8f0fc;border-color:#a9c4ee}","#kt-bc-view .btot{font-size:15px;color:#3a342c;margin:0 0 10px}","#kt-bc-view .btot b{color:#b4452f;font-size:22px}","#kt-bc-view .bfoot{margin-top:24px;font-size:12px;color:#b3a892;text-align:center}","#kt-bc-view .bwarn{border:1px solid #e2c579;background:#fdf4dd;color:#6b4d00;border-radius:12px;padding:10px 14px;font-size:12.5px;margin-bottom:14px}"].join("");
+    document.head.appendChild(st);
+  }
+  var ST=window.__ktBc||(window.__ktBc={data:null,loading:false,err:null,at:0});
+  function tok(){ var t=localStorage.getItem('kt_session')||''; try{var o=JSON.parse(t);return o.token||t;}catch(e){return t;} }
+  function ses(){ try{return JSON.parse(localStorage.getItem('kt_session')||'{}')||{};}catch(e){return {};} }
+  function esc2(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+  function euro2(n){ return (Math.round((n||0)*100)/100).toLocaleString('fr-FR',{minimumFractionDigits:2,maximumFractionDigits:2})+' €'; }
+  var MO=['janvier','février','mars','avril','mai','juin','juillet','août','septembre','octobre','novembre','décembre'];
+  function ymLabel(ym){ var p=String(ym||'').split('-'); return (MO[+p[1]-1]||'')+' '+(p[0]||''); }
+  function ago(ms){ var m=Math.max(0,Math.floor(ms/60000)); if(m<60) return 'il y a '+m+' min'; var h=Math.floor(m/60); if(h<24) return 'il y a '+h+' h'+(m%60?' '+(m%60)+' min':''); var d=Math.floor(h/24); return 'il y a '+d+' j'+(h%24?' '+(h%24)+' h':''); }
+  function fmtD(iso){ return iso? new Date(iso).toLocaleDateString('fr-FR'):''; }
+  function api(p,body){ return fetch(p,{method:body?'POST':'GET',headers:Object.assign({'x-comptoir-token':tok()},body?{'Content-Type':'application/json'}:{}),body:body?JSON.stringify(body):undefined}).then(function(r){return r.json().then(function(j){return {s:r.status,j:j};}).catch(function(){return {s:r.status,j:{}};});}); }
+  function load(silent){ if(!silent){ST.loading=true;render();} api('/api/basecamp').then(function(o){ if(o.s===200){ST.data=o.j;ST.err=null;ST.at=Date.now();} else {ST.err=(o.j&&o.j.error)||('Erreur '+o.s);} ST.loading=false; render(); }); }
+  var PILL={envoyee:'Payée · à préparer',preparation:'En préparation',preparee:'Terminée · prête',expediee:'Envoyée (La Poste)',retrait:'À récupérer sur place'};
+  function shipHtml(o){ var c=o.shipMode||o.shipChoice; if(c==='retrait') return '<span class="bship">🏪 À venir récupérer</span>'; if(c==='poste') return '<span class="bship">📮 La Poste'+(o.shipTitle&&!/poste|colissimo/i.test(o.shipTitle)?' · '+esc2(o.shipTitle):'')+'</span>'; return '<span class="bship unk">mode de livraison inconnu</span>'; }
+  function actions(o){
+    var c=o.shipChoice||o.shipMode||null;
+    if(o.status==='envoyee') return '<button class="bbtn gold" data-act="kt-bc-next" data-id="'+o.id+'" data-next="preparation">Commencer la préparation</button>';
+    if(o.status==='preparation') return '<button class="bbtn gold" data-act="kt-bc-next" data-id="'+o.id+'" data-next="preparee">Terminer la préparation ✓</button>';
+    if(o.status==='preparee'){
+      if(c==='retrait') return '<button class="bbtn green" data-act="kt-bc-next" data-id="'+o.id+'" data-next="retrait">Prête à récupérer 🏪</button><button class="blink" data-act="kt-bc-next" data-id="'+o.id+'" data-next="expediee">finalement envoyée par La Poste</button>';
+      if(c==='poste') return '<button class="bbtn green" data-act="kt-bc-next" data-id="'+o.id+'" data-next="expediee">Envoyée par La Poste 📮</button><button class="blink" data-act="kt-bc-next" data-id="'+o.id+'" data-next="retrait">finalement à récupérer sur place</button>';
+      return '<button class="bbtn green" data-act="kt-bc-next" data-id="'+o.id+'" data-next="expediee">Envoyée par La Poste 📮</button><button class="bbtn" data-act="kt-bc-next" data-id="'+o.id+'" data-next="retrait">Prête à récupérer 🏪</button>';
+    }
+    return '<div class="bwait">'+(o.status==='retrait'?'🏪 Attend que le franchisé vienne la chercher':'📮 En route — attend la réception')+'</div><button class="blink" data-act="kt-bc-next" data-id="'+o.id+'" data-next="recue">marquer reçue à sa place</button>';
+  }
+  function render(){ var box=document.getElementById('kt-bc-view'); if(!box) return;
+    if(ST.loading&&!ST.data){ box.innerHTML='<div class="bh">Base Camp</div><div class="bsub">Chargement…</div>'; return; }
+    var d=ST.data||{kpis:{},orders:[],royalties:[]}; var k=d.kpis||{};
+    var h='<div class="bh">Base Camp <span style="color:#b5872f">·</span> <span class="m">en un coup d\'œil</span></div>';
+    h+='<div class="bsub">Réassort à préparer et royalties manquantes · actualisé '+(ST.at?ago(Date.now()-ST.at):'')+' · mise à jour automatique chaque minute.</div>';
+    if(ST.err) h+='<div class="bwarn">'+esc2(ST.err)+'</div>';
+    h+='<div class="bk">'
+      +'<div class="bkpi'+(k.enRetard?' red':'')+'"><div class="l">Commandes à préparer</div><div class="v">'+(k.aPreparer||0)+'</div><div class="s">'+(k.enRetard?('dont <b>'+k.enRetard+' en retard</b> (&gt; 48 h)'):'aucune en retard')+'</div></div>'
+      +'<div class="bkpi"><div class="l">Terminées · à remettre</div><div class="v">'+(k.aLivrer||0)+'</div><div class="s">à envoyer ou à faire récupérer</div></div>'
+      +'<div class="bkpi"><div class="l">En route / à récupérer</div><div class="v">'+(k.enTransit||0)+'</div><div class="s">en attente de réception</div></div>'
+      +'<div class="bkpi'+(k.facturesEnRetard?' red':'')+'"><div class="l">Royalties manquantes</div><div class="v">'+euro2(k.royaltiesManquantes)+'</div><div class="s">'+(k.moisManquants||0)+' mois'+(k.facturesEnRetard?(' · <b>'+k.facturesEnRetard+' facture'+(k.facturesEnRetard>1?'s':'')+' en retard</b>'):'')+'</div></div>'
+      +'</div>';
+    if(d.orders&&d.orders.length&&!d.pluginShipping) h+='<div class="bwarn">Le mode de livraison choisi sur kingbase.fr (La Poste / retrait) n\'arrive pas encore : le petit ajout au plugin kingbase n\'est pas installé. En attendant, choisis le mode au moment de l\'envoi.</div>';
+    h+='<div class="bsec">Réassort à traiter <span class="n">'+(d.orders||[]).length+'</span></div>';
+    if(!(d.orders||[]).length) h+='<div class="bempty">✓ Rien à préparer — toutes les commandes sont reçues.</div>';
+    (d.orders||[]).forEach(function(o){
+      h+='<div class="bo'+(o.late?' late':'')+'"><div>'
+        +'<div class="t"><span class="nm">'+esc2(o.label)+'</span><span class="num">'+esc2(o.numero)+'</span><span class="bpill '+esc2(o.status)+'">'+(PILL[o.status]||o.status)+'</span><span class="bage'+(o.late?' late':'')+'">commandée '+ago(o.ageMs)+(o.late?' ⚠️':'')+'</span>'+shipHtml(o)+'</div>'
+        +'<div class="bit">'+(o.items||[]).map(function(it){return it.qty+(it.unit==='g'?' g':'×')+' '+esc2(it.name);}).join(' · ')+'<span style="color:#9a9085"> — '+o.nLines+' ligne'+(o.nLines>1?'s':'')+(o.total>0?' · '+euro2(o.total):'')+'</span></div>'
+        +(o.customerNote?'<div class="bnote">💬 Franchisé : '+esc2(o.customerNote)+'</div>':'')
+        +(o.note?'<div class="bnote">📝 '+esc2(o.note)+'</div>':'')
+        +'<div style="margin-top:6px"><button class="blink" data-act="kt-bc-detail" data-id="'+o.id+'">voir / ajuster le détail</button>'+(o.wooUrl?' <a class="blink" href="'+esc2(o.wooUrl)+'" target="_blank" rel="noopener">commande WooCommerce</a>':'')+'</div>'
+        +'</div><div class="bact">'+actions(o)+'</div></div>';
+    });
+    h+='<div class="bsec">Royalties manquantes <span class="n">'+(d.royalties||[]).length+'</span></div>';
+    if(!(d.royalties||[]).length) h+='<div class="bempty">✓ Tout est rentré — aucune royalty en attente sur les 12 derniers mois.</div>';
+    else {
+      h+='<div class="btot">Total manquant : <b>'+euro2(k.royaltiesManquantes)+'</b> HT <span style="color:#9a9085">('+euro2((k.royaltiesManquantes||0)*1.2)+' TTC)</span></div>';
+      h+='<div style="overflow-x:auto"><table class="btbl"><thead><tr><th>Boutique</th><th>Mois</th><th class="money">Montant HT</th><th>État</th><th></th></tr></thead><tbody>';
+      (d.royalties||[]).forEach(function(r){
+        var et; if(r.etat==='retard') et='<span class="bet retard">En retard de '+r.days+' j</span> <span style="color:#9a9085;font-size:12px">'+esc2(r.invoice||'')+' · échéance '+fmtD(r.echeance)+'</span>';
+        else if(r.etat==='facturee') et='<span class="bet facturee">Facturée · échéance dans '+Math.max(0,-r.days)+' j</span> <span style="color:#9a9085;font-size:12px">'+esc2(r.invoice||'')+'</span>';
+        else if(r.etat==='declare') et='<span class="bet declare">Virement déclaré · à valider</span> <span style="color:#9a9085;font-size:12px">'+fmtD(r.declaredAt)+'</span>';
+        else et='<span class="bet non_facturee">Pas encore facturée</span> <span style="color:#9a9085;font-size:12px">mois clos depuis '+r.days+' j</span>';
+        h+='<tr><td><b>'+esc2(r.label)+'</b></td><td>'+ymLabel(r.ym)+'</td><td class="money">'+euro2(r.ht)+(r.adjusted?' <span style="font-size:10px;color:#9a6b00">ajusté</span>':'')+'</td><td>'+et+'</td><td style="text-align:right;white-space:nowrap"><button class="blink" data-act="kt-bc-roy" data-ym="'+esc2(r.ym)+'">ouvrir dans Royalties →</button></td></tr>';
+      });
+      h+='</tbody></table></div>';
+    }
+    h+='<div class="bfoot">Base Camp · commandes payées sur kingbase.fr · royalties des 12 derniers mois non validées ni réglées.</div>';
+    box.innerHTML=h;
+  }
+  function onClick(e){ var t=e.target.closest('[data-act]'); if(!t) return; var a=t.getAttribute('data-act'); var id=t.getAttribute('data-id');
+    if(a==='kt-bc-next'){ var nx=t.getAttribute('data-next'); t.disabled=true; t.style.opacity='.6';
+      api('/api/pro/orders/'+encodeURIComponent(id)+'/status',{status:nx}).then(function(o){ if(o.s!==200){ ST.err=(o.j&&o.j.error)||'Erreur inconnue.'; render(); } else { load(true); } });
+      return; }
+    if(a==='kt-bc-detail'){ var pn=document.querySelector('#side .nav-item[data-view="pro"]'); if(pn){ pn.click(); setTimeout(function(){ var row=document.querySelector('[data-act="pro-open"][data-id="'+id+'"]'); if(row) row.click(); },900); } return; }
+    if(a==='kt-bc-roy'){ var ym=t.getAttribute('data-ym'); if(window.__ktRoy){ window.__ktRoy.ym=ym; window.__ktRoy.data=null; window.__ktRoy.view='franchiseur'; } if(window.__ktRoyOpen) window.__ktRoyOpen(); return; }
+  }
+  function openView(){ var sv=document.querySelector('main.main section.view'); if(!sv) return; document.querySelectorAll('#side .nav-item').forEach(function(n){n.classList.remove('active');}); var nv=document.getElementById('kt-bc-nav'); if(nv) nv.classList.add('active'); var tt=document.querySelector('main.main .top-title'); if(tt) tt.textContent='Base Camp'; sv.innerHTML='<div id="kt-bc-view"></div>'; document.getElementById('kt-bc-view').addEventListener('click',onClick); ST.data=null; load(); }
+  window.__ktBcOpen=openView;
+  var SVG='<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M3 20 12 4l9 16H3z"/><path d="M12 12v8M8.5 20l3.5-6 3.5 6"/></svg>';
+  function ensureNav(){ var nav=document.querySelector('#side nav.nav'); if(!nav) return; var s=ses(); var isAdmin=s.role==='admin'&&s.token; var ex=document.getElementById('kt-bc-nav');
+    if(!isAdmin){ if(ex) ex.remove(); return; }
+    if(ex) return;
+    var item=document.createElement('div'); item.className='nav-item'; item.id='kt-bc-nav'; item.innerHTML=SVG+' Base Camp';
+    item.addEventListener('click',function(ev){ev.stopPropagation();openView();});
+    nav.insertBefore(item, nav.firstChild);
+  }
+  window.__ktBcTimer=setInterval(ensureNav,1000); ensureNav();
+  window.__ktBcRefresh=setInterval(function(){ if(document.getElementById('kt-bc-view')&&!ST.loading) load(true); },60000);
+})();</script>
 </body>
 </html>

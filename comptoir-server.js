@@ -373,6 +373,39 @@ async function pushProStockToWoo(ids) {
   return { ok: !lastErr, pushed: okCount, of: targets.length, error: lastErr || undefined };
 }
 function schedulePushProStock(ids) { setTimeout(() => { pushProStockToWoo(ids).catch(() => {}); }, 50); }
+// Reflet kingbase des commandes de reassort (lazy, borne a 10, throttle par commande, non bloquant) :
+//  - paiement detecte -> la commande passe 'envoyee' (validee) ;
+//  - mode de livraison CHOISI SUR KINGBASE (Colissimo / retrait sur place) -> shipChoice, si le plugin le renvoie.
+async function refreshWooOrders(user) {
+  if (!(proConnector && typeof proConnector.getOrderStatus === 'function')) return;
+  const now = Date.now();
+  const toRefresh = supplyOrders
+    .filter((o) => o.wooOrderId && o.status !== 'annulee' && o.status !== 'recue')
+    .filter((o) => !o.wooPaid || !o.shipChoice)                                     // non payee, ou payee sans mode de livraison connu
+    .filter((o) => now - (o.wooStatusAt || 0) > (o.status === 'attente' ? 12000 : (o.wooPaid ? 600000 : 60000)))   // payee sans mode connu : au plus toutes les 10 min
+    .filter((o) => !user || user.role === 'admin' || o.boutiqueId === user.boutiqueId)
+    .slice(-10);
+  if (!toRefresh.length) return;
+  await Promise.allSettled(toRefresh.map(async (o) => {
+    try {
+      const s = await proConnector.getOrderStatus(o.wooOrderId, { timeoutMs: 7000 });
+      o.wooStatusAt = Date.now();
+      if (s) {
+        if (s.status) o.wooStatus = s.status;
+        if (s.paid) { o.wooPaid = true; if (o.status === 'attente') { o.status = 'envoyee'; o.paidAt = Date.now(); } }
+        if (s.pay_url) o.payUrl = s.pay_url;
+        if (typeof s.pickup === 'boolean' || s.shipping_title) { o.shipChoice = s.pickup ? 'retrait' : 'poste'; o.shipTitle = String(s.shipping_title || ''); }
+        if (s.customer_note) o.customerNote = String(s.customer_note).slice(0, 500);
+      }
+    } catch (e) { o.wooStatusAt = Date.now(); }
+  }));
+  persist();
+  // Apres detection d'un paiement, re-pousse les quantites de reference vers kingbase :
+  // Woo decremente aussi de son cote au paiement, l'envoi ABSOLU depuis KINGTOOLS realigne tout.
+  const paidIds = [];
+  toRefresh.forEach((o) => { if (o.wooPaid && o.status !== 'attente' && o.paidAt && (Date.now() - o.paidAt) < 5000) (o.items || []).forEach((it) => { if (proStock[it.productId] != null && paidIds.indexOf(it.productId) < 0) paidIds.push(it.productId); }); });
+  if (paidIds.length) schedulePushProStock(paidIds);
+}
 function findProProduct(id) { return proProducts.find((p) => p.id === id) || proExtras.find((p) => p.id === id) || findProduct(id); }
 async function syncProCatalog() {
   if (PG || !PRO_WP_URL) return { error: 'pas de site grossiste configure' };
@@ -3251,7 +3284,7 @@ const server = http.createServer(async (req, res) => {
         }
         const so = supplyOrders.filter((o) => o.boutiqueId === id);
         const ventes = invoices.filter((i) => i.boutiqueId === id && i.total >= 0);
-        return { id: id, label: bq.label || id, siren: (bq.seller && bq.seller.siren) || '', pontOnline: pontOnline(id), pontPaired: pontPaired(id), produitsEnStock: inStock, stockBas: low, ruptures: out, aTraiter: so.filter((o) => o.status === 'envoyee').length, reassortEnCours: so.filter((o) => o.status !== 'recue' && o.status !== 'attente' && o.status !== 'annulee').length, reassortTotal: so.filter((o) => o.status !== 'annulee').length, ventes: ventes.length, ca: Math.round(ventes.reduce((a, i) => a + i.total, 0) * 100) / 100 };
+        return { id: id, label: bq.label || id, siren: (bq.seller && bq.seller.siren) || '', pontOnline: pontOnline(id), pontPaired: pontPaired(id), produitsEnStock: inStock, stockBas: low, ruptures: out, aTraiter: so.filter((o) => o.status === 'envoyee' || o.status === 'preparation').length, reassortEnCours: so.filter((o) => o.status !== 'recue' && o.status !== 'attente' && o.status !== 'annulee').length, reassortTotal: so.filter((o) => o.status !== 'annulee').length, ventes: ventes.length, ca: Math.round(ventes.reduce((a, i) => a + i.total, 0) * 100) / 100 };
       });
       return send(res, 200, { boutiques: rows, totalProduits: cat.length, totalATraiter: rows.reduce((a, r) => a + r.aTraiter, 0) });
     }
@@ -3491,33 +3524,54 @@ const server = http.createServer(async (req, res) => {
     }
     if (req.method === 'GET' && path === '/api/pro/orders') {
       if (proBlockedFor(user)) return send(res, 200, { blocked: true, message: proBlockMessage(), orders: [] });   // page fermee pour cette boutique
-      // Reflet du paiement : pour les commandes non encore payees ayant une commande Woo, on rafraichit
-      // l'etat depuis kingbase (lazy, borne a 10, throttle 60s par commande) afin d'afficher "Paye ✓"
-      // et de masquer le bouton "Payer" une fois reglee. Non bloquant en cas d'erreur/timeout.
-      if (proConnector && typeof proConnector.getOrderStatus === 'function') {
-        const now = Date.now();
-        const toRefresh = supplyOrders
-          .filter((o) => o.wooOrderId && !o.wooPaid && (now - (o.wooStatusAt || 0) > (o.status === 'attente' ? 12000 : 60000)))
-          .filter((o) => user.role === 'admin' || o.boutiqueId === user.boutiqueId)
-          .slice(-10);
-        if (toRefresh.length) {
-          await Promise.allSettled(toRefresh.map(async (o) => {
-            try {
-              const s = await proConnector.getOrderStatus(o.wooOrderId, { timeoutMs: 7000 });
-              o.wooStatusAt = Date.now();
-              if (s) { if (s.status) o.wooStatus = s.status; if (s.paid) { o.wooPaid = true; if (o.status === 'attente') { o.status = 'envoyee'; o.paidAt = Date.now(); } } if (s.pay_url) o.payUrl = s.pay_url; }
-            } catch (e) { o.wooStatusAt = Date.now(); }
-          }));
-          persist();
-          // Apres detection d'un paiement, re-pousse les quantites de reference vers kingbase :
-          // Woo decremente aussi de son cote au paiement, l'envoi ABSOLU depuis KINGTOOLS realigne tout.
-          const paidIds = [];
-          toRefresh.forEach((o) => { if (o.wooPaid && o.status !== 'attente') (o.items || []).forEach((it) => { if (proStock[it.productId] != null && paidIds.indexOf(it.productId) < 0) paidIds.push(it.productId); }); });
-          if (paidIds.length) schedulePushProStock(paidIds);
-        }
-      }
+      await refreshWooOrders(user);
       const list = supplyOrders.filter((o) => user.role === 'admin' ? true : o.boutiqueId === user.boutiqueId).slice().sort((a, b) => b.id - a.id);
       return send(res, 200, { orders: list });
+    }
+    // ---- BASE CAMP : tableau de bord franchiseur (admin) — reassort a traiter + royalties manquantes ----
+    if (req.method === 'GET' && path === '/api/basecamp') {
+      if (user.role !== 'admin') return send(res, 403, { error: 'Réservé à l\'administrateur réseau' });
+      await refreshWooOrders(user);
+      const now = Date.now();
+      const OPEN = ['envoyee', 'preparation', 'preparee', 'expediee', 'retrait'];
+      const orders = supplyOrders.filter((o) => OPEN.indexOf(o.status) >= 0).map((o) => {
+        const since = o.paidAt || o.ts || now;
+        const nItems = (o.items || []).reduce((a, it) => a + (it.qtyConfirmed != null ? it.qtyConfirmed : it.qty), 0);
+        return { id: o.id, numero: o.numero, boutiqueId: o.boutiqueId, label: (boutiques[o.boutiqueId] && boutiques[o.boutiqueId].label) || o.boutiqueId,
+          status: o.status, ts: o.ts || null, paidAt: o.paidAt || null, stepAt: o.stepAt || {}, ageMs: now - since,
+          late: (o.status === 'envoyee' || o.status === 'preparation') && (now - since) > 48 * 3600 * 1000,
+          nLines: (o.items || []).length, nItems: nItems, total: (o.totalConfirme != null ? o.totalConfirme : o.total), by: o.by || null,
+          items: (o.items || []).map((it) => ({ name: it.name, qty: (it.qtyConfirmed != null ? it.qtyConfirmed : it.qty), unit: it.unit })),
+          shipChoice: o.shipChoice || null, shipTitle: o.shipTitle || '', shipMode: o.shipMode || null, customerNote: o.customerNote || '', note: o.note || '', wooUrl: o.wooUrl || null, ship: o.ship || null };
+      }).sort((a, b) => b.ageMs - a.ageMs);   // les plus anciennes d'abord
+      // Royalties manquantes : chaque mois clos (12 derniers) ou l'argent n'est pas rentre (ni validee recue, ni facture reglee).
+      const dn = new Date(); const curYM = dn.getFullYear() + '-' + ('0' + (dn.getMonth() + 1)).slice(-2);
+      const months = []; for (let k = 1; k <= 12; k++) { const d = new Date(dn.getFullYear(), dn.getMonth() - k, 1); months.push(d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2)); }
+      const missing = []; let totalMissing = 0, nLate = 0;
+      for (const id of boutiqueIds()) {
+        for (const ym of months) {
+          const am = royaltiesAmount(ym, id);
+          if (!(am.ht > 0)) continue;
+          const rec = royaltiesRec(ym, id);
+          if (rec.status === 'valide') continue;
+          if (am.invoice && am.invoice.status === 'reglee') continue;
+          const inv = am.invoice ? royaltyInvoices.find((r) => r.num === am.invoice.num) : null;
+          let etat = 'non_facturee', days = 0;
+          const monthEnd = new Date(Number(ym.slice(0, 4)), Number(ym.slice(5, 7)), 1).getTime();   // 1er du mois suivant
+          if (inv) { const ech = new Date(inv.echeance).getTime(); days = Math.floor((now - ech) / 86400000); etat = days > 0 ? 'retard' : 'facturee'; }
+          else if (rec.status === 'declare') { etat = 'declare'; days = Math.floor((now - monthEnd) / 86400000); }
+          else { days = Math.floor((now - monthEnd) / 86400000); }
+          if (etat === 'retard') nLate++;
+          totalMissing += am.ht;
+          missing.push({ boutiqueId: id, label: (boutiques[id] && boutiques[id].label) || id, ym: ym, ht: am.ht, ttc: Math.round(am.ht * 1.2 * 100) / 100, etat: etat, days: days, invoice: am.invoice ? am.invoice.num : null, echeance: inv ? inv.echeance : null, declaredAt: rec.declaredAt || null, adjusted: !!am.override });
+        }
+      }
+      missing.sort((a, b) => (a.ym < b.ym ? -1 : (a.ym > b.ym ? 1 : (a.label < b.label ? -1 : 1))));
+      return send(res, 200, {
+        now: now, curYM: curYM,
+        kpis: { aPreparer: orders.filter((o) => o.status === 'envoyee' || o.status === 'preparation').length, enRetard: orders.filter((o) => o.late).length, aLivrer: orders.filter((o) => o.status === 'preparee').length, enTransit: orders.filter((o) => o.status === 'expediee' || o.status === 'retrait').length, royaltiesManquantes: Math.round(totalMissing * 100) / 100, facturesEnRetard: nLate, moisManquants: missing.length },
+        orders: orders, royalties: missing, pluginShipping: supplyOrders.some((o) => o.shipChoice),
+      });
     }
     // Annuler une commande NON PAYEE (statut 'attente'). Le franchise (sa boutique) ou l'admin uniquement.
     const mProCancel = path.match(/^\/api\/pro\/orders\/(\d+)\/cancel$/);
@@ -3567,7 +3621,9 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'POST' && mProStatus) {
       const o = supplyOrders.find((x) => x.id === parseInt(mProStatus[1], 10)); if (!o) return send(res, 404, { error: 'Commande introuvable' });
       const b = await readJson(req);
-      const allowed = ['envoyee', 'preparee', 'expediee', 'recue'];
+      // Chaine Base Camp : envoyee (payee, a preparer) -> preparation (en preparation) -> preparee (terminee, prete)
+      // -> expediee (envoyee La Poste) OU retrait (prete a recuperer sur place) -> recue (le franchise confirme).
+      const allowed = ['envoyee', 'preparation', 'preparee', 'expediee', 'retrait', 'recue'];
       if (allowed.indexOf(b.status) < 0) return send(res, 400, { error: 'Statut invalide' });
       const isOwnerManager = user.role === 'manager' && o.boutiqueId === user.boutiqueId;
       // « Reçue » = le FRANCHISÉ (ou l'admin) confirme la réception -> le stock entre dans SA boutique.
@@ -3575,6 +3631,9 @@ const server = http.createServer(async (req, res) => {
       if (b.status === 'recue') { if (!(user.role === 'admin' || isOwnerManager)) return send(res, 403, { error: 'Réservé au franchisé concerné ou à l\'admin' }); }
       else if (user.role !== 'admin') return send(res, 403, { error: 'Réservé à l\'administrateur réseau' });
       o.status = b.status;
+      if (!o.stepAt || typeof o.stepAt !== 'object') o.stepAt = {};
+      o.stepAt[b.status] = Date.now();                                             // horodatage de chaque etape (frise cote franchise)
+      if (b.status === 'expediee' || b.status === 'retrait') o.shipMode = (b.status === 'retrait') ? 'retrait' : 'poste';   // mode EFFECTIF tranche par l'admin a l'envoi (shipChoice = choix fait sur kingbase)
       if (b.lot != null && String(b.lot).trim()) o.lotRef = String(b.lot).trim();   // l'admin/franchisé peut choisir le n° de lot
       if (typeof b.note === 'string') o.note = b.note;
       if (Array.isArray(b.items)) {                                                  // réserves / ajustements + notes par produit (admin)
