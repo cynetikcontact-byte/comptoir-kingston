@@ -440,6 +440,25 @@ table.tbl tr:hover td{background:#faf9f5;}
 }
 </style>
 <style id="kt-modal-css">.modal-grid .gbtn{padding:24px 18px;border:1.5px solid #ece7df;border-radius:16px;background:#fff;display:flex;flex-direction:column;align-items:center;gap:10px;transition:transform .12s ease,box-shadow .12s ease,border-color .12s ease;cursor:pointer}.modal-grid .gbtn:hover{border-color:#d9b873;box-shadow:0 8px 22px rgba(0,0,0,.10);transform:translateY(-2px)}.modal-grid .gbtn:active{transform:translateY(0)}.modal-grid .gbtn .g1{font-size:38px;font-weight:800;line-height:1;color:#191919;letter-spacing:-.5px}.modal-grid .gbtn .g2{font-size:22px;font-weight:700;color:#b5872f}</style>
+<style id="kt-mobile-pos-css">
+/* Caisse sur telephone : grammes sur 2 colonnes, produits sur 3 colonnes */
+@media(max-width:860px){
+  .modal-grid{grid-template-columns:1fr 1fr;gap:10px;}
+  .modal-grid .gbtn{padding:16px 10px;gap:6px;border-radius:14px;}
+  .modal-grid .gbtn .g1{font-size:28px;}
+  .modal-grid .gbtn .g2{font-size:17px;}
+}
+@media(max-width:520px){
+  .pgrid{grid-template-columns:repeat(3,1fr);gap:8px;}
+  .pgrid .pcard{padding:10px 8px;gap:3px;border-radius:11px;}
+  .pgrid .pc-img{height:72px;}
+  .pgrid .pc-cat{font-size:8.5px;letter-spacing:.06em;}
+  .pgrid .pc-name{font-size:13px;line-height:1.15;word-break:break-word;}
+  .pgrid .pc-foot{flex-direction:column;align-items:flex-start;gap:1px;padding-top:4px;}
+  .pgrid .pc-price{font-size:13.5px;}
+  .pgrid .pc-stock{font-size:10px;}
+}
+</style>
 </head>
 <body>
 <div id="app">
