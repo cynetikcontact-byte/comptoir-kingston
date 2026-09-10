@@ -467,7 +467,11 @@ table.tbl tr:hover td{background:#faf9f5;}
   .top-l{flex:0 1 auto;min-width:42px;overflow:hidden;}
   .hamburger{position:relative;z-index:60;flex:0 0 42px;}
   .mbrand{min-width:0;overflow:hidden;}
-  .top-r{flex:1 1 auto;min-width:0;justify-content:flex-end;gap:6px;overflow:hidden;}
+  .top-r{flex:1 1 auto;min-width:0;justify-content:flex-end;gap:6px;}   /* PAS d'overflow:hidden : il coupait le panneau des villes */
+  #kt-city-wrap > div{position:fixed!important;top:66px!important;left:10px!important;right:10px!important;min-width:0!important;max-height:70vh;overflow:auto;}   /* panneau villes plein ecran sur telephone */
+  #kt-city-wrap > div label{padding:11px 6px!important;font-size:15px!important;}
+  #kt-city-wrap > div input[type=checkbox]{width:20px;height:20px;}
+  #kt-city-apply{padding:13px!important;font-size:15px!important;}
   .boutique-sel,#kt-frbq-sel{flex:0 1 auto;min-width:0;max-width:42vw;}
   #kt-city-wrap{min-width:0;margin-right:0;flex:0 1 auto;}
   #kt-city-btn{max-width:38vw;overflow:hidden;text-overflow:ellipsis;font-size:12px;padding:8px 8px;}
