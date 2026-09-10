@@ -485,6 +485,28 @@ table.tbl tr:hover td{background:#faf9f5;}
   .mbrand svg{width:22px;height:17px;}
 }
 </style>
+<style id="kt-pos-order-css">
+/* Mode rangement de la caisse : bouton sur le cote, bandeau, cartes deplacables */
+.pos-left{position:relative;}
+.pos .cats{padding-right:96px;}
+.pos-edit-btn{position:absolute;top:0;right:0;height:38px;padding:0 13px;border-radius:10px;border:1px solid var(--line);background:#fff;font-weight:700;font-size:12.5px;cursor:pointer;color:#3a342c;z-index:5;white-space:nowrap;box-shadow:0 1px 2px rgba(20,16,9,.05);}
+.pos-edit-btn:hover{border-color:#d9b873;}
+.pos-edit-btn.on{background:#161310;color:#e6c884;border-color:#161310;}
+.pos-edit-banner{background:#fdf4dd;border:1px solid #e2c579;color:#6b4d00;border-radius:10px;padding:9px 12px;font-size:12.5px;margin:-2px 0 10px;line-height:1.45;}
+.pgrid.editing{gap:14px;}
+.pgrid.editing .pcard{position:relative;touch-action:none;cursor:grab;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;border:1.5px dashed #d9b873;padding-top:22px;}
+.pgrid.editing .pcard:active{cursor:grabbing;}
+.pgrid.editing .pcard.dis{opacity:.75;}
+.pc-handle{position:absolute;top:3px;right:8px;font-size:17px;line-height:1;color:#b5872f;letter-spacing:-2px;}
+.pcard.pc-placeholder{opacity:.3;border-style:solid;background:#f4efe6;}
+.pc-ghost{border-radius:13px;background:#fff;}
+@media(max-width:860px){
+  .pos .cats{padding-right:92px;}
+  .pos-edit-btn{height:40px;padding:0 12px;font-size:12.5px;}
+  .pgrid.editing{gap:12px;}
+  .pgrid.editing .pcard{padding-top:20px;}
+}
+</style>
 </head>
 <body>
 <div id="app">
@@ -628,7 +650,7 @@ table.tbl tr:hover td{background:#faf9f5;}
     else{o.price=p.price;o.stockU=p.stockU||0;if(p.packs&&p.packs.length)o.packs=p.packs;}
     return o;
   }
-  function reloadProducts(cb){ if(!API.on){if(cb)cb();return;} var _q=(st.user&&st.user.role==='admin')?('?boutique='+encodeURIComponent(st.prodBtq||st.boutiqueId||'aix')):''; apiGet('/api/products'+_q).then(function(d){ products=(d.products||[]).map(mapServerProduct); if(cb)cb(); if(st.view==='produits'||st.view==='pos')render(); }).catch(function(){if(cb)cb();}); }
+  function reloadProducts(cb){ if(!API.on){if(cb)cb();return;} var _q=(st.user&&st.user.role==='admin')?('?boutique='+encodeURIComponent(st.prodBtq||st.boutiqueId||'aix')):''; apiGet('/api/products'+_q).then(function(d){ products=(d.products||[]).map(mapServerProduct); st.posOrder=(d.posOrder&&typeof d.posOrder==='object')?d.posOrder:{}; if(cb)cb(); if(st.view==='produits'||st.view==='pos')render(); }).catch(function(){if(cb)cb();}); }
   function doApiConnect(){
     API.base=(document.getElementById('rg-api-url').value||'').trim().replace(/\/$/,'');
     API.token=(document.getElementById('rg-api-token').value||'').trim();
@@ -636,7 +658,7 @@ table.tbl tr:hover td{background:#faf9f5;}
     if(resEl)resEl.innerHTML='<span class="muted" style="font-size:12px">Connexion…</span>';
     if(!LOCAL_SNAPSHOT)LOCAL_SNAPSHOT=JSON.parse(JSON.stringify(products));
     fetch(API.base+'/api/health').then(function(r){return r.json();}).then(function(h){if(!h||!h.ok)throw new Error('réponse inattendue');return apiGet('/api/products');}).then(function(data){
-      products=(data.products||[]).map(mapServerProduct);
+      products=(data.products||[]).map(mapServerProduct);st.posOrder=(data.posOrder&&typeof data.posOrder==='object')?data.posOrder:{};
       API.on=true;st.cart=[];st.client=null;render();loadLoyaltyRate();loadCompany();toast('Connecté au serveur — produits chargés depuis le moteur');
     }).catch(function(e){API.on=false;var el=document.getElementById('rg-api-res');if(el)el.innerHTML='<span class="tag tag-low">Échec : '+(e.message||e)+'</span> <span class="muted" style="font-size:12px">— le serveur tourne-t-il ? (node comptoir-server.js)</span>';});
   }
@@ -651,7 +673,7 @@ table.tbl tr:hover td{background:#faf9f5;}
       if(!h||!h.ok)throw new Error('pas de serveur');
       return apiGet('/api/products');
     }).then(function(data){
-      products=(data.products||[]).map(mapServerProduct);
+      products=(data.products||[]).map(mapServerProduct);st.posOrder=(data.posOrder&&typeof data.posOrder==='object')?data.posOrder:{};
       API.on=true;render();loadLoyaltyRate();loadCompany();toast('Connecté au serveur — fidélité et produits en direct');
     }).catch(function(){API.on=false;});
   }
@@ -932,12 +954,74 @@ table.tbl tr:hover td{background:#faf9f5;}
   }
   function kpi(l,v,d){return '<div class="card kpi"><div class="lbl">'+l+'</div><div class="val">'+v+'</div>'+(d?'<div class="dlt">'+d+'</div>':'')+'</div>';}
 
+  // ---------- Mode rangement de la caisse : glisser-deposer (souris ET doigt, via Pointer Events) ----------
+  var PD=null;
+  function posScrollParent(el){ var n=el; while(n&&n!==document.body){ var cs=getComputedStyle(n); if(/(auto|scroll)/.test(cs.overflowY)&&n.scrollHeight>n.clientHeight+2) return n; n=n.parentElement; } return document.scrollingElement||document.documentElement; }
+  function posDragAttach(){ var g=document.querySelector('.pgrid.editing'); if(!g||g.__ktDrag)return; g.__ktDrag=true;
+    g.addEventListener('pointerdown',posDragDown); g.addEventListener('contextmenu',function(e){e.preventDefault();});
+    if(!window.__ktPosDragDoc){ window.__ktPosDragDoc=true; document.addEventListener('pointermove',posDragMove,{passive:false}); document.addEventListener('pointerup',posDragUp); document.addEventListener('pointercancel',posDragUp); }
+  }
+  function posDragDown(e){
+    if(!posEditing())return; if(e.pointerType==='mouse'&&e.button!==0)return;
+    var card=e.target.closest('.pcard'); if(!card)return; var grid=card.parentElement; if(!grid||!grid.classList.contains('pgrid'))return;
+    e.preventDefault();
+    PD={card:card,grid:grid,x0:e.clientX,y0:e.clientY,pid:e.pointerId,started:false,lastY:null,sc:posScrollParent(grid)};
+    try{card.setPointerCapture(e.pointerId);}catch(x){}
+  }
+  function posDragStart(e){
+    var r=PD.card.getBoundingClientRect(); var c=PD.card.cloneNode(true); c.className+=' pc-ghost';
+    c.style.cssText='position:fixed;left:0;top:0;width:'+r.width+'px;height:'+r.height+'px;margin:0;z-index:9999;pointer-events:none;opacity:.93;box-shadow:0 14px 34px rgba(0,0,0,.28);transform:translate('+r.left+'px,'+r.top+'px) scale(1.04);';
+    document.body.appendChild(c); PD.clone=c; PD.dx=e.clientX-r.left; PD.dy=e.clientY-r.top; PD.started=true;
+    PD.card.classList.add('pc-placeholder');
+    PD.raf=requestAnimationFrame(posAutoScroll);
+  }
+  function posAutoScroll(){ if(!PD||!PD.started)return; var y=PD.lastY; if(y!=null){ var sc=PD.sc; var top=(sc===document.documentElement||sc===document.body||sc===document.scrollingElement)?0:sc.getBoundingClientRect().top; var bottom=(sc===document.documentElement||sc===document.body||sc===document.scrollingElement)?innerHeight:sc.getBoundingClientRect().bottom; if(y<top+70) sc.scrollTop-=9; else if(y>bottom-70) sc.scrollTop+=9; } PD.raf=requestAnimationFrame(posAutoScroll); }
+  function posDragMove(e){
+    if(!PD||e.pointerId!==PD.pid)return;
+    if(!PD.started){ if(Math.abs(e.clientX-PD.x0)<6&&Math.abs(e.clientY-PD.y0)<6)return; posDragStart(e); }
+    e.preventDefault();
+    PD.lastY=e.clientY;
+    PD.clone.style.transform='translate('+(e.clientX-PD.dx)+'px,'+(e.clientY-PD.dy)+'px) scale(1.04)';
+    var t=document.elementFromPoint(e.clientX,e.clientY); var over=t&&t.closest?t.closest('.pcard'):null;
+    if(over&&over!==PD.card&&over.parentElement===PD.grid){
+      var cards=[].slice.call(PD.grid.querySelectorAll('.pcard'));
+      if(cards.indexOf(over)>cards.indexOf(PD.card)) over.after(PD.card); else over.before(PD.card);   // les autres se decalent tout seuls
+    }
+  }
+  function posDragUp(e){
+    if(!PD||e.pointerId!==PD.pid)return;
+    try{PD.card.releasePointerCapture(PD.pid);}catch(x){}
+    if(PD.started){
+      cancelAnimationFrame(PD.raf); if(PD.clone)PD.clone.remove(); PD.card.classList.remove('pc-placeholder');
+      var ids=[].slice.call(PD.grid.querySelectorAll('.pcard')).map(function(c){return c.getAttribute('data-id');});
+      savePosOrder(st.cat,ids);
+    }
+    PD=null;
+  }
+  function savePosOrder(cat,ids){
+    st.posOrder=st.posOrder||{}; st.posOrder[cat]=ids;
+    if(!API.on){toast('Ordre enregistré (session locale)');return;}
+    var body={cat:cat,ids:ids}; if(st.user&&st.user.role==='admin')body.boutiqueId=st.prodBtq||st.boutiqueId||'aix';
+    apiPost('/api/pos-order',body).then(function(d){ if(d&&d.posOrder)st.posOrder=d.posOrder; toast('Ordre enregistré ✓'); }).catch(function(e){toast('Ordre non enregistré : '+(e.message||e));});
+  }
+  // Ordre d'affichage de la caisse : propre a la boutique (st.posOrder = { gamme: [ids] }).
+  // Dans « Tout » : gammes dans l'ordre des onglets, puis l'ordre choisi dans chaque gamme ; produits non classes a la suite.
+  function posSorted(list){
+    var po=st.posOrder||{}; var tabs=['Fleurs','King','Accessoire','Collector'];
+    function oi(p){ var arr=po[p.cat]; if(!arr) return 100000; var i=arr.indexOf(p.id); return i<0?99999:i; }
+    return list.map(function(p,i){return {p:p,i:i};}).sort(function(a,b){
+      if(st.cat==='Tout'){ var ca=tabs.indexOf(a.p.cat), cb=tabs.indexOf(b.p.cat); if(ca<0)ca=99; if(cb<0)cb=99; if(ca!==cb)return ca-cb; if(ca===99&&a.p.cat!==b.p.cat)return a.p.cat<b.p.cat?-1:1; }
+      var ia=oi(a.p), ib=oi(b.p); if(ia!==ib)return ia-ib; return a.i-b.i;
+    }).map(function(x){return x.p;});
+  }
+  function posEditing(){ return !!(st.posEdit&&st.cat!=='Tout'); }
   function posGrid(){
     var q=(st.posSearch||'').toLowerCase();
-    var html=products.filter(function(p){return (st.cat==='Tout'||p.cat===st.cat)&&(!q||p.name.toLowerCase().indexOf(q)>=0);}).map(function(p){
+    var editing=posEditing();
+    var html=posSorted(products.filter(function(p){return (st.cat==='Tout'||p.cat===st.cat)&&(!q||p.name.toLowerCase().indexOf(q)>=0);})).map(function(p){
       var stock=p.unit==='g'?totalStockG(p)+' g':p.stockU+' u';
       var out=p.unit==='g'?totalStockG(p)<=0:p.stockU<=0;
-      return '<div class="pcard '+(out?'dis':'')+'" data-act="'+(out?'rupture':'pick')+'" data-id="'+p.id+'">'+
+      return '<div class="pcard '+(out?'dis':'')+'" data-act="'+(out?'rupture':'pick')+'" data-id="'+p.id+'">'+(editing?'<div class="pc-handle" title="Glisser pour déplacer">⠿</div>':'')+
         '<div class="pc-img" style="background-image:url(\''+(p.img||PRODUCT_IMG[p.name]||'')+'\')"></div>'+
         '<div class="pc-cat">'+p.cat+'</div><div class="pc-name">'+esc(p.name)+'</div><div class="pc-cbd">'+esc(p.cbd)+'</div>'+(out?'<div class="pc-rupture">Plus de stock — saisir du nouveau stock</div>':'')+
         '<div class="pc-foot"><span class="pc-price">'+(p.unit==='g'?'dès ':'')+eur(entryPrice(p))+'</span><span class="pc-stock">'+(out?'⛔ Plus de stock':stock)+'</span></div></div>';
@@ -969,9 +1053,11 @@ table.tbl tr:hover td{background:#faf9f5;}
       }
     }
     setTimeout(function(){ loadPontStatut(payBannerRender); },0);
-    return '<div id="pos-tpe-strip" style="margin-bottom:10px"></div>'+'<div class="pos"><div class="pos-left">'+
-      '<div class="cats">'+cats.map(function(c){return '<button class="cat '+(c===st.cat?'on':'')+'" data-act="poscat" data-c="'+c+'">'+c+'</button>';}).join('')+'</div>'+
-      '<input id="pos-search" class="pos-search" placeholder="Rechercher un produit…" value="'+esc(st.posSearch||'')+'"/>'+'<button data-act="prixlibre" style="width:100%;margin:-2px 0 12px;padding:11px 14px;border-radius:10px;border:1px solid var(--gold);background:var(--gold-soft);color:var(--gold);font-size:14px;font-weight:600;cursor:pointer">+ Prix libre</button>'+'<div class="pgrid">'+grid+'</div></div>'+
+    var editBtn='<button class="pos-edit-btn'+(st.posEdit?' on':'')+'" data-act="posedit" title="Réorganiser l\'affichage de la caisse">'+(st.posEdit?'✓ Terminer':'⇅ Ordre')+'</button>';
+    var editBanner=st.posEdit?('<div class="pos-edit-banner">'+(st.cat==='Tout'?'Mode rangement — choisis une gamme (Fleurs, King…) puis glisse les produits dans l\'ordre voulu.':'Mode rangement — glisse les produits de la gamme <b>'+esc(st.cat)+'</b> dans l\'ordre voulu. L\'ordre est propre à ta boutique. Touche « Terminer » quand c\'est bon.')+'</div>'):'';
+    return '<div id="pos-tpe-strip" style="margin-bottom:10px"></div>'+'<div class="pos"><div class="pos-left">'+editBtn+
+      '<div class="cats">'+cats.map(function(c){return '<button class="cat '+(c===st.cat?'on':'')+'" data-act="poscat" data-c="'+c+'">'+c+'</button>';}).join('')+'</div>'+editBanner+
+      '<input id="pos-search" class="pos-search" placeholder="Rechercher un produit…" value="'+esc(st.posSearch||'')+'"/>'+'<button data-act="prixlibre" style="width:100%;margin:-2px 0 12px;padding:11px 14px;border-radius:10px;border:1px solid var(--gold);background:var(--gold-soft);color:var(--gold);font-size:14px;font-weight:600;cursor:pointer">+ Prix libre</button>'+'<div class="pgrid'+(posEditing()?' editing':'')+'">'+grid+'</div></div>'+
       '<div class="ticket"><div class="tk-head"><h3>Ticket</h3><span class="muted" style="font-size:12px">'+st.boutique+'</span><button class="tk-close" data-act="tkclose" title="Fermer">×</button></div>'+
       '<div class="tk-client">'+clientBox+rewardBox+'</div>'+
       '<div class="tk-lines">'+lines+'</div>'+
@@ -2362,8 +2448,10 @@ function setPayMode(m){ PAY_MODE=(m==='auto')?'auto':'manuel'; try{ localStorage
         st.view=_first||'moncompte';
       }
     }
+    if(st.view!=='pos')st.posEdit=false;
     view.innerHTML=(viewsMap[st.view]||viewDash)();
     wrapTables(view);
+    if(st.view==='pos'&&posEditing())posDragAttach();
     if(!window.__tblMo){try{window.__tblMo=new MutationObserver(function(){wrapTables(view);});window.__tblMo.observe(view,{childList:true,subtree:true});}catch(e){}}
     document.querySelectorAll('.nav-item').forEach(function(n){n.classList.toggle('active',n.getAttribute('data-view')===st.view);});
     $("#topTitle").textContent=titles[st.view]||'';
@@ -2851,9 +2939,10 @@ function setPayMode(m){ PAY_MODE=(m==='auto')?'auto':'manuel'; try{ localStorage
     if(a==='logout'){clearSession();st.user=null;st.client=null;st.cart=[];API.on=false;API.token='';render();return;}
     if(a==='closemodal'){if(ev.target.classList.contains('modal-backdrop')){closeModal();}else if(!el.classList.contains('modal-backdrop')){closeModal();}return;}
     if(a==='poscat'){st.cat=el.getAttribute('data-c');st.posSearch='';render();return;}
+    if(a==='posedit'){st.posEdit=!st.posEdit;render();return;}
     if(a==='prixlibre'){prixLibreModal();return;}
     if(a==='addlibre'){var _am=document.getElementById('pl-amount'),_lb=document.getElementById('pl-label');var _v=parseFloat(((_am&&_am.value)||'').replace(',','.'));if(!(_v>0)){toast('Montant invalide');if(_am)_am.focus();return;}_v=Math.round(_v*100)/100;var _n=((_lb&&_lb.value)||'').trim()||'Article divers';st.cart.push({name:_n,detail:'Prix libre',price:_v,productId:'libre',qty:1});closeModal();render();return;}
-    if(a==='pick'){var p=pById(el.getAttribute('data-id'));if(p.unit==='g')gramModal(p);else if(p.packs&&p.packs.length)packModal(p);else{st.cart.push({name:p.name,detail:'Unité',price:p.price,productId:p.id,qty:1});render();}return;}
+    if(a==='pick'){if(st.posEdit)return;var p=pById(el.getAttribute('data-id'));if(p.unit==='g')gramModal(p);else if(p.packs&&p.packs.length)packModal(p);else{st.cart.push({name:p.name,detail:'Unité',price:p.price,productId:p.id,qty:1});render();}return;}
     if(a==='rupture'){toast('⛔ Plus de stock — saisis du nouveau stock (page Stock grammes) avant de vendre ce produit.');return;}
     if(a==='rupturegram'){toast('⛔ Stock insuffisant pour cette quantité — réapprovisionne le produit.');return;}
     if(a==='addgram'){var pg=pById(el.getAttribute('data-id'));var g=+el.getAttribute('data-g');if(pg&&pg.unit==='g'&&g>totalStockG(pg)){toast('⛔ Stock insuffisant — réapprovisionne avant de vendre.');return;}var pr=+el.getAttribute('data-pr');st.cart.push({name:pg.name,detail:g+' g',price:pr,productId:pg.id,grams:g});closeModal();render();return;}

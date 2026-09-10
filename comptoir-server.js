@@ -137,6 +137,7 @@ function pruneRecentSales(){ const now = Date.now(); for (const k in recentSales
 // Les comptes boutique historiques (1 login = 1 boutique) restent inchanges ; ces comptes s'ajoutent par-dessus.
 let franchisees = {};   // { id: { id, name, email, boutiques:[bId], cred:{salt,hash}, mustChangePw, createdAt } }
 let sellers = {};       // { id: { id, name, email, boutiques:[bId], tabs:[onglet], cred, mustChangePw, createdBy, createdAt } }
+let posOrder = {};      // { boutiqueId: { categorie: [productId, ...] } } : ordre d'affichage de la caisse, PROPRE a chaque boutique
 const SELLER_TABS = ['dash','activite','pos','borne','commandes','challenge','produits','stock','fidelite','journal','factu','conformite','royalties','pro','ponts'];
 function cleanBoutiqueList(arr){ const out = []; (Array.isArray(arr) ? arr : []).forEach(function (x) { const id = String(x || '').trim().toLowerCase(); if (boutiques[id] && out.indexOf(id) < 0) out.push(id); }); return out; }
 function cleanTabList(arr){ const out = []; (Array.isArray(arr) ? arr : []).forEach(function (x) { const t = String(x || '').trim(); if (SELLER_TABS.indexOf(t) >= 0 && out.indexOf(t) < 0) out.push(t); }); return out; }
@@ -158,6 +159,7 @@ function refreshKindSessions(kindKey, uname, rec){
 // null = route commune (produits en lecture, sante, compte...) : les gardes de role existantes s'appliquent.
 function vendeurTabsForPath(method, p){
   if (p === '/api/my-boutique') return method === 'POST' ? [] : null;   // identite legale : jamais modifiable par un vendeur
+  if (p === '/api/pos-order') return ['pos'];                             // ordre d'affichage de la caisse
   if (p.indexOf('/api/royalties') === 0) return ['royalties'];
   if (p.indexOf('/api/journal') === 0) return ['journal', 'factu', 'conformite', 'activite'];
   if (p.indexOf('/api/factu/') === 0) return ['factu'];
@@ -713,7 +715,7 @@ function writeDataFileNow() {
   // Écriture ATOMIQUE : fichier temporaire puis renommage -> jamais de fichier tronqué en cas de coupure.
   // NB : fiscalKey n'est PLUS écrite ici (stockée à part, fichier protégé).
   const tmp = DATA_FILE + '.tmp';
-  fs.writeFileSync(tmp, JSON.stringify({ v: 1, savedAt: new Date().toISOString(), pointsPerEuro: POINTS_PER_EURO, hideBaseCatalog, customProducts, stock, boutiques, invoiceSeq, lastHash, invoices, orderSeq, orders, fiscalEvents, fiscalSeq, lastFiscalSig, clotureSeq, gtPerpetuel, gtPerpetuelAvoirs, seqByB, gtByB, gtAvoirsByB, royaltiesRates, royaltiesStatus, clotureSeqByB, supplyOrders, supplySeq, stockMoves, proRate, pontDevices, sessions, proProducts, lastProSync, proLots, proStock, proBuyPrice, proSellPrice, proStockPush, proBlock, proExtras, proRename, entreprise, adminCred, adminEmail, backupState, franchisees, sellers, royaltyInvoices, roySeq, royLastHash }), 'utf8');
+  fs.writeFileSync(tmp, JSON.stringify({ v: 1, savedAt: new Date().toISOString(), pointsPerEuro: POINTS_PER_EURO, hideBaseCatalog, customProducts, stock, boutiques, invoiceSeq, lastHash, invoices, orderSeq, orders, fiscalEvents, fiscalSeq, lastFiscalSig, clotureSeq, gtPerpetuel, gtPerpetuelAvoirs, seqByB, gtByB, gtAvoirsByB, royaltiesRates, royaltiesStatus, clotureSeqByB, supplyOrders, supplySeq, stockMoves, proRate, pontDevices, sessions, proProducts, lastProSync, proLots, proStock, proBuyPrice, proSellPrice, proStockPush, proBlock, proExtras, proRename, entreprise, adminCred, adminEmail, backupState, franchisees, sellers, royaltyInvoices, roySeq, royLastHash, posOrder }), 'utf8');
   fs.renameSync(tmp, DATA_FILE);
 }
 function persist() {
@@ -895,6 +897,7 @@ function loadPersisted() {
     if (Array.isArray(d.royaltyInvoices)) royaltyInvoices = d.royaltyInvoices;             // factures de redevance (scellees)
     if (typeof d.roySeq === 'number') roySeq = d.roySeq;
     if (typeof d.royLastHash === 'string') royLastHash = d.royLastHash;
+    if (d.posOrder && typeof d.posOrder === 'object') posOrder = d.posOrder;                  // ordre d'affichage caisse par boutique
     if (Array.isArray(d.proProducts)) { proProducts = d.proProducts; proProducts.forEach(ensureStock); }
     if (d.proLots && typeof d.proLots === 'object') proLots = d.proLots;
     if (d.entreprise && typeof d.entreprise === 'object') Object.assign(entreprise, d.entreprise);
@@ -2298,7 +2301,24 @@ const server = http.createServer(async (req, res) => {
         else { base.price = p.price; base.stockU = s ? s.units : 0; if (Array.isArray(p.packs) && p.packs.length) base.packs = p.packs; }
         return base;
       });
-      return send(res, 200, { boutique: bId, products });
+      return send(res, 200, { boutique: bId, products, posOrder: posOrder[bId] || {} });
+    }
+
+    // ---- Ordre d'affichage de la caisse (mode « rangement ») : PAR boutique, par gamme. ----
+    // Manager / franchise / vendeur (onglet caisse) : sa boutique active. Admin : la boutique choisie (defaut aix).
+    if (req.method === 'POST' && path === '/api/pos-order') {
+      if (user.role !== 'admin' && user.role !== 'manager') return send(res, 403, { error: 'Réservé au personnel' });
+      const b = await readJson(req);
+      const bId = user.role === 'admin' ? String((b && b.boutiqueId) || 'aix') : user.boutiqueId;
+      if (!boutiques[bId]) return send(res, 404, { error: 'Boutique inconnue' });
+      const cat = String((b && b.cat) || '').trim().slice(0, 60);
+      if (!cat || cat === 'Tout') return send(res, 400, { error: 'Choisis une gamme (pas « Tout »).' });
+      const ids = Array.isArray(b && b.ids) ? b.ids.map(String).filter((x, i, a) => x && a.indexOf(x) === i).slice(0, 500) : null;
+      if (!ids) return send(res, 400, { error: 'Liste de produits invalide' });
+      if (!posOrder[bId]) posOrder[bId] = {};
+      if (ids.length) posOrder[bId][cat] = ids; else delete posOrder[bId][cat];   // liste vide = retour a l'ordre du catalogue
+      persist();
+      return send(res, 200, { ok: true, boutique: bId, posOrder: posOrder[bId] });
     }
 
     // ---------------- Produits : photo, ajout, edition, suppression (admin) ----------------
@@ -2673,6 +2693,7 @@ const server = http.createServer(async (req, res) => {
       delete stock[id];                                                 // stock de la boutique
       delete seqByB[id]; delete gtByB[id]; delete gtAvoirsByB[id]; delete clotureSeqByB[id];   // compteurs fiscaux operationnels
       delete royaltiesRates[id]; delete royaltiesStatus[id];            // royalties
+      delete posOrder[id];                                                // ordre d'affichage caisse
       for (const t of Object.keys(sessions)) { if (sessions[t] && sessions[t].boutiqueId === id) delete sessions[t]; }  // revoquer les sessions du manager
       rebuildAccounts();                                                // supprime le compte manager de la boutique
       persist();
