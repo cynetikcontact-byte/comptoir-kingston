@@ -501,8 +501,15 @@ table.tbl tr:hover td{background:#faf9f5;}
 .pcard.pc-placeholder{opacity:.3;border-style:solid;background:#f4efe6;}
 .pc-ghost{border-radius:13px;background:#fff;}
 @media(max-width:860px){
-  .pos .cats{padding-right:92px;}
-  .pos-edit-btn{height:40px;padding:0 12px;font-size:12.5px;}
+  /* Telephone : la rangee des gammes defile (scroll horizontal) dans l'espace A GAUCHE du bouton,
+     qui occupe sa propre colonne : plus aucun onglet ne passe sous le bouton. */
+  .pos-left{display:grid;grid-template-columns:minmax(0,1fr) auto;column-gap:8px;align-items:start;}
+  .pos-left > *{grid-column:1 / -1;min-width:0;}
+  .pos .cats{grid-column:1;grid-row:1;padding-right:0;margin-right:0;}
+  .pos-left > .pos-edit-btn{position:static;grid-column:2;grid-row:1;height:38px;padding:0 12px;font-size:12.5px;}
+  /* petit degrade au bord droit de la bande tant qu'il reste des gammes a faire defiler (retire en fin de bande) */
+  .pos-left::before{content:'';grid-column:1;grid-row:1;justify-self:end;align-self:start;width:30px;height:38px;pointer-events:none;z-index:2;background:linear-gradient(to right,rgba(243,241,234,0),var(--paper) 75%);transition:opacity .15s;}
+  .pos-left.cats-end::before{opacity:0;}
   .pgrid.editing{gap:12px;}
   .pgrid.editing .pcard{padding-top:20px;}
 }
@@ -953,6 +960,13 @@ table.tbl tr:hover td{background:#faf9f5;}
       '<div id="dash-body"><div class="muted" style="padding:20px">Chargement…</div></div>';
   }
   function kpi(l,v,d){return '<div class="card kpi"><div class="lbl">'+l+'</div><div class="val">'+v+'</div>'+(d?'<div class="dlt">'+d+'</div>':'')+'</div>';}
+
+  // Telephone : la bande des gammes defile a gauche du bouton « Ordre » ; on masque le degrade du bord droit une fois au bout.
+  function posCatsFade(){ var c=document.querySelector('.pos .cats'); if(!c)return; var L=c.parentNode; if(L&&L.classList)L.classList.toggle('cats-end',c.scrollLeft+c.clientWidth>=c.scrollWidth-2); }
+  // ... et apres chaque rendu, la gamme active est ramenee dans la partie visible de la bande (au lieu de repartir au debut).
+  function posCatsReveal(){ var c=document.querySelector('.pos .cats'); if(!c||c.scrollWidth<=c.clientWidth+2)return; var on=c.querySelector('.cat.on'); if(!on)return; var x=on.getBoundingClientRect().left-c.getBoundingClientRect().left+c.scrollLeft; var t=x-(c.clientWidth-on.offsetWidth)/2; c.scrollLeft=Math.max(0,Math.min(t,c.scrollWidth-c.clientWidth)); }
+  document.addEventListener('scroll',function(e){ var t=e.target; if(t&&t.classList&&t.classList.contains('cats'))posCatsFade(); },true);
+  window.addEventListener('resize',function(){ posCatsFade(); });
 
   // ---------- Mode rangement de la caisse : glisser-deposer (souris ET doigt, via Pointer Events) ----------
   var PD=null;
@@ -2451,7 +2465,7 @@ function setPayMode(m){ PAY_MODE=(m==='auto')?'auto':'manuel'; try{ localStorage
     if(st.view!=='pos')st.posEdit=false;
     view.innerHTML=(viewsMap[st.view]||viewDash)();
     wrapTables(view);
-    if(st.view==='pos'&&posEditing())posDragAttach();
+    if(st.view==='pos'){ posCatsReveal(); posCatsFade(); if(posEditing())posDragAttach(); }
     if(!window.__tblMo){try{window.__tblMo=new MutationObserver(function(){wrapTables(view);});window.__tblMo.observe(view,{childList:true,subtree:true});}catch(e){}}
     document.querySelectorAll('.nav-item').forEach(function(n){n.classList.toggle('active',n.getAttribute('data-view')===st.view);});
     $("#topTitle").textContent=titles[st.view]||'';
