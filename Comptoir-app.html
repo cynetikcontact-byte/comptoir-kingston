@@ -459,6 +459,28 @@ table.tbl tr:hover td{background:#faf9f5;}
   .pgrid .pc-stock{font-size:10px;}
 }
 </style>
+<style id="kt-mobile-top-css">
+/* Barre du haut sur telephone : le bouton menu (burger) reste toujours visible et cliquable,
+   le selecteur de boutique / le filtre villes / la deconnexion se compriment a droite. */
+@media(max-width:860px){
+  .top{gap:8px;}
+  .top-l{flex:0 1 auto;min-width:42px;overflow:hidden;}
+  .hamburger{position:relative;z-index:60;flex:0 0 42px;}
+  .mbrand{min-width:0;overflow:hidden;}
+  .top-r{flex:1 1 auto;min-width:0;justify-content:flex-end;gap:6px;overflow:hidden;}
+  .boutique-sel,#kt-frbq-sel{flex:0 1 auto;min-width:0;max-width:42vw;}
+  #kt-city-wrap{min-width:0;margin-right:0;flex:0 1 auto;}
+  #kt-city-btn{max-width:38vw;overflow:hidden;text-overflow:ellipsis;font-size:12px;padding:8px 8px;}
+  .role-badge{flex:0 0 auto;}
+  #kt-logout{flex:0 0 auto;margin-left:0!important;padding:9px 10px!important;font-size:0!important;line-height:0!important;gap:0!important;}   /* icone seule (le bouton porte un style en ligne) */
+  #kt-logout svg{width:18px;height:18px;}
+  .boutique-sel,#kt-frbq-sel{max-width:52vw;}
+}
+@media(max-width:520px){
+  .mbrand{font-size:0;gap:0;}          /* la couronne seule, le mot KINGSTON n'a plus la place */
+  .mbrand svg{width:22px;height:17px;}
+}
+</style>
 </head>
 <body>
 <div id="app">
