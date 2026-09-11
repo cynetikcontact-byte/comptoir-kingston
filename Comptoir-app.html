@@ -2262,7 +2262,7 @@ function setPayMode(m){ PAY_MODE=(m==='auto')?'auto':'manuel'; try{ localStorage
     if(roy){
       var lbl='💳 Payer ma redevance · '+eur(Number(roy.ttc)||0);
       pay='<div style="margin-top:20px">'+(roy.payUrl?'<a class="btn btn-gold" href="'+esc(roy.payUrl)+'" target="_blank" rel="noopener" style="text-decoration:none;display:inline-block;padding:13px 24px;font-size:15px">'+lbl+'</a>':'<button class="btn btn-gold" data-act="pro-roy-pay" data-num="'+esc(roy.num)+'" style="padding:13px 24px;font-size:15px">'+lbl+'</button>')+'</div>'+
-        '<div class="muted" style="font-size:12.5px;margin-top:10px">Paiement sécurisé sur kingbase.fr (Base Camp). Le réassort se débloque tout seul dès le paiement : reviens ensuite sur cette page.</div>';
+        '<div class="muted" style="font-size:12.5px;margin-top:10px">Paiement sécurisé sur kingbase.fr : connecte-toi avec ton compte Base Camp (le même que pour le réassort). Le réassort se débloque tout seul dès le paiement : reviens ensuite sur cette page.</div>';
     }
     return '<div class="card" style="max-width:620px;margin:26px auto;padding:34px 30px;text-align:center">'+
       '<div style="font-size:46px;line-height:1">'+(roy?'⛔':'🔒')+'</div>'+
@@ -3557,7 +3557,7 @@ function setPayMode(m){ PAY_MODE=(m==='auto')?'auto':'manuel'; try{ localStorage
   function shiftYM(ym,delta){ var p=ym.split('-'); var d=new Date(+p[0],+p[1]-1+delta,1); return d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2); }
   function ymLabel(ym){ var p=ym.split('-'); return MO[+p[1]-1]+' '+p[0]; }
   function fmtDate(iso){ return iso? new Date(iso).toLocaleDateString('fr-FR',{day:'2-digit',month:'short'}):''; }
-  var BADGE={ a_payer:{t:'À régler',c:'#8a8077',b:'#f3efe7'}, declare:{t:'Virement déclaré',c:'#b07d10',b:'#fbf3df'}, valide:{t:'Réception validée',c:'#1a7f37',b:'#e7f6ec'} };
+  var BADGE={ a_payer:{t:'À régler',c:'#8a8077',b:'#f3efe7'}, declare:{t:'Virement déclaré',c:'#b07d10',b:'#fbf3df'}, valide:{t:'Paiement reçu',c:'#1a7f37',b:'#e7f6ec'} };
   function api(p,body){ return fetch(p,{method:body?'POST':'GET',headers:Object.assign({'x-comptoir-token':tok()},body?{'Content-Type':'application/json'}:{}),body:body?JSON.stringify(body):undefined}).then(function(r){return r.json().then(function(j){return {s:r.status,j:j};}).catch(function(){return {s:r.status,j:{}};});}); }
   function load(cb){ ST.loading=true; render(); Promise.all([api('/api/royalties?ym='+(ST.ym||curYM())), api('/api/royalties/invoices')]).then(function(rr){ var o=rr[0], oi=rr[1]; if(o.s===200){ST.data=o.j;ST.ym=o.j.ym;} if(oi.s===200){ST.invData=oi.j;} ST.loading=false; cb&&cb(); render(); }); }
   function act(p,body){ api(p,body).then(function(){ ST.editRate=null; load(); }); }
@@ -3570,7 +3570,7 @@ function setPayMode(m){ PAY_MODE=(m==='auto')?'auto':'manuel'; try{ localStorage
   function isPaidB(b){ return b.status==='valide' || !!(b.invoice && b.invoice.status==='reglee'); }
   function invByNum(num){ var l=(ST.invData&&ST.invData.invoices)||[]; for(var i=0;i<l.length;i++){ if(l[i].num===num) return l[i]; } return null; }
   function payBtn(inv, cls){ var lbl='💳 Payer ma redevance · '+euro2(inv.ttc); if(inv.pay&&inv.pay.state==='pending'&&inv.pay.url) return '<a class="'+(cls||'rpay')+'" href="'+esc2(inv.pay.url)+'" target="_blank" rel="noopener" data-act="kt-roy-paylink" data-num="'+esc2(inv.num)+'">'+lbl+'</a>'; return '<button class="'+(cls||'rpay')+'" data-act="kt-roy-pay" data-num="'+esc2(inv.num)+'">'+lbl+'</button>'; }
-  var LOGT={invoiced:'Facture émise',pay_created:'Lien de paiement créé',pay_error:'Paiement en ligne : erreur',paid:'Payée en ligne',paid_after_cancel:'Paiement reçu sur une facture annulée',pay_cancelled:'Lien de paiement fermé',pay_closed:'Commande fermée sur kingbase',pay_missing:'Commande kingbase introuvable',mail_invoice:'E-mail « facture »',mail_reminder:'Rappel envoyé',mail_missing:'Aucun e-mail pour la boutique',blocked:'Réassort bloqué',noblock_on:'Exception accordée',noblock_off:'Exception retirée',config:'Réglage',invoice_error:'Émission impossible'};
+  var LOGT={invoiced:'Facture émise',invoice_selfpay:'Facture émise au paiement',received:'Paiement reçu (confirmé)',unreceived:'Paiement reçu annulé',pay_created:'Lien de paiement créé',pay_error:'Paiement en ligne : erreur',paid:'Payée en ligne',paid_after_cancel:'Paiement reçu sur une facture annulée',pay_cancelled:'Lien de paiement fermé',pay_closed:'Commande fermée sur kingbase',pay_missing:'Commande kingbase introuvable',mail_invoice:'E-mail « facture »',mail_reminder:'Rappel envoyé',mail_missing:'Aucun e-mail pour la boutique',blocked:'Réassort bloqué',noblock_on:'Exception accordée',noblock_off:'Exception retirée',config:'Réglage',invoice_error:'Émission impossible'};
   function invFor(bId){ var d=ST.invData; if(!d||!d.invoices) return null; var ym=ST.ym||curYM(); var f=null; d.invoices.forEach(function(r){ if(r.type==='facture'&&r.boutiqueId===bId&&r.ym===ym&&r.status!=='annulee'&&!f) f=r; }); return f; }
   function invStatusTag(r){
     if(r.type==='avoir') return '<span class="rtag avoir">Avoir sur '+esc2(r.avoirDe||'')+'</span>';
@@ -3642,21 +3642,41 @@ function setPayMode(m){ PAY_MODE=(m==='auto')?'auto':'manuel'; try{ localStorage
     });
   }
   function pipe(status){ var steps=['a_payer','declare','valide'],labs=['À régler','Déclaré','Validé'],idx=steps.indexOf(status); var h='<div class="rpipe">'; for(var i=0;i<3;i++){ var on=i<=idx; var col=on?(i===2?'#1a7f37':'#b5872f'):'#d8d0c2'; h+='<span class="rpd" style="background:'+(on?col:'#fff')+';border-color:'+col+'"></span><span class="rpl" style="color:'+(on?'#3a342c':'#bcb3a4')+'">'+labs[i]+'</span>'; if(i<2){ h+='<span class="rpb" style="background:'+(i<idx?'#b5872f':'#e6e0d6')+'"></span>'; } } return h+'</div>'; }
-  function legacyAction(b, view){ var s=b.status;
+  function legacyAction(b, view){ var s=b.status, ym=ST.ym||curYM();
     if(view==='franchise'){
-      if(s==='a_payer') return '<button class="rbtn gold" data-act="kt-roy-declare" data-id="'+b.id+'">J’ai effectué mon virement</button>';
+      if(s==='a_payer'){
+        if(!(b.royalty>0)) return '<div class="rbox info">Aucune redevance à régler pour ce mois.</div>';
+        if(b.selfPay) return '<button class="rpay" data-act="kt-roy-pay" data-id="'+esc2(b.id)+'" data-ym="'+esc2(ym)+'">💳 Payer ma redevance · '+euro2(b.ttcDue)+'</button>'
+          +'<div class="rnote">Paiement sécurisé sur kingbase.fr : connecte-toi avec ton compte Base Camp (le même que pour le réassort). La facture est émise au moment du paiement ; reviens ensuite ici : la redevance passe « réglée » toute seule.</div>'
+          +'<button class="rbtn link" data-act="kt-roy-declare" data-id="'+esc2(b.id)+'">J’ai déjà payé par virement</button>';
+        return '<button class="rbtn gold" data-act="kt-roy-declare" data-id="'+b.id+'">J’ai effectué mon virement</button>';
+      }
       if(s==='declare') return '<div class="rnote" style="border:1px solid #f0e2bd;background:#fbf3df;border-radius:11px;padding:12px"><b style="color:#b07d10">Virement déclaré</b><br>En attente de validation · '+fmtDate(b.declaredAt)+'</div>';
       return '<div class="rnote" style="border:1px solid #bfe6cb;background:#e7f6ec;border-radius:11px;padding:12px"><b style="color:#1a7f37">✓ Réception confirmée</b><br>Validé le '+fmtDate(b.validatedAt)+'</div>';
     }
-    if(s==='a_payer') return '<span class="rnote">En attente du virement</span><button class="rbtn" data-act="kt-roy-validate" data-id="'+b.id+'">Marquer comme reçu</button>';
-    if(s==='declare') return '<span class="rnote" style="color:#b07d10">Virement déclaré · '+fmtDate(b.declaredAt)+'</span><button class="rbtn gold" data-act="kt-roy-validate" data-id="'+b.id+'">Valider la réception</button><button class="rbtn link" data-act="kt-roy-reset" data-id="'+b.id+'">Annuler la déclaration</button>';
-    return '<span class="rnote" style="color:#1a7f37"><b>✓ Validé le '+fmtDate(b.validatedAt)+'</b></span><button class="rbtn link" data-act="kt-roy-cancel" data-id="'+b.id+'">Annuler la validation</button>';
+    if(s==='a_payer'){
+      if(!(b.royalty>0)) return '<span class="rnote">Rien à régler ce mois-ci</span>';
+      return '<span class="rnote">'+(b.selfPay?'En attente du paiement · le franchisé peut payer en ligne depuis son KINGTOOLS':'En attente du paiement')+'</span>'+recvBlock(b);
+    }
+    if(s==='declare') return '<span class="rnote" style="color:#b07d10">Virement déclaré · '+fmtDate(b.declaredAt)+'</span>'+recvBlock(b)+'<button class="rbtn link" data-act="kt-roy-reset" data-id="'+b.id+'">Annuler la déclaration</button>';
+    return '<span class="rnote" style="color:#1a7f37"><b>✓ Paiement reçu le '+fmtDate(b.validatedAt)+'</b></span><button class="rbtn link" data-act="kt-roy-unrecv" data-id="'+b.id+'">Annuler</button>';
+  }
+  // « ✅ Paiement reçu » (franchiseur) : confirmation dans la carte, sans boîte de dialogue. Aucun e-mail au franchisé.
+  function recvBlock(b, style){
+    if(ST.rc!==b.id) return style==='link' ? '<button class="rbtn link" data-act="kt-roy-recv" data-id="'+esc2(b.id)+'">Paiement déjà reçu ?</button>' : '<button class="rbtn gold" data-act="kt-roy-recv" data-id="'+esc2(b.id)+'">✅ Paiement reçu</button>';
+    var inv=b.invoice, ym=ST.ym||curYM(), nxt=shiftYM(ym,1);
+    var what = inv ? ('La facture '+esc2(inv.num)+' passera « réglée »'+(inv.pay&&inv.pay.state==='pending'?' et le lien de paiement kingbase sera fermé':'')+'.')
+      : (b.closed ? 'La facture de '+ymLabel(ym)+' sera émise directement « réglée ».' : 'La facture du 1er '+monthOf(nxt)+' sortira déjà « réglée », sans lien de paiement ni e-mail.');
+    return '<div class="rbox info" style="text-align:left"><b>Confirmer : paiement reçu</b><br>'+esc2(b.label)+' · '+ymLabel(ym)+' · <b>'+euro2(inv?inv.ttc:b.ttcDue)+' TTC</b>'+(inv||b.closed?'':' (montant définitif au 1er)')+'<br>'+what+' Le franchisé ne reçoit pas d’e-mail.'
+      +(ST.rcErr?'<div class="rerr">'+esc2(ST.rcErr)+'</div>':'')
+      +'<div class="rline" style="margin-top:8px"><button class="rsmall gold" data-act="kt-roy-recv-go" data-id="'+esc2(b.id)+'">Confirmer</button><button class="rbtn link" data-act="kt-roy-recv-cancel">annuler</button></div></div>';
   }
   // Colonne d'action d'une boutique : paiement EN LIGNE (regime automatique) ou ancien fonctionnement par virement.
   function onlineMode(b){ return b.invoice ? b.invoice.payMode==='en_ligne' : !!b.autoApplies; }
   function badgeFor(b){
     if(!onlineMode(b)) return BADGE[b.status]||BADGE.a_payer;
     if(isPaidB(b)) return (b.invoice&&b.invoice.pay&&b.invoice.pay.state==='paid')?{t:'Payée en ligne',c:'#1a7f37',b:'#e7f6ec'}:{t:'Réglée',c:'#1a7f37',b:'#e7f6ec'};
+    if(!b.invoice&&b.status==='declare') return {t:'Virement déclaré',c:'#b07d10',b:'#fbf3df'};
     if(b.invoice&&b.invoice.overdue) return {t:(b.invoice.noBlock?'En retard · exception':'En retard · réassort bloqué'),c:'#b4452f',b:'#fdeae5'};
     if(b.invoice) return {t:'À payer en ligne',c:'#b07d10',b:'#fbf3df'};
     return (ST.ym||curYM())>=curYM()?{t:'Mois en cours',c:'#8a8077',b:'#f3efe7'}:{t:'Sans facture',c:'#8a8077',b:'#f3efe7'};
@@ -3668,6 +3688,11 @@ function setPayMode(m){ PAY_MODE=(m==='auto')?'auto':'manuel'; try{ localStorage
     return h+'</div>';
   }
   function actionHtml(b, admin, view){
+    var h0=actionHtml0(b, admin, view);
+    if(view!=='franchise' && ST.rcWarn && ST.rcWarn.id===b.id) h0='<div class="rbox bad" style="font-size:12px">'+esc2(ST.rcWarn.msg)+'</div>'+h0;
+    return h0;
+  }
+  function actionHtml0(b, admin, view){
     var inv=b.invoice, a=autoCfg()||{}, ym=ST.ym||curYM(), nxt=shiftYM(ym,1);
     var online = inv ? inv.payMode==='en_ligne' : !!b.autoApplies;
     if(view==='franchise'){
@@ -3675,18 +3700,20 @@ function setPayMode(m){ PAY_MODE=(m==='auto')?'auto':'manuel'; try{ localStorage
         var pd=(inv.pay&&inv.pay.state==='paid')?('Réglée en ligne le '+fmtD2(inv.pay.paidAt)):('Validée le '+fmtD2(b.validatedAt||inv.regleeAt));
         return '<div class="rbox ok"><b>✓ Redevance réglée</b><br>'+pd+'. Merci !</div>';
       }
-      if(inv && inv.status==='emise' && !online && b.status==='declare') return legacyAction(b, view);
+      if(inv && inv.status==='emise' && !b.autoApplies && b.status==='declare') return legacyAction(b, view);
       if(inv && inv.status==='emise'){
         var h='';
         if(inv.overdue && !inv.noBlock) h+='<div class="rbox bad"><b>⛔ Échéance dépassée ('+fmtD2(inv.echeance)+')</b><br>Ton réassort pro est bloqué. Il se débloque automatiquement dès le paiement.</div>';
         else if(inv.overdue) h+='<div class="rbox warn"><b>Échéance dépassée ('+fmtD2(inv.echeance)+')</b><br>Merci de régler au plus vite.</div>';
-        else h+='<div class="rbox warn"><b>À régler avant le '+fmtD2(inv.echeance)+(online?' à 23 h 59':'')+'</b>'+(online&&a.enabled&&a.block?'<br>Passé cette date, le réassort pro est bloqué jusqu’au paiement.':'')+'</div>';
+        else h+='<div class="rbox warn"><b>À régler avant le '+fmtD2(inv.echeance)+(b.autoApplies?' à 23 h 59':'')+'</b>'+(b.autoApplies&&a.enabled&&a.block?'<br>Passé cette date, le réassort pro est bloqué jusqu’au paiement.':'')+'</div>';
         h+=payBtn(inv);
-        h+='<div class="rnote">Paiement sécurisé sur kingbase.fr (Base Camp). Reviens ensuite ici : la redevance passe « réglée » toute seule.</div>';
-        if(!online) h+='<button class="rbtn link" data-act="kt-roy-declare" data-id="'+esc2(b.id)+'">J’ai déjà payé par virement</button>';
+        h+='<div class="rnote">Paiement sécurisé sur kingbase.fr : connecte-toi avec ton compte Base Camp (le même que pour le réassort). Reviens ensuite ici : la redevance passe « réglée » toute seule.</div>';
+        if(!b.autoApplies) h+='<button class="rbtn link" data-act="kt-roy-declare" data-id="'+esc2(b.id)+'">J’ai déjà payé par virement</button>';
         return h;
       }
       if(b.autoApplies){
+        if(b.status==='declare') return '<div class="rbox warn"><b>Virement déclaré le '+fmtDate(b.declaredAt)+'</b><br>En attente de validation par le réseau. La facture de '+ymLabel(ym)+' sortira le 1er '+monthOf(nxt)+'.</div>';
+        if(b.status==='valide') return '<div class="rbox ok"><b>✓ Réception confirmée</b><br>Validée le '+fmtDate(b.validatedAt)+'. La facture de '+ymLabel(ym)+' sortira déjà réglée.</div>';
         if(ym>=curYM()) return '<div class="rbox info"><b>Facture automatique le 1er '+monthOf(nxt)+'</b><br>Tu la recevras par e-mail avec le bouton de paiement, à régler avant le '+(a.dueDay||7)+' '+monthOf(nxt)+' à 23 h 59.</div>';
         return '<div class="rbox info">Aucune redevance à régler pour ce mois.</div>';
       }
@@ -3697,24 +3724,26 @@ function setPayMode(m){ PAY_MODE=(m==='auto')?'auto':'manuel'; try{ localStorage
       var g='';
       if(inv.overdue && !inv.noBlock) g+='<div class="rbox bad"><b>⛔ En retard depuis le '+fmtD2(inv.echeance)+'</b><br>Réassort pro bloqué automatiquement.</div>';
       else if(inv.overdue) g+='<div class="rbox warn"><b>En retard ('+fmtD2(inv.echeance)+')</b><br>Exception : réassort non bloqué'+(b.noBlock&&b.noBlock.motif?' — '+esc2(b.noBlock.motif):'')+'.</div>';
-      else if(online) g+='<div class="rbox warn"><b>💳 Paiement en ligne en attente</b><br>Échéance le '+fmtD2(inv.echeance)+' à 23 h 59'+(inv.pay&&inv.pay.orderId?' · commande kingbase n° '+esc2(inv.pay.orderId):'')+'</div>';
+      else if(online) g+='<div class="rbox warn"><b>💳 Paiement en ligne en attente</b><br>Échéance le '+fmtD2(inv.echeance)+(b.autoApplies?' à 23 h 59':'')+(inv.pay&&inv.pay.orderId?' · commande kingbase n° '+esc2(inv.pay.orderId):'')+'</div>';
       else g+='<div class="rbox info"><b>Facture émise</b><br>Échéance le '+fmtD2(inv.echeance)+(b.status==='declare'?' · virement déclaré le '+fmtDate(b.declaredAt):'')+'</div>';
       if(inv.payError && !(inv.pay&&inv.pay.state==='pending')) g+='<div class="rbox bad" style="font-size:12px">Lien de paiement non créé : '+esc2(inv.payError)+'</div>';
+      g+=recvBlock(b);
       if(inv.pay && inv.pay.state==='pending' && inv.pay.url) g+='<button class="rbtn" data-act="kt-roy-copy" data-url="'+esc2(inv.pay.url)+'">Copier le lien de paiement</button>';
       else g+='<button class="rbtn" data-act="kt-roy-pay" data-num="'+esc2(inv.num)+'" data-admin="1">Créer le lien de paiement</button>';
-      if(online && a.enabled && a.block){
+      if(b.autoApplies && a.enabled && a.block){
         if(ST.nb && ST.nb.id===b.id) g+='<div class="rinv" style="margin-top:0"><input class="rgmot" style="min-width:0;width:100%;box-sizing:border-box" id="kt-roy-nb-motif" placeholder="Motif de l’exception (accord, litige…)"/><div class="rline" style="margin-top:8px"><button class="rsmall gold" data-act="kt-roy-noblock-go" data-id="'+esc2(b.id)+'">Ne pas bloquer</button><button class="rbtn link" data-act="kt-roy-noblock-cancel">annuler</button></div></div>';
         else if(b.noBlock) g+='<button class="rbtn link" data-act="kt-roy-noblock" data-id="'+esc2(b.id)+'" data-on="0">Rétablir le blocage automatique</button>';
         else g+='<button class="rbtn link" data-act="kt-roy-noblock" data-id="'+esc2(b.id)+'" data-on="1">Ne pas bloquer ce mois-ci (exception)</button>';
       }
-      g+='<button class="rbtn link" data-act="kt-roy-validate" data-id="'+esc2(b.id)+'">Payée autrement : marquer comme reçue</button>';
       return g;
     }
     if(inv && isPaidB(b)){
       if(inv.pay && inv.pay.state==='paid') return '<div class="rbox ok"><b>✓ Payée en ligne le '+fmtD2(inv.pay.paidAt)+'</b><br>kingbase.fr · commande n° '+esc2(inv.pay.orderId)+(inv.pay.method?' · '+esc2(inv.pay.method):'')+'</div>';
-      return '<span class="rnote" style="color:#1a7f37"><b>✓ Validé le '+fmtDate(b.validatedAt||inv.regleeAt)+'</b></span>'+(b.status==='valide'?'<button class="rbtn link" data-act="kt-roy-cancel" data-id="'+esc2(b.id)+'">Annuler la validation</button>':'');
+      return '<div class="rbox ok"><b>✓ Paiement reçu le '+fmtD2(b.validatedAt||inv.regleeAt)+'</b><br>Facture '+esc2(inv.num)+' réglée'+(inv.regleePar?' · '+esc2(inv.regleePar):'')+'</div><button class="rbtn link" data-act="kt-roy-unrecv" data-id="'+esc2(b.id)+'">Annuler</button>';
     }
-    if(b.autoApplies && ym>=curYM()) return '<div class="rbox info"><b>Facture automatique le 1er '+monthOf(nxt)+' à '+(a.invoiceHour||6)+' h</b><br>Lien de paiement envoyé au franchisé · échéance le '+(a.dueDay||7)+' '+monthOf(nxt)+'.</div>';
+    if(b.autoApplies && b.status==='declare') return '<div class="rbox warn"><b>Virement déclaré le '+fmtDate(b.declaredAt)+'</b><br>Si tu l’as bien reçu, confirme-le avant le 1er '+monthOf(nxt)+' : la facture sortira alors déjà réglée, sans lien de paiement.</div>'+recvBlock(b)+'<button class="rbtn link" data-act="kt-roy-reset" data-id="'+esc2(b.id)+'">Annuler la déclaration</button>';
+    if(b.autoApplies && b.status==='valide') return '<div class="rbox ok"><b>✓ Paiement reçu le '+fmtDate(b.validatedAt)+'</b><br>La facture du 1er '+monthOf(nxt)+' sortira déjà réglée, sans lien ni e-mail.</div><button class="rbtn link" data-act="kt-roy-unrecv" data-id="'+esc2(b.id)+'">Annuler</button>';
+    if(b.autoApplies && ym>=curYM()) return '<div class="rbox info"><b>Facture automatique le 1er '+monthOf(nxt)+' à '+(a.invoiceHour||6)+' h</b><br>Lien de paiement envoyé au franchisé · échéance le '+(a.dueDay||7)+' '+monthOf(nxt)+'.</div>'+(b.royalty>0?recvBlock(b,'link'):'');
     return legacyAction(b, view);
   }
   // Bandeau ADMIN : fonctionnement automatique + reglages, apercu et journal.
@@ -3788,8 +3817,6 @@ function setPayMode(m){ PAY_MODE=(m==='auto')?'auto':'manuel'; try{ localStorage
       if(f.motif) s+='<div class="rmotif">Base ajustée : '+euro2(f.baseRetenue)+' (CA calculé '+euro2(f.baseAuto)+') — '+esc2(f.motif)+'</div>';
       s+='<div class="rline" style="margin-top:8px"><button class="rsmall" data-act="kt-roy-inv-print" data-num="'+esc2(f.num)+'">Facture (PDF)</button><button class="rsmall" data-act="kt-roy-inv-fx" data-num="'+esc2(f.num)+'">Factur-X</button>';
       if(canAdm){
-        if(f.status==='emise') s+='<button class="rsmall gold" data-act="kt-roy-inv-regle" data-num="'+esc2(f.num)+'">Marquer réglée</button>';
-        else if(f.status==='reglee') s+='<button class="rbtn link" data-act="kt-roy-inv-unregle" data-num="'+esc2(f.num)+'">repasser à « émise »</button>';
         s+='<button class="rbtn link" data-act="kt-roy-inv-avoir" data-num="'+esc2(f.num)+'">annuler (avoir)</button>';
       }
       s+='</div>';
@@ -3900,18 +3927,18 @@ function setPayMode(m){ PAY_MODE=(m==='auto')?'auto':'manuel'; try{ localStorage
     if(a==='kt-roy-avoir-go'){ var am2=document.getElementById('kt-roy-amotif'); var mv=(am2&&am2.value||'').trim();
       api('/api/royalties/invoice/avoir',{num:num,motif:mv}).then(function(o){ if(o.s>=200&&o.s<300){ ST.avoir=null; load(); } else { if(ST.avoir){ST.avoir.err=(o.j&&o.j.error)||'Erreur inconnue.';} render(); } });
       return; }
-    if(a==='kt-roy-view'){ ST.view=t.getAttribute('data-v'); ST.editRate=null; ST.gen=null; ST.avoir=null; ST.adj=null; ST.nb=null; render(); return; }
+    if(a==='kt-roy-view'){ ST.view=t.getAttribute('data-v'); ST.editRate=null; ST.gen=null; ST.avoir=null; ST.adj=null; ST.nb=null; ST.rc=null; render(); return; }
     if(a==='kt-roy-detail'){ if(ST.detail&&ST.detail.id===id&&ST.detail.ym===ym){ST.detail=null;render();return;} api('/api/royalties/detail?ym='+ym+'&boutique='+encodeURIComponent(id)).then(function(o){ if(o.s===200){ ST.detail={id:id,ym:ym,data:o.j}; render(); } }); return; }
     if(a==='kt-roy-detail-close'){ ST.detail=null; render(); return; }
-    if(a==='kt-roy-prev'){ ST.ym=shiftYM(ym,-1); ST.data=null; ST.detail=null; ST.gen=null; ST.avoir=null; ST.adj=null; load(); return; }
-    if(a==='kt-roy-next'){ ST.ym=shiftYM(ym,1); ST.data=null; ST.detail=null; ST.gen=null; ST.avoir=null; ST.adj=null; load(); return; }
-    if(a==='kt-roy-cur'){ ST.ym=curYM(); ST.data=null; ST.detail=null; ST.gen=null; ST.avoir=null; ST.adj=null; load(); return; }
+    if(a==='kt-roy-prev'){ ST.ym=shiftYM(ym,-1); ST.data=null; ST.detail=null; ST.gen=null; ST.avoir=null; ST.adj=null; ST.rc=null; ST.rcWarn=null; load(); return; }
+    if(a==='kt-roy-next'){ ST.ym=shiftYM(ym,1); ST.data=null; ST.detail=null; ST.gen=null; ST.avoir=null; ST.adj=null; ST.rc=null; ST.rcWarn=null; load(); return; }
+    if(a==='kt-roy-cur'){ ST.ym=curYM(); ST.data=null; ST.detail=null; ST.gen=null; ST.avoir=null; ST.adj=null; ST.rc=null; ST.rcWarn=null; load(); return; }
     if(a==='kt-roy-rate-edit'){ ST.editRate=id; render(); var i=document.getElementById('kt-roy-rin'); if(i)i.focus(); return; }
     if(a==='kt-roy-rate-save'){ var inp=document.getElementById('kt-roy-rin'); var rate=Math.max(0,Math.min(100,Number(inp&&inp.value)||0)); act('/api/royalties/rate',{boutiqueId:id,rate:rate}); return; }
     if(a==='kt-roy-declare'){ act('/api/royalties/declare',{ym:ym,boutiqueId:id}); return; }
     if(a==='kt-roy-pay'){
       var isAdm=t.getAttribute('data-admin')==='1'; var w=isAdm?null:window.open('about:blank','_blank'); t.disabled=true;
-      api('/api/royalties/pay',{num:num}).then(function(o){
+      api('/api/royalties/pay', num?{num:num}:{ym:t.getAttribute('data-ym')||ym, boutiqueId:id}).then(function(o){
         if(o.s===200&&o.j&&o.j.url){ if(w){ try{ w.location.href=o.j.url; }catch(e){ window.open(o.j.url,'_blank'); } } load(); }
         else { if(w){ try{ w.close(); }catch(e){} } t.disabled=false; alert((o.j&&o.j.error)||'Paiement en ligne indisponible pour le moment.'); load(); }
       });
@@ -3925,8 +3952,12 @@ function setPayMode(m){ PAY_MODE=(m==='auto')?'auto':'manuel'; try{ localStorage
     if(a==='kt-roy-auto-enabled'){ api('/api/royalties/auto',{enabled:!!t.checked}).then(function(){ load(); loadAuto(); }); return; }
     if(a==='kt-roy-auto-block'){ api('/api/royalties/auto',{block:!!t.checked}).then(function(){ load(); loadAuto(); }); return; }
     if(a==='kt-roy-auto-run'){ t.disabled=true; api('/api/royalties/auto/run',{}).then(function(o){ var r=(o.j&&o.j.result)||{}; ST.autoRun='Vérifié '+fmtDT(r.at)+' : '+(r.paid||[]).length+' paiement(s) détecté(s), '+(r.invoiced||[]).length+' facture(s) émise(s), '+(r.payOrders||[]).length+' lien(s) créé(s)'+((r.errors||[]).length?' · '+r.errors.length+' erreur(s)':''); load(); loadAuto(); }); return; }
-    if(a==='kt-roy-goto'){ ST.ym=t.getAttribute('data-ym'); ST.data=null; ST.detail=null; ST.gen=null; ST.avoir=null; ST.adj=null; load(); return; }
+    if(a==='kt-roy-goto'){ ST.ym=t.getAttribute('data-ym'); ST.data=null; ST.detail=null; ST.gen=null; ST.avoir=null; ST.adj=null; ST.rc=null; ST.rcWarn=null; load(); return; }
     if(a==='kt-roy-validate'){ act('/api/royalties/status',{ym:ym,boutiqueId:id,status:'valide'}); return; }
+    if(a==='kt-roy-recv'){ ST.rc=id; ST.rcErr=null; ST.rcWarn=null; render(); return; }
+    if(a==='kt-roy-recv-cancel'){ ST.rc=null; ST.rcErr=null; render(); return; }
+    if(a==='kt-roy-recv-go'){ t.disabled=true; api('/api/royalties/received',{ym:ym,boutiqueId:id}).then(function(o){ if(o.s!==200){ ST.rcErr=(o.j&&o.j.error)||'Impossible pour le moment.'; t.disabled=false; render(); return; } ST.rc=null; ST.rcErr=null; ST.rcWarn=(o.j&&o.j.warning)?{id:id,msg:o.j.warning}:null; load(); }); return; }
+    if(a==='kt-roy-unrecv'){ ST.rcWarn=null; act('/api/royalties/received',{ym:ym,boutiqueId:id,on:false}); return; }
     if(a==='kt-roy-cancel'){ act('/api/royalties/status',{ym:ym,boutiqueId:id,status:'declare'}); return; }
     if(a==='kt-roy-reset'){ act('/api/royalties/status',{ym:ym,boutiqueId:id,status:'a_payer'}); return; }
   }

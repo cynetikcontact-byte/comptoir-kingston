@@ -1576,6 +1576,73 @@ function royWithin(promise, ms){ return Promise.race([promise, new Promise(funct
 
 // ---- Emission d'une facture de redevance (manuelle ou automatique) ----
 // opts : { ym, bId, base?, montant?, motif?, by, auto? } -> { status, invoice, rec } ou { status, error, code }
+// Mois deja valide a la main (virement recu) au moment ou la facture sort : la facture est emise « reglee »,
+// sans commande de paiement ni e-mail « a regler ».
+function royMarkIssuedAsPaid(inv){
+  var rec = royaltiesRec(inv.ym, inv.boutiqueId);
+  inv.status = 'reglee'; inv.regleeAt = rec.validatedAt || new Date().toISOString(); inv.regleePar = 'Réception validée avant l\'émission de la facture';
+  logFiscalEvent('ROYALTIES_REGLEMENT', inv.boutiqueId, { numero: inv.num, statut: 'reglee', par: 'réception déjà validée', validee: rec.validatedAt || null });
+  persist();
+}
+// Mois de Paris en cours (AAAA-MM) : un mois ne se facture / ne se paie qu'une fois termine.
+function royCurrentYm(nowMs){ return parisParts(nowMs || Date.now()).ym; }
+function royTtcOf(ht){ var t = Math.round((Number(ht) || 0) * 0.20 * 100) / 100; return Math.round(((Number(ht) || 0) + t) * 100) / 100; }
+// PAIEMENT DIRECT par le franchise d'un mois deja du, SANS facture (redevances d'avant le regime automatique) —
+// decision Lenny 11/09/2026 : bouton « Payer ma redevance » dans son KINGTOOLS, la facture est emise au clic, pas d'e-mail.
+function roySelfPayCheck(user, ym, bId){
+  if (!/^\d{4}-\d{2}$/.test(ym)) return { status: 400, error: 'Mois invalide (AAAA-MM).' };
+  if (!boutiques[bId]) return { status: 404, error: 'Boutique inconnue.' };
+  var al = royAllowedBoutiques(user); if (al !== null && al.indexOf(bId) < 0) return { status: 403, error: 'Hors de vos boutiques.' };
+  if (royActiveInvoice(bId, ym)) return { ok: true };   // facture deja emise : on reprend son lien de paiement
+  if (!(ym < royCurrentYm())) return { status: 400, code: 'MOIS_EN_COURS', error: 'Le mois n\'est pas terminé : la redevance se règlera une fois le mois clos.' };
+  if (royAutoApplies(ym)) return { status: 409, code: 'AUTO', error: 'La facture de ce mois est émise automatiquement le 1er à ' + royAuto.invoiceHour + ' h : le bouton de paiement apparaîtra à ce moment-là.' };
+  var rec = royaltiesRec(ym, bId);
+  if (rec.status === 'valide') return { status: 409, code: 'PAID', error: 'Cette redevance est déjà réglée.' };
+  if (rec.status === 'declare' && user.role !== 'admin') return { status: 409, code: 'DECLARE', error: 'Tu as déclaré un virement pour ce mois : il est en attente de validation par le réseau.' };
+  if (!(royaltiesAmount(ym, bId).ht > 0)) return { status: 400, code: 'ZERO', error: 'Aucune redevance à régler pour ce mois.' };
+  return { ok: true };
+}
+// « ✅ Paiement reçu » (admin) — decision Lenny 11/09/2026 : la redevance a ete encaissee hors paiement en ligne (virement...).
+//  - mois termine sans facture -> la facture ROY est emise directement « reglee » (piece comptable pour chaque paiement) ;
+//  - facture ouverte -> « reglee » + lien de paiement kingbase ferme ;
+//  - mois en cours -> la facture du 1er sortira deja reglee (voir royAutoTick). Aucun e-mail au franchise.
+function royReceive(ym, bId, by){
+  if (!/^\d{4}-\d{2}$/.test(ym)) return { status: 400, error: 'Mois invalide (AAAA-MM).' };
+  if (!boutiques[bId]) return { status: 404, error: 'Boutique inconnue.' };
+  var inv = royActiveInvoice(bId, ym);
+  if (inv && inv.pay && inv.pay.state === 'paid') return { status: 409, code: 'PAID_ONLINE', error: 'Déjà payée en ligne (commande kingbase n° ' + inv.pay.orderId + ').' };
+  var now = new Date().toISOString(), issued = null, warning = null;
+  royaltiesSetStatus(ym, bId, { status: 'valide', validatedAt: now, paidOnline: null, received: { by: by, at: now } });
+  if (!inv && ym < royCurrentYm() && royaltiesAmount(ym, bId).ht > 0) {
+    var r = royIssueInvoice({ ym: ym, bId: bId, by: by });
+    if (r.status === 201) { inv = r.rec; issued = inv.num; }
+    else warning = 'Paiement enregistré, mais la facture n\'a pas pu être émise : ' + r.error;
+  }
+  if (inv && inv.status === 'emise') {
+    inv.status = 'reglee'; inv.regleeAt = now; inv.regleePar = by + ' (paiement reçu)'; inv.regleeVia = 'recu';
+    logFiscalEvent('ROYALTIES_REGLEMENT', bId, { numero: inv.num, statut: 'reglee', par: by, mode: 'paiement reçu (hors paiement en ligne)', emiseReglee: issued === inv.num });
+    royCancelPayOrder(inv, 'paiement reçu, confirmé par ' + by).catch(function(){});
+  }
+  royLog('received', inv || { num: null, boutiqueId: bId, ym: ym }, 'confirmé par ' + by + (issued ? ' · facture ' + issued + ' émise réglée' : (inv ? ' · facture ' + inv.num + ' réglée' : (ym < royCurrentYm() ? ' · rien à facturer' : ' · la facture du 1er sortira réglée'))));
+  persist();
+  return { status: 200, ok: true, issued: issued, warning: warning, invoice: inv ? royPublicView(inv) : null };
+}
+// Annulation d'un « Paiement reçu » : retour a « a regler » (ou « virement declare » s'il y en avait un), facture repassee « emise ».
+function royUnreceive(ym, bId, by){
+  if (!/^\d{4}-\d{2}$/.test(ym)) return { status: 400, error: 'Mois invalide (AAAA-MM).' };
+  if (!boutiques[bId]) return { status: 404, error: 'Boutique inconnue.' };
+  var inv = royActiveInvoice(bId, ym);
+  if (inv && inv.pay && inv.pay.state === 'paid') return { status: 409, code: 'PAID_ONLINE', error: 'Payée en ligne sur kingbase.fr : pour revenir en arrière, rembourse la commande puis émets un avoir.' };
+  var rec = royaltiesRec(ym, bId);
+  royaltiesSetStatus(ym, bId, { status: rec.declaredAt ? 'declare' : 'a_payer', validatedAt: null, paidOnline: null, received: null });
+  if (inv && inv.status === 'reglee') {
+    inv.status = 'emise'; inv.regleeAt = null; inv.regleePar = null; inv.regleeVia = null;
+    logFiscalEvent('ROYALTIES_REGLEMENT', bId, { numero: inv.num, statut: 'emise', par: by, mode: 'annulation du paiement reçu' });
+  }
+  royLog('unreceived', inv || { num: null, boutiqueId: bId, ym: ym }, 'annulé par ' + by + (inv ? ' · facture ' + inv.num + ' repassée « émise »' : ''));
+  persist();
+  return { status: 200, ok: true, invoice: inv ? royPublicView(inv) : null };
+}
 function royIssueInvoice(opts){
   var ym = String(opts.ym || '').trim(), bId = String(opts.bId || '').trim();
   if (!/^\d{4}-\d{2}$/.test(ym)) return { status: 400, error: 'Mois invalide (AAAA-MM).' };
@@ -1628,7 +1695,7 @@ function royIssueInvoice(opts){
     date: date.toISOString(), echeance: ech,
     seller: roySellerSnapshot(), buyer: royBuyerSnapshot(bId),
     avoirDe: null, prevHash: royLastHash, htAuto: htAuto,
-  }, { status: 'emise', par: par, auto: !!opts.auto, payMode: royAutoApplies(ym) ? 'en_ligne' : 'virement' });
+  }, { status: 'emise', par: par, auto: !!opts.auto, payMode: opts.payMode || (royAutoApplies(ym) ? 'en_ligne' : 'virement') });
   logFiscalEvent('FACTURE_ROYALTIES', bId, { numero: num, mois: ym, baseAuto: auto, baseRetenue: base, redevanceCalculee: htAuto, motif: motif, taux: rate, ht: ht, tva: tva, ttc: ttc, echeance: ech, par: par, automatique: !!opts.auto });
   persist();
   return { status: 201, invoice: royPublicView(rec), rec: rec };
@@ -1664,7 +1731,7 @@ async function royNotifyInvoice(inv){
   var to = royRecipients(inv.boutiqueId); if (!to.length) { royLog('mail_missing', inv, 'aucune adresse e-mail pour la boutique'); return; }
   var html = royMailHtml('Votre redevance de ' + royMonthLabel(inv.ym) + ' est disponible', [
     royMailSummary(inv),
-    'À régler en ligne sur kingbase.fr <b>avant le ' + royDateLongFr(inv.echeance) + ' à 23 h 59</b>.',
+    'À régler en ligne sur kingbase.fr <b>avant le ' + royDateLongFr(inv.echeance) + ' à 23 h 59</b>, en vous connectant avec votre compte Base Camp (le même que pour le réassort).',
     royAuto.block ? 'Passé cette date, le <b>réassort pro sera bloqué</b> jusqu\'au paiement (déblocage automatique dès que le paiement est reçu).' : '',
   ].filter(Boolean), royPayCta(inv), 'La facture ' + inv.num + ' est consultable dans KINGTOOLS › Royalties. Le paiement sur kingbase.fr ne génère pas d\'autre facture.');
   var r = await roySendAll(to, 'Redevance ' + royMonthLabel(inv.ym) + ' — ' + royMoneyFr(inv.ttc) + ' à régler avant le ' + royDateFr(inv.echeance), html);
@@ -1674,7 +1741,7 @@ async function royNotifyReminder(inv){
   var to = royRecipients(inv.boutiqueId); if (!to.length) return;
   var html = royMailHtml('Rappel : redevance de ' + royMonthLabel(inv.ym) + ' à régler', [
     royMailSummary(inv),
-    'Plus que quelques jours : paiement attendu <b>avant le ' + royDateLongFr(inv.echeance) + ' à 23 h 59</b>.',
+    'Plus que quelques jours : paiement attendu sur kingbase.fr (compte Base Camp) <b>avant le ' + royDateLongFr(inv.echeance) + ' à 23 h 59</b>.',
     royAuto.block ? 'Sans paiement à cette date, le réassort pro de la boutique sera bloqué.' : '',
   ].filter(Boolean), royPayCta(inv), '');
   await roySendAll(to, 'Rappel — redevance ' + royMonthLabel(inv.ym) + ' à régler avant le ' + royDateFr(inv.echeance), html);
@@ -1737,8 +1804,9 @@ async function royAutoTick(opts){
           continue;
         }
         royaltiesSetStatus(ym, bId, { auto: { at: new Date().toISOString(), result: 'emise', num: r.rec.num } });
-        royLog('invoiced', r.rec, royMoneyFr(r.rec.ttc) + ' TTC · échéance ' + royDateFr(r.rec.echeance));
         out.invoiced.push(r.rec.num);
+        if (royPaid(r.rec)) { royMarkIssuedAsPaid(r.rec); royLog('invoiced', r.rec, royMoneyFr(r.rec.ttc) + ' TTC · déjà réglée (réception validée avant le 1er) : ni lien ni e-mail'); continue; }
+        royLog('invoiced', r.rec, royMoneyFr(r.rec.ttc) + ' TTC · échéance ' + royDateFr(r.rec.echeance));
         var pr = await royEnsurePayOrder(r.rec);
         if (pr.ok) out.payOrders.push(r.rec.num);
         await royNotifyInvoice(r.rec);
@@ -2402,7 +2470,7 @@ const server = http.createServer(async (req, res) => {
       var rids = boutiqueIds(); if (user.role !== 'admin') rids = rids.filter(function(id){ return id===user.boutiqueId; });
       // Paiements en ligne : relecture rapide des commandes kingbase ouvertes (bornee a 4 s, la page n'attend jamais le site).
       await royWithin(Promise.all(rids.map(function(id){ return royRefreshBoutique(id, 60000); })), 4000);
-      var rlist = rids.map(function(id){ var b=boutiques[id]||{}; var am=royaltiesAmount(rym, id); var rec=royaltiesRec(rym,id); var inv=royActiveInvoice(id, rym); var od=royOverdue(id); return { id:id, label:(b.label||id), rate:am.rate, caHT:am.caHT, royalty:am.ht, royaltyAuto:am.auto, override:am.override, invoice: inv ? royPublicView(inv) : null, status:(inv&&royPaid(inv))?'valide':rec.status, declaredAt:rec.declaredAt||null, validatedAt:rec.validatedAt||(inv&&inv.regleeAt)||null, paidOnline:rec.paidOnline||null, noBlock:rec.noBlock||null, autoApplies:royAutoApplies(rym), dueAt:(royAutoApplies(rym)?new Date(royDueMs(rym)).toISOString():null), blockedBy: od ? { num:od.num, ym:od.ym, mois:royMonthLabel(od.ym), ttc:od.ttc, echeance:od.echeance } : null, manualBlocked: proManualBlockedFor({ role:'manager', boutiqueId:id }), emails: user.role==='admin' ? royRecipients(id) : undefined }; });
+      var rlist = rids.map(function(id){ var b=boutiques[id]||{}; var am=royaltiesAmount(rym, id); var rec=royaltiesRec(rym,id); var inv=royActiveInvoice(id, rym); var od=royOverdue(id); return { id:id, label:(b.label||id), rate:am.rate, caHT:am.caHT, royalty:am.ht, royaltyAuto:am.auto, override:am.override, invoice: inv ? royPublicView(inv) : null, status:(inv&&royPaid(inv))?'valide':rec.status, declaredAt:rec.declaredAt||null, validatedAt:rec.validatedAt||(inv&&inv.regleeAt)||null, paidOnline:rec.paidOnline||null, noBlock:rec.noBlock||null, autoApplies:royAutoApplies(rym), closed: rym < royCurrentYm(), ttcDue: royTtcOf(am.ht), selfPay: !!(!inv && rym < royCurrentYm() && !royAutoApplies(rym) && rec.status==='a_payer' && am.ht > 0 && proPushConfigured()), received: rec.received||null, dueAt:(royAutoApplies(rym)?new Date(royDueMs(rym)).toISOString():null), blockedBy: od ? { num:od.num, ym:od.ym, mois:royMonthLabel(od.ym), ttc:od.ttc, echeance:od.echeance } : null, manualBlocked: proManualBlockedFor({ role:'manager', boutiqueId:id }), emails: user.role==='admin' ? royRecipients(id) : undefined }; });
       var rtot = rlist.reduce(function(a,x){ a.caHT+=x.caHT; a.royalties+=x.royalty; if(x.status==='valide')a.encaisse+=x.royalty; else a.attente+=x.royalty; return a; }, {caHT:0,royalties:0,encaisse:0,attente:0});
       Object.keys(rtot).forEach(function(k){ rtot[k]=Math.round(rtot[k]*100)/100; });
       return send(res, 200, { role:user.role, ym:rym, boutiques:rlist, totals:rtot, auto: royAutoPublic() });
@@ -2528,8 +2596,9 @@ const server = http.createServer(async (req, res) => {
       var rgR = royIssueInvoice({ ym: rgB && rgB.ym, bId: rgB && rgB.boutiqueId, base: rgB && rgB.base, montant: rgB && rgB.montant, motif: rgB && rgB.motif, by: user.name || 'admin' });
       if (rgR.status !== 201) return send(res, rgR.status, { error: rgR.error, manque: rgR.manque, num: rgR.num });
       // Regime automatique : lien de paiement kingbase + e-mail a la boutique (en tache de fond, la reponse n'attend pas le site).
-      if (royAutoApplies(rgR.rec.ym)) { (async function(){ await royEnsurePayOrder(rgR.rec); await royNotifyInvoice(rgR.rec); })().catch(function(){}); }
-      return send(res, 201, { ok:true, invoice: rgR.invoice });
+      if (royPaid(rgR.rec)) royMarkIssuedAsPaid(rgR.rec);
+      else if (royAutoApplies(rgR.rec.ym)) { (async function(){ await royEnsurePayOrder(rgR.rec); await royNotifyInvoice(rgR.rec); })().catch(function(){}); }
+      return send(res, 201, { ok:true, invoice: royPublicView(rgR.rec) });
     }
     // AVOIR sur une facture de redevance : l'original passe « annulée » (trace), l'avoir est scelle a son tour.
     if (req.method === 'POST' && path === '/api/royalties/invoice/avoir') {
@@ -2576,14 +2645,37 @@ const server = http.createServer(async (req, res) => {
     }
     // ---- Paiement EN LIGNE d'une facture de redevance (kingbase.fr) : cree / reprend la commande et renvoie le lien ----
     if (req.method === 'POST' && path === '/api/royalties/pay') {
-      var rpB = await readJson(req);
-      var rpNum = String((rpB&&rpB.num)||'').trim();
-      var rpRec = royaltyInvoices.find(function(r){ return r.num === rpNum; });
-      if (!rpRec) return send(res, 404, { error:'Facture introuvable.' });
-      if (!royCanSee(user, rpRec)) return send(res, 403, { error:'Hors de vos boutiques.' });
+      var rpB = await readJson(req) || {};
+      var rpNum = String(rpB.num||'').trim(), rpRec = null;
+      if (rpNum) {
+        rpRec = royaltyInvoices.find(function(r){ return r.num === rpNum; });
+        if (!rpRec) return send(res, 404, { error:'Facture introuvable.' });
+        if (!royCanSee(user, rpRec)) return send(res, 403, { error:'Hors de vos boutiques.' });
+      } else {
+        // Paiement direct d'un mois deja du sans facture : la facture est emise au clic, puis la commande kingbase est creee.
+        var rpYm = String(rpB.ym||'').trim(), rpId = String(rpB.boutiqueId||'').trim();
+        var rpChk = roySelfPayCheck(user, rpYm, rpId);
+        if (!rpChk.ok) return send(res, rpChk.status, { error: rpChk.error, code: rpChk.code });
+        rpRec = royActiveInvoice(rpId, rpYm);
+        if (!rpRec) {
+          if (!proPushConfigured()) return send(res, 503, { error:'Paiement en ligne indisponible pour le moment.', code:'NO_CREDS' });
+          var rpIss = royIssueInvoice({ ym: rpYm, bId: rpId, by: (user.name || rpId) + ' (paiement en ligne)', payMode: 'en_ligne' });
+          if (rpIss.status !== 201) return send(res, rpIss.status, { error: rpIss.code === 'ENTREPRISE' ? 'Paiement en ligne indisponible pour le moment (facture impossible à émettre) : préviens le réseau.' : rpIss.error, code: rpIss.code });
+          rpRec = rpIss.rec;
+          royLog('invoice_selfpay', rpRec, royMoneyFr(rpRec.ttc) + ' TTC · émise au clic « Payer ma redevance » (' + (user.name || user.role) + ')');
+        }
+      }
       var rpR = await royEnsurePayOrder(rpRec, { maxAgeMs: 5000 });
       if (!rpR.ok) return send(res, rpR.code === 'PAID' ? 409 : (rpR.code === 'NOT_PAYABLE' ? 400 : 503), { error: rpR.error, code: rpR.code, invoice: royPublicView(rpRec) });
       return send(res, 200, { ok:true, url: rpR.url, orderId: rpR.orderId, invoice: royPublicView(rpRec) });
+    }
+    // « ✅ Paiement reçu » (admin) : { ym, boutiqueId } ; { on:false } pour annuler.
+    if (req.method === 'POST' && path === '/api/royalties/received') {
+      if (user.role !== 'admin') return send(res, 403, { error:'Action réservée à l\'administrateur.' });
+      var rvB = await readJson(req) || {};
+      var rvR = (rvB.on === false ? royUnreceive : royReceive)(String(rvB.ym||'').trim(), String(rvB.boutiqueId||'').trim(), user.name || 'admin');
+      var rvSt = rvR.status; delete rvR.status;
+      return send(res, rvSt, rvR);
     }
     // ---- Reglage + suivi du regime automatique (admin) ----
     if (req.method === 'GET' && path === '/api/royalties/auto') {
