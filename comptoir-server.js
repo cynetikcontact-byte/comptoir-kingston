@@ -289,15 +289,29 @@ let proStockPush = { lastOkAt: 0, lastAt: 0, lastError: '', lastCount: 0 };   //
 // ---- BLOCAGE du Réassort pro pour les franchises (decide par l'admin, jamais applique a l'admin) ----
 // mode 'off' = ouvert a tous · 'all' = bloque pour TOUTES les boutiques · 'selected' = bloque pour ids[]
 let proBlock = { mode: 'off', message: '', ids: [] };
-function proBlockedFor(u) {
+function proManualBlockedFor(u) {
   if (!u || u.role !== 'manager') return false;                    // l'admin n'est JAMAIS bloque
   if (proBlock.mode === 'all') return true;
   if (proBlock.mode === 'selected') return (proBlock.ids || []).indexOf(u.boutiqueId) >= 0;
   return false;
 }
-function proBlockMessage() {
-  const m = String(proBlock.message || '').trim();
-  return m || 'Le réassort pro est momentanément fermé par le réseau KINGSTON. Contacte ton animateur réseau pour plus d\'informations.';
+// Bloque = blocage manuel de l'admin OU redevance impayee a l'echeance (regime automatique, voir royOverdue).
+function proBlockedFor(u) {
+  if (!u || u.role !== 'manager') return false;
+  return proManualBlockedFor(u) || !!royOverdue(u.boutiqueId);
+}
+function proBlockMessage(u) {
+  const manual = !u || proManualBlockedFor(u);
+  const m = String(proBlock.message || '').trim() || 'Le réassort pro est momentanément fermé par le réseau KINGSTON. Contacte ton animateur réseau pour plus d\'informations.';
+  const r = (u && u.role === 'manager') ? royOverdue(u.boutiqueId) : null;
+  if (!r) return m;
+  const rm = 'La redevance de ' + royMonthLabel(r.ym) + ' (facture ' + r.num + ', ' + royMoneyFr(r.ttc) + ' TTC) n\'est pas réglée — échéance dépassée le ' + royDateFr(r.echeance) + '.\nRègle-la en ligne : le réassort se débloque automatiquement dès le paiement.';
+  return manual ? (m + '\n\n' + rm) : rm;
+}
+// Contenu d'une reponse « bloque » : message + redevance a payer (bouton Payer cote app).
+function proBlockPayload(u) {
+  const r = (u && u.role === 'manager') ? royOverdue(u.boutiqueId) : null;
+  return { blocked: true, message: proBlockMessage(u), manual: proManualBlockedFor(u), royalty: r ? { num: r.num, ym: r.ym, mois: royMonthLabel(r.ym), ttc: r.ttc, echeance: r.echeance, payUrl: (r.pay && r.pay.state === 'pending') ? (r.pay.url || '') : '' } : null };
 }
 // ---- PRODUITS GROSSISTE AJOUTES A LA MAIN (admin) : varietes et references absentes du site kingbase.
 // Ils survivent aux synchros du catalogue (stockes a part) et ne sont jamais pousses vers Woo (pas de wooId).
@@ -675,6 +689,9 @@ let clotureSeqByB = {};     // { boutiqueId: { Z, M, A } }
 let royaltyInvoices = [];    // append-only : factures + avoirs de redevance
 let roySeq = 0;              // numerotation continue dediee (jamais remise a zero)
 let royLastHash = 'GENESIS'; // chaine d'empreintes PROPRE aux factures de royalties
+// Redevances AUTOMATIQUES (voir « REDEVANCES AUTOMATIQUES ») : facture le 1er, paiement en ligne kingbase.fr, blocage du reassort.
+let royAuto = { enabled: true, block: true, startYm: '2026-09', invoiceDay: 1, invoiceHour: 6, dueDay: 7, remindDay: 5, lastTickAt: null, updatedAt: null, updatedBy: '' };
+let royAutoLog = [];         // journal des operations automatiques (300 dernieres)
 function fb(id) { if (seqByB[id] == null) seqByB[id] = 0; if (gtByB[id] == null) gtByB[id] = 0; if (gtAvoirsByB[id] == null) gtAvoirsByB[id] = 0; if (!clotureSeqByB[id]) clotureSeqByB[id] = { Z: 0, M: 0, A: 0 }; return id; }
 
 /* ----------------------------- Identite vendeur (e-facture / e-reporting) ---------------------------- */
@@ -715,7 +732,7 @@ function writeDataFileNow() {
   // Écriture ATOMIQUE : fichier temporaire puis renommage -> jamais de fichier tronqué en cas de coupure.
   // NB : fiscalKey n'est PLUS écrite ici (stockée à part, fichier protégé).
   const tmp = DATA_FILE + '.tmp';
-  fs.writeFileSync(tmp, JSON.stringify({ v: 1, savedAt: new Date().toISOString(), pointsPerEuro: POINTS_PER_EURO, hideBaseCatalog, customProducts, stock, boutiques, invoiceSeq, lastHash, invoices, orderSeq, orders, fiscalEvents, fiscalSeq, lastFiscalSig, clotureSeq, gtPerpetuel, gtPerpetuelAvoirs, seqByB, gtByB, gtAvoirsByB, royaltiesRates, royaltiesStatus, clotureSeqByB, supplyOrders, supplySeq, stockMoves, proRate, pontDevices, sessions, proProducts, lastProSync, proLots, proStock, proBuyPrice, proSellPrice, proStockPush, proBlock, proExtras, proRename, entreprise, adminCred, adminEmail, backupState, franchisees, sellers, royaltyInvoices, roySeq, royLastHash, posOrder }), 'utf8');
+  fs.writeFileSync(tmp, JSON.stringify({ v: 1, savedAt: new Date().toISOString(), pointsPerEuro: POINTS_PER_EURO, hideBaseCatalog, customProducts, stock, boutiques, invoiceSeq, lastHash, invoices, orderSeq, orders, fiscalEvents, fiscalSeq, lastFiscalSig, clotureSeq, gtPerpetuel, gtPerpetuelAvoirs, seqByB, gtByB, gtAvoirsByB, royaltiesRates, royaltiesStatus, clotureSeqByB, supplyOrders, supplySeq, stockMoves, proRate, pontDevices, sessions, proProducts, lastProSync, proLots, proStock, proBuyPrice, proSellPrice, proStockPush, proBlock, proExtras, proRename, entreprise, adminCred, adminEmail, backupState, franchisees, sellers, royaltyInvoices, roySeq, royLastHash, posOrder, royAuto, royAutoLog }), 'utf8');
   fs.renameSync(tmp, DATA_FILE);
 }
 function persist() {
@@ -897,6 +914,14 @@ function loadPersisted() {
     if (Array.isArray(d.royaltyInvoices)) royaltyInvoices = d.royaltyInvoices;             // factures de redevance (scellees)
     if (typeof d.roySeq === 'number') roySeq = d.roySeq;
     if (typeof d.royLastHash === 'string') royLastHash = d.royLastHash;
+    if (d.royAuto && typeof d.royAuto === 'object') {                                          // redevances automatiques (reglage admin)
+      const ra = d.royAuto;
+      if (typeof ra.enabled === 'boolean') royAuto.enabled = ra.enabled;
+      if (typeof ra.block === 'boolean') royAuto.block = ra.block;
+      if (/^\d{4}-\d{2}$/.test(String(ra.startYm || ''))) royAuto.startYm = ra.startYm;
+      ['lastTickAt', 'updatedAt', 'updatedBy'].forEach(function (k) { if (typeof ra[k] === 'string') royAuto[k] = ra[k]; });
+    }
+    if (Array.isArray(d.royAutoLog)) royAutoLog = d.royAutoLog.slice(-300);
     if (d.posOrder && typeof d.posOrder === 'object') posOrder = d.posOrder;                  // ordre d'affichage caisse par boutique
     if (Array.isArray(d.proProducts)) { proProducts = d.proProducts; proProducts.forEach(ensureStock); }
     if (d.proLots && typeof d.proLots === 'object') proLots = d.proLots;
@@ -1352,10 +1377,407 @@ function royBuyerSnapshot(bId){ var b=boutiques[bId]||{}; var s=b.seller||{}; re
 // Boutiques visibles : admin -> toutes (null) ; franchise -> ses boutiques ; compte boutique/vendeur -> la sienne.
 function royAllowedBoutiques(user){ if (user.role==='admin') return null; if (Array.isArray(user.boutiques)&&user.boutiques.length) return user.boutiques.map(String); return user.boutiqueId?[String(user.boutiqueId)]:[]; }
 function royCanSee(user, rec){ var al=royAllowedBoutiques(user); return al===null || al.indexOf(rec.boutiqueId)>=0; }
-function royPublicView(rec){ var b=boutiques[rec.boutiqueId]||{}; return { num:rec.num, type:rec.type, boutiqueId:rec.boutiqueId, label:(rec.buyer&&rec.buyer.label)||b.label||rec.boutiqueId, ym:rec.ym, baseAuto:rec.baseAuto, baseRetenue:rec.baseRetenue, motif:rec.motif||'', rate:rec.rate, htAuto:(rec.htAuto!=null?rec.htAuto:rec.ht), ht:rec.ht, tva:rec.tva, ttc:rec.ttc, date:rec.date, echeance:rec.echeance, status:rec.status, regleeAt:rec.regleeAt||null, regleePar:rec.regleePar||null, avoirDe:rec.avoirDe||null, avoirNum:rec.avoirNum||null, annuleeAt:rec.annuleeAt||null, par:rec.par||'' }; }
+function royPublicView(rec){ var b=boutiques[rec.boutiqueId]||{}; return { num:rec.num, type:rec.type, boutiqueId:rec.boutiqueId, label:(rec.buyer&&rec.buyer.label)||b.label||rec.boutiqueId, ym:rec.ym, baseAuto:rec.baseAuto, baseRetenue:rec.baseRetenue, motif:rec.motif||'', rate:rec.rate, htAuto:(rec.htAuto!=null?rec.htAuto:rec.ht), ht:rec.ht, tva:rec.tva, ttc:rec.ttc, date:rec.date, echeance:rec.echeance, status:rec.status, regleeAt:rec.regleeAt||null, regleePar:rec.regleePar||null, avoirDe:rec.avoirDe||null, avoirNum:rec.avoirNum||null, annuleeAt:rec.annuleeAt||null, par:rec.par||'', auto:!!rec.auto, payMode:(rec.payMode||(royAutoApplies(rec.ym)?'en_ligne':'virement')), pay:royPayView(rec), payError:(rec.payError&&rec.payError.error)||'', overdue:!!(rec.type==='facture'&&rec.status==='emise'&&royAutoApplies(rec.ym)&&!royPaid(rec)&&Date.now()>Date.parse(rec.echeance)), noBlock:!!(rec.type==='facture'&&royaltiesRec(rec.ym,rec.boutiqueId).noBlock) }; }
 function royActiveInvoice(bId, ym){ return royaltyInvoices.find(function(r){ return r.type==='facture' && r.boutiqueId===bId && r.ym===ym && r.status!=='annulee'; }); }
 function royCreate(fields, meta){ var body=royBody(fields); var hash=sha256(body); var rec=Object.assign({}, fields, { hash:hash, seal:sealInvoice(body,hash) }, meta||{}); royaltyInvoices.push(rec); royLastHash=hash; return rec; }
 function royVerifyChain(){ var prev='GENESIS'; for (var i=0;i<royaltyInvoices.length;i++){ var r=royaltyInvoices[i]; if (r.prevHash!==prev) return false; if (sha256(royBody(r))!==r.hash) return false; prev=r.hash; } return prev===royLastHash; }
+
+/* ================= REDEVANCES AUTOMATIQUES : facture le 1er · paiement en ligne kingbase.fr · blocage du réassort ================= */
+// Regle du reseau (decision Lenny, 11/09/2026) :
+//  - le 1er du mois a 6 h (heure de Paris), la facture ROY du mois precedent est emise automatiquement pour chaque boutique ;
+//  - elle se paie EN LIGNE sur kingbase.fr (Base Camp), exactement comme un reassort : KINGTOOLS cree une commande WooCommerce
+//    « en attente de paiement » (API REST, cles COMPTOIR_PRO_WC_KEY / _SECRET deja utilisees pour le stock) et detecte le paiement ;
+//  - echeance : le 7 du mois suivant a 23:59 (Paris). Non payee a l'echeance -> Réassort pro BLOQUE pour la boutique,
+//    debloque tout seul des que le paiement est detecte ;
+//  - la facture ROY reste la seule piece comptable (le plugin kingbase n'emet pas de 2e facture sur ces commandes).
+// Rien n'est rejoue sur les mois anterieurs a royAuto.startYm (aout 2026 et avant : ancien fonctionnement).
+function royMoneyFr(n){ return (Math.round((Number(n)||0)*100)/100).toLocaleString('fr-FR',{minimumFractionDigits:2,maximumFractionDigits:2}) + ' €'; }
+function royDateFr(iso){ try { return new Date(iso).toLocaleDateString('fr-FR',{ timeZone:'Europe/Paris', day:'2-digit', month:'2-digit', year:'numeric' }); } catch (e) { return String(iso||'').slice(0,10); } }
+function royDateLongFr(iso){ try { return new Date(iso).toLocaleDateString('fr-FR',{ timeZone:'Europe/Paris', day:'numeric', month:'long', year:'numeric' }); } catch (e) { return String(iso||'').slice(0,10); } }
+// Date/heure de Paris d'un instant (le serveur tourne en UTC).
+function parisParts(ms){
+  var f = new Intl.DateTimeFormat('en-GB', { timeZone:'Europe/Paris', year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit', hourCycle:'h23' });
+  var o = {}; f.formatToParts(new Date(ms)).forEach(function(p){ o[p.type] = p.value; });
+  var y = +o.year, m = +o.month, d = +o.day, h = (+o.hour) % 24, mi = +o.minute;
+  return { y:y, m:m, d:d, h:h, mi:mi, ym: y + '-' + ('0'+m).slice(-2) };
+}
+// Instant UTC correspondant a une heure LOCALE de Paris (gere l'heure d'ete / d'hiver).
+function parisToUtcMs(y, m, d, h, mi){
+  var target = Date.UTC(y, m-1, d, h, mi), guess = target - 3600*1000;
+  for (var i = 0; i < 4; i++){ var p = parisParts(guess); var diff = Date.UTC(p.y, p.m-1, p.d, p.h, p.mi) - target; if (!diff) break; guess -= diff; }
+  return guess;
+}
+function royYmShift(ym, k){ var y = +String(ym).slice(0,4), m = +String(ym).slice(5,7) - 1 + k; var d = new Date(Date.UTC(y, m, 1)); return d.getUTCFullYear() + '-' + ('0'+(d.getUTCMonth()+1)).slice(-2); }
+function royAutoApplies(ym){ return !!(royAuto.enabled && /^\d{4}-\d{2}$/.test(String(ym||'')) && ym >= royAuto.startYm); }
+// Echeance reglementaire d'un mois : le dueDay du mois suivant a 23:59:59 (Paris).
+function royDueMs(ym){ var n = royYmShift(ym, 1); return parisToUtcMs(+n.slice(0,4), +n.slice(5,7), royAuto.dueDay, 23, 59) + 59*1000; }
+// Echeance a inscrire sur une facture emise maintenant : regle du 7 ; si la facture sort tard (correction par avoir,
+// emission manuelle en retard), le franchise garde ROY_GRACE_DAYS jours pour payer (jusqu'a 23:59 ce jour-la).
+const ROY_GRACE_DAYS = 3;
+function royEcheanceFor(ym, issuedMs){
+  if (!royAutoApplies(ym)) return new Date(issuedMs + 30*24*3600*1000).toISOString();   // ancien regime : 30 jours
+  var due = royDueMs(ym);
+  var g = parisParts(issuedMs + ROY_GRACE_DAYS*24*3600*1000);
+  var grace = parisToUtcMs(g.y, g.m, g.d, 23, 59) + 59*1000;
+  return new Date(Math.max(due, grace)).toISOString();
+}
+// Reglee ? facture marquee reglee, ou mois valide (a la main, ou par le paiement en ligne DE CETTE facture).
+function royPaid(inv){
+  if (!inv) return false;
+  if (inv.status === 'reglee') return true;
+  var rec = royaltiesRec(inv.ym, inv.boutiqueId);
+  if (rec.status !== 'valide') return false;
+  return !(rec.paidOnline && rec.paidOnline.num && rec.paidOnline.num !== inv.num);
+}
+// Premiere facture de redevance EN RETARD (regime automatique) qui bloque le reassort d'une boutique, sinon null.
+function royOverdue(bId, nowMs){
+  if (!royAuto.enabled || !royAuto.block || !bId) return null;
+  nowMs = nowMs || Date.now();
+  var best = null;
+  royaltyInvoices.forEach(function(r){
+    if (r.type !== 'facture' || r.boutiqueId !== bId || r.status !== 'emise' || !royAutoApplies(r.ym)) return;
+    if (royPaid(r)) return;
+    if (royaltiesRec(r.ym, bId).noBlock) return;
+    if (!(nowMs > Date.parse(r.echeance))) return;
+    if (!best || r.ym < best.ym) best = r;
+  });
+  return best;
+}
+function royPayView(inv){
+  var p = inv && inv.pay;
+  if (!p) return null;
+  return { state: p.state, url: p.state === 'pending' ? (p.url || '') : '', orderId: p.orderId || null, total: p.total, createdAt: p.createdAt || null, paidAt: p.paidAt || null, method: p.method || '', error: p.error || '' };
+}
+function royLog(type, inv, msg){
+  royAutoLog.push({ at: new Date().toISOString(), type: type, num: inv ? inv.num : null, boutiqueId: inv ? inv.boutiqueId : null, ym: inv ? inv.ym : null, msg: String(msg || '').slice(0, 300) });
+  if (royAutoLog.length > 300) royAutoLog.splice(0, royAutoLog.length - 300);
+  persist();
+}
+function royAutoPublic(){
+  var now = Date.now(), P = parisParts(now);
+  var nextYm = P.ym;                                   // le mois en cours sera facture le 1er du mois suivant
+  var n = royYmShift(P.ym, 1);
+  var nextRun = parisToUtcMs(+n.slice(0,4), +n.slice(5,7), royAuto.invoiceDay, royAuto.invoiceHour, 0);
+  var prevYm = royYmShift(P.ym, -1);
+  var thisRun = parisToUtcMs(P.y, P.m, royAuto.invoiceDay, royAuto.invoiceHour, 0);
+  if (now < thisRun && royAutoApplies(prevYm)) { nextYm = prevYm; nextRun = thisRun; }
+  if (nextYm < royAuto.startYm) { nextYm = royAuto.startYm; var s = royYmShift(royAuto.startYm, 1); nextRun = parisToUtcMs(+s.slice(0,4), +s.slice(5,7), royAuto.invoiceDay, royAuto.invoiceHour, 0); }
+  return { enabled: !!royAuto.enabled, block: !!royAuto.block, startYm: royAuto.startYm, invoiceDay: royAuto.invoiceDay, invoiceHour: royAuto.invoiceHour, dueDay: royAuto.dueDay, remindDay: royAuto.remindDay,
+    payConfigured: proPushConfigured(), site: PRO_WP_URL, nextYm: nextYm, nextRunAt: new Date(nextRun).toISOString(), nextDueAt: new Date(royDueMs(nextYm)).toISOString(),
+    lastTickAt: royAuto.lastTickAt || null, updatedAt: royAuto.updatedAt || null, updatedBy: royAuto.updatedBy || '' };
+}
+
+// ---- WooCommerce kingbase.fr (API REST v3) ----
+function royWcAuth(){ return 'Basic ' + Buffer.from(PRO_WC_KEY + ':' + PRO_WC_SECRET).toString('base64'); }
+async function royWc(method, p, body){
+  var r = await wooFetch(PRO_WP_URL + '/wp-json/wc/v3' + p, { method: method, headers: { 'Authorization': royWcAuth(), 'content-type': 'application/json', 'accept': 'application/json' }, body: body ? JSON.stringify(body) : undefined }, 15000);
+  var t = await r.text(), j = null; try { j = JSON.parse(t); } catch (e) {}
+  if (!r.ok) { var err = new Error('kingbase HTTP ' + r.status + ' — ' + String((j && j.message) || t).replace(/\s+/g, ' ').slice(0, 160)); err.status = r.status; throw err; }
+  return j;
+}
+const royPayBusy = {};
+// Cree (ou reprend) la commande de paiement kingbase.fr d'une facture de redevance -> lien de paiement.
+async function royEnsurePayOrder(inv, opts){
+  opts = opts || {};
+  if (!inv || inv.type !== 'facture' || inv.status !== 'emise') return { ok: false, code: 'NOT_PAYABLE', error: 'Cette facture n\'est pas à régler (déjà réglée ou annulée par avoir).' };
+  if (royPaid(inv)) return { ok: false, code: 'PAID', error: 'Cette redevance est déjà réglée.' };
+  if (!proPushConfigured()) return { ok: false, code: 'NO_CREDS', error: 'Paiement en ligne indisponible : les clés WooCommerce de kingbase.fr ne sont pas configurées sur le serveur.' };
+  if (inv.pay && inv.pay.orderId && inv.pay.state === 'pending') {
+    await royRefreshPayment(inv, { maxAgeMs: opts.maxAgeMs != null ? opts.maxAgeMs : 15000 });
+    if (royPaid(inv)) return { ok: false, code: 'PAID', error: 'Cette redevance vient d\'être réglée.' };
+    if (inv.pay.state === 'pending' && inv.pay.url) return { ok: true, url: inv.pay.url, orderId: inv.pay.orderId };
+  }
+  if (royPayBusy[inv.num]) return { ok: false, code: 'BUSY', error: 'Préparation du paiement en cours — réessaie dans quelques secondes.' };
+  royPayBusy[inv.num] = true;
+  var prev = inv.pay;
+  try {
+    var b = boutiques[inv.boutiqueId] || {}, buyer = inv.buyer || {};
+    var label = buyer.label || b.label || inv.boutiqueId;
+    var email = (buyer.email && ktValidEmail(buyer.email)) ? buyer.email : ((b.email && ktValidEmail(b.email)) ? b.email : '');
+    var line = 'Redevance de franchise — ' + royMonthLabel(inv.ym) + ' — ' + label + ' — facture ' + inv.num + ' (' + royMoneyFr(inv.ht) + ' HT + TVA 20 % ' + royMoneyFr(inv.tva) + ')';
+    var billing = { company: String(buyer.name || label).slice(0, 100), address_1: String(buyer.address || '').slice(0, 100), postcode: String(buyer.zip || '').slice(0, 20), city: String(buyer.city || '').slice(0, 60), country: String(buyer.country || 'FR').slice(0, 2) };
+    if (email) billing.email = email;
+    var o = await royWc('POST', '/orders', {
+      status: 'pending', set_paid: false, currency: 'EUR', billing: billing,
+      fee_lines: [{ name: line.slice(0, 200), total: (Math.round(inv.ttc * 100) / 100).toFixed(2), tax_status: 'none' }],
+      meta_data: [{ key: '_kt_royalty', value: inv.num }, { key: '_kt_royalty_ym', value: inv.ym }, { key: '_kt_royalty_boutique', value: inv.boutiqueId }],
+    });
+    if (!o || !o.id) throw new Error('réponse inattendue de kingbase.fr');
+    var total = Math.round(Number(o.total) * 100) / 100;
+    var history = ((prev && prev.history) || []).concat(prev && prev.orderId ? [{ orderId: prev.orderId, state: prev.state, at: prev.createdAt }] : []).slice(-5);
+    inv.pay = { orderId: o.id, url: o.payment_url || '', state: 'pending', wooStatus: o.status || 'pending', total: total, createdAt: new Date().toISOString(), checkedAt: Date.now(), history: history };
+    delete inv.payError;
+    if (Math.abs(total - inv.ttc) >= 0.01) {
+      try { await royWc('PUT', '/orders/' + o.id, { status: 'cancelled' }); } catch (e) {}
+      inv.pay.state = 'error'; inv.pay.url = ''; inv.pay.error = 'Montant de la commande kingbase (' + royMoneyFr(total) + ') différent de la facture (' + royMoneyFr(inv.ttc) + ') — commande annulée.';
+      persist(); royLog('pay_error', inv, inv.pay.error);
+      return { ok: false, code: 'AMOUNT', error: inv.pay.error };
+    }
+    persist(); royLog('pay_created', inv, 'commande kingbase n° ' + o.id + ' · ' + royMoneyFr(total));
+    return { ok: true, url: inv.pay.url, orderId: o.id, created: true };
+  } catch (e) {
+    inv.payError = { at: new Date().toISOString(), error: String((e && e.message) || e).slice(0, 300) };
+    persist(); royLog('pay_error', inv, inv.payError.error);
+    return { ok: false, code: 'WOO', error: 'Paiement en ligne momentanément indisponible sur kingbase.fr — réessaie dans quelques minutes.' };
+  } finally { delete royPayBusy[inv.num]; }
+}
+// Relit l'etat de la commande de paiement sur kingbase.fr. Paiement detecte -> facture reglee + mois valide.
+async function royRefreshPayment(inv, opts){
+  var p = inv && inv.pay;
+  if (!p || !p.orderId || p.state !== 'pending' || !proPushConfigured()) return false;
+  var maxAge = (opts && opts.maxAgeMs != null) ? opts.maxAgeMs : 60000;
+  if (Date.now() - (p.checkedAt || 0) < maxAge) return false;
+  p.checkedAt = Date.now();
+  try {
+    var o = await royWc('GET', '/orders/' + p.orderId);
+    p.wooStatus = o.status;
+    if (o.payment_url) p.url = o.payment_url;
+    if (['processing', 'completed'].indexOf(o.status) >= 0) { royMarkPaid(inv, o); return true; }
+    if (['cancelled', 'refunded', 'trash'].indexOf(o.status) >= 0) {
+      p.state = 'closed'; p.url = ''; royLog('pay_closed', inv, 'commande kingbase n° ' + p.orderId + ' passée « ' + o.status + ' » sur le site');
+    }
+    persist();
+  } catch (e) {
+    if (e && e.status === 404) { p.state = 'missing'; p.url = ''; persist(); royLog('pay_missing', inv, 'commande kingbase n° ' + p.orderId + ' introuvable (supprimée ?)'); }
+  }
+  return false;
+}
+function royMarkPaid(inv, o){
+  var at = (o && o.date_paid_gmt) ? new Date(String(o.date_paid_gmt).replace(/Z?$/, 'Z')).toISOString() : new Date().toISOString();
+  var p = inv.pay || {};
+  p.state = 'paid'; p.paidAt = at; p.wooStatus = o && o.status; p.method = (o && o.payment_method_title) || ''; p.url = '';
+  inv.pay = p;
+  var wasCancelled = inv.status === 'annulee';
+  if (inv.status === 'emise') { inv.status = 'reglee'; inv.regleeAt = at; inv.regleePar = 'Paiement en ligne kingbase.fr (commande n° ' + p.orderId + ')'; }
+  royaltiesSetStatus(inv.ym, inv.boutiqueId, { status: 'valide', validatedAt: at, paidOnline: { num: inv.num, orderId: p.orderId, at: at, total: p.total } });
+  logFiscalEvent('ROYALTIES_REGLEMENT', inv.boutiqueId, { numero: inv.num, statut: 'reglee', par: 'paiement en ligne kingbase.fr', commande: p.orderId, montant: p.total });
+  royLog(wasCancelled ? 'paid_after_cancel' : 'paid', inv, 'commande kingbase n° ' + p.orderId + ' · ' + royMoneyFr(p.total) + (p.method ? ' · ' + p.method : ''));
+  royNotifyPaid(inv, wasCancelled).catch(function(){});
+  persist();
+}
+// Annule la commande de paiement encore ouverte d'une facture (avoir, reglement valide a la main...).
+async function royCancelPayOrder(inv, reason){
+  var p = inv && inv.pay;
+  if (!p || !p.orderId || p.state !== 'pending' || !proPushConfigured()) return;
+  try {
+    var o = await royWc('GET', '/orders/' + p.orderId);
+    if (['processing', 'completed'].indexOf(o.status) >= 0) { royMarkPaid(inv, o); return; }   // payee entre-temps : on le trace
+    await royWc('PUT', '/orders/' + p.orderId, { status: 'cancelled' });
+    p.state = 'cancelled'; p.url = ''; p.cancelReason = String(reason || '').slice(0, 200); persist();
+    royLog('pay_cancelled', inv, 'commande kingbase n° ' + p.orderId + ' annulée (' + (reason || '') + ')');
+  } catch (e) { p.cancelError = String((e && e.message) || e).slice(0, 200); persist(); royLog('pay_error', inv, 'annulation impossible : ' + p.cancelError); }
+}
+async function royRefreshBoutique(bId, maxAgeMs){
+  var list = royaltyInvoices.filter(function(r){ return r.type === 'facture' && r.status === 'emise' && r.boutiqueId === bId && r.pay && r.pay.state === 'pending'; });
+  for (var i = 0; i < list.length; i++) { await royRefreshPayment(list[i], { maxAgeMs: maxAgeMs }); }
+}
+// Borne la duree d'une operation reseau pendant une requete de l'app (la page ne doit jamais attendre kingbase).
+function royWithin(promise, ms){ return Promise.race([promise, new Promise(function(r){ setTimeout(r, ms); })]).catch(function(){}); }
+
+// ---- Emission d'une facture de redevance (manuelle ou automatique) ----
+// opts : { ym, bId, base?, montant?, motif?, by, auto? } -> { status, invoice, rec } ou { status, error, code }
+function royIssueInvoice(opts){
+  var ym = String(opts.ym || '').trim(), bId = String(opts.bId || '').trim();
+  if (!/^\d{4}-\d{2}$/.test(ym)) return { status: 400, error: 'Mois invalide (AAAA-MM).' };
+  if (!boutiques[bId]) return { status: 404, error: 'Boutique inconnue.' };
+  var manque = royEntrepriseManque();
+  if (manque.length) return { status: 400, code: 'ENTREPRISE', error: royEntrepriseMsg(manque), manque: manque };
+  var exist = royActiveInvoice(bId, ym);
+  if (exist) return { status: 409, code: 'EXISTS', error: 'Une facture existe déjà pour ce mois : ' + exist.num + '. Émets d\'abord un avoir pour la corriger.', num: exist.num };
+  var RG2 = function(n){ return Math.round((Number(n) || 0) * 100) / 100; };
+  var auto = royaltiesCaHT(bId, ym);
+  var base = auto, motif = '';
+  if (opts.base != null && opts.base !== '') {
+    var raw = Number(opts.base);
+    if (!isFinite(raw) || raw < 0) return { status: 400, error: 'Base HT invalide.' };
+    base = RG2(raw);
+    if (Math.abs(base - auto) >= 0.005) {
+      motif = String(opts.motif || '').trim();
+      if (motif.length < 3) return { status: 400, error: 'Motif obligatoire (3 caractères minimum) quand la base est ajustée à la main.' };
+    }
+  }
+  var rate = royaltiesRateFor(bId);
+  var htAuto = RG2(base * rate / 100);
+  var ht = htAuto;
+  var ov = royaltiesOverride(ym, bId);
+  if (opts.montant != null && opts.montant !== '') {
+    var mRaw = Number(opts.montant);
+    if (!isFinite(mRaw) || mRaw < 0) return { status: 400, error: 'Montant HT invalide.' };
+    ht = RG2(mRaw);
+    if (Math.abs(ht - htAuto) >= 0.005) {
+      var m2 = String(opts.motif || '').trim();
+      var sameAsOv = !!(ov && Math.abs(ov.ht - ht) < 0.005 && ov.motif);
+      if (m2.length < 3 && !sameAsOv) return { status: 400, error: 'Motif obligatoire (3 caractères minimum) quand le montant de la redevance est ajusté à la main.' };
+      motif = m2.length >= 3 ? m2 : ov.motif;
+    }
+  } else if (ov) {
+    ht = RG2(ov.ht);
+    if (Math.abs(ht - htAuto) >= 0.005) motif = [motif, ov.motif].filter(Boolean).join(' · ');
+  }
+  if (!(ht > 0)) return { status: 400, code: 'ZERO', error: 'Rien à facturer : redevance nulle pour ce mois (' + base.toFixed(2).replace('.', ',') + ' € HT × ' + rate + ' %).' };
+  var tva = RG2(ht * 0.20), ttc = RG2(ht + tva);
+  var date = new Date();
+  var ech = royEcheanceFor(ym, date.getTime());
+  var seq = ++roySeq;
+  var num = 'ROY-' + date.getFullYear() + '-' + String(seq).padStart(4, '0');
+  var par = opts.by || 'admin';
+  var rec = royCreate({
+    seq: seq, num: num, type: 'facture', boutiqueId: bId, ym: ym,
+    baseAuto: auto, baseRetenue: base, motif: motif, rate: rate,
+    ht: ht, tva: tva, ttc: ttc, tvaRate: 0.20,
+    date: date.toISOString(), echeance: ech,
+    seller: roySellerSnapshot(), buyer: royBuyerSnapshot(bId),
+    avoirDe: null, prevHash: royLastHash, htAuto: htAuto,
+  }, { status: 'emise', par: par, auto: !!opts.auto, payMode: royAutoApplies(ym) ? 'en_ligne' : 'virement' });
+  logFiscalEvent('FACTURE_ROYALTIES', bId, { numero: num, mois: ym, baseAuto: auto, baseRetenue: base, redevanceCalculee: htAuto, motif: motif, taux: rate, ht: ht, tva: tva, ttc: ttc, echeance: ech, par: par, automatique: !!opts.auto });
+  persist();
+  return { status: 201, invoice: royPublicView(rec), rec: rec };
+}
+
+// ---- E-mails (Brevo) ----
+const KT_PUBLIC_URL = (process.env.KT_PUBLIC_URL || 'https://kingtools.fr').replace(/\/$/, '');
+function royRecipients(bId){
+  var out = [], b = boutiques[bId] || {};
+  var add = function(e){ e = String(e || '').trim(); if (e && ktValidEmail(e) && out.map(function(x){ return x.toLowerCase(); }).indexOf(e.toLowerCase()) < 0) out.push(e); };
+  add(b.email);
+  Object.keys(franchisees).forEach(function(k){ var f = franchisees[k]; if (f && cleanBoutiqueList(f.boutiques).indexOf(bId) >= 0) add(f.email); });
+  return out;
+}
+function royMailHtml(title, paras, cta, foot){
+  var E = function(x){ return String(x == null ? '' : x).replace(/&/g, '&amp;').replace(/</g, '&lt;'); };
+  return '<div style="font-family:Arial,Helvetica,sans-serif;max-width:520px;margin:0 auto;color:#1a1a1a">'
+    + '<div style="background:#161310;color:#e6c884;padding:20px 24px;border-radius:14px 14px 0 0"><div style="font-size:22px;font-weight:800;letter-spacing:.12em">KINGSTON</div><div style="color:#cdbf9f;font-size:12px;margin-top:2px">KINGTOOLS · Base Camp</div></div>'
+    + '<div style="border:1px solid #ece7df;border-top:none;border-radius:0 0 14px 14px;padding:22px 24px">'
+    + '<p style="margin:0 0 12px;font-size:17px;font-weight:700">' + E(title) + '</p>'
+    + paras.map(function(p){ return '<p style="margin:0 0 10px;color:#3a342c;font-size:14px;line-height:1.55">' + p + '</p>'; }).join('')
+    + (cta && cta.url ? '<div style="text-align:center;margin:20px 0 14px"><a href="' + E(cta.url) + '" style="display:inline-block;background:#161310;color:#e6c884;text-decoration:none;font-weight:800;font-size:15px;padding:13px 26px;border-radius:12px">' + E(cta.label) + '</a></div>' : '')
+    + (foot ? '<p style="margin:10px 0 0;color:#8a8077;font-size:12px;line-height:1.5">' + foot + '</p>' : '')
+    + '</div></div>';
+}
+function royMailSummary(inv){
+  var b = boutiques[inv.boutiqueId] || {};
+  return '<b>' + (String((inv.buyer && inv.buyer.label) || b.label || inv.boutiqueId).replace(/</g, '&lt;')) + '</b> · redevance de <b>' + royMonthLabel(inv.ym) + '</b><br>Facture <b>' + inv.num + '</b> : ' + royMoneyFr(inv.ht) + ' HT + TVA ' + royMoneyFr(inv.tva) + ' = <b>' + royMoneyFr(inv.ttc) + ' TTC</b>';
+}
+function royPayCta(inv){ return (inv.pay && inv.pay.state === 'pending' && inv.pay.url) ? { label: '💳 Payer ma redevance · ' + royMoneyFr(inv.ttc), url: inv.pay.url } : { label: 'Ouvrir KINGTOOLS › Royalties', url: KT_PUBLIC_URL + '/' }; }
+async function roySendAll(list, subject, html){ var res = []; for (var i = 0; i < list.length; i++) { res.push(await sendMail(list[i], subject, html)); } return res; }
+async function royNotifyInvoice(inv){
+  var to = royRecipients(inv.boutiqueId); if (!to.length) { royLog('mail_missing', inv, 'aucune adresse e-mail pour la boutique'); return; }
+  var html = royMailHtml('Votre redevance de ' + royMonthLabel(inv.ym) + ' est disponible', [
+    royMailSummary(inv),
+    'À régler en ligne sur kingbase.fr <b>avant le ' + royDateLongFr(inv.echeance) + ' à 23 h 59</b>.',
+    royAuto.block ? 'Passé cette date, le <b>réassort pro sera bloqué</b> jusqu\'au paiement (déblocage automatique dès que le paiement est reçu).' : '',
+  ].filter(Boolean), royPayCta(inv), 'La facture ' + inv.num + ' est consultable dans KINGTOOLS › Royalties. Le paiement sur kingbase.fr ne génère pas d\'autre facture.');
+  var r = await roySendAll(to, 'Redevance ' + royMonthLabel(inv.ym) + ' — ' + royMoneyFr(inv.ttc) + ' à régler avant le ' + royDateFr(inv.echeance), html);
+  inv.mailedAt = new Date().toISOString(); royLog('mail_invoice', inv, to.length + ' destinataire(s)' + (r.some(function(x){ return !x.ok; }) ? ' · échec : ' + ((r.find(function(x){ return !x.ok; }) || {}).error || '') : ''));
+}
+async function royNotifyReminder(inv){
+  var to = royRecipients(inv.boutiqueId); if (!to.length) return;
+  var html = royMailHtml('Rappel : redevance de ' + royMonthLabel(inv.ym) + ' à régler', [
+    royMailSummary(inv),
+    'Plus que quelques jours : paiement attendu <b>avant le ' + royDateLongFr(inv.echeance) + ' à 23 h 59</b>.',
+    royAuto.block ? 'Sans paiement à cette date, le réassort pro de la boutique sera bloqué.' : '',
+  ].filter(Boolean), royPayCta(inv), '');
+  await roySendAll(to, 'Rappel — redevance ' + royMonthLabel(inv.ym) + ' à régler avant le ' + royDateFr(inv.echeance), html);
+  royLog('mail_reminder', inv, to.length + ' destinataire(s)');
+}
+async function royNotifyBlocked(inv){
+  var to = royRecipients(inv.boutiqueId);
+  var label = (inv.buyer && inv.buyer.label) || (boutiques[inv.boutiqueId] || {}).label || inv.boutiqueId;
+  if (to.length) {
+    var html = royMailHtml('Réassort pro bloqué', [
+      royMailSummary(inv),
+      'L\'échéance du ' + royDateLongFr(inv.echeance) + ' est dépassée : le <b>réassort pro de la boutique est bloqué</b>.',
+      'Dès que la redevance est réglée en ligne, le réassort se débloque <b>automatiquement</b>.',
+    ], royPayCta(inv), '');
+    await roySendAll(to, 'Réassort pro bloqué — redevance ' + royMonthLabel(inv.ym) + ' non réglée', html);
+  }
+  if (adminEmail && ktValidEmail(adminEmail)) {
+    await sendMail(adminEmail, '⛔ Réassort bloqué : ' + label + ' (redevance ' + royMonthLabel(inv.ym) + ')', royMailHtml('Redevance impayée à l\'échéance', [royMailSummary(inv), 'Échéance : ' + royDateLongFr(inv.echeance) + '. Le réassort pro de la boutique est bloqué automatiquement jusqu\'au paiement.' + (to.length ? '' : ' ⚠️ Aucune adresse e-mail n\'est renseignée pour prévenir la boutique.')], { label: 'Ouvrir KINGTOOLS › Royalties', url: KT_PUBLIC_URL + '/' }, 'Exception possible : KINGTOOLS › Royalties › « Ne pas bloquer ce mois-ci ».'));
+  }
+  royLog('blocked', inv, 'échéance ' + royDateFr(inv.echeance) + ' dépassée · ' + to.length + ' destinataire(s) prévenu(s)');
+}
+async function royNotifyPaid(inv, afterCancel){
+  var label = (inv.buyer && inv.buyer.label) || (boutiques[inv.boutiqueId] || {}).label || inv.boutiqueId;
+  var to = royRecipients(inv.boutiqueId);
+  if (to.length && !afterCancel) {
+    await roySendAll(to, 'Redevance ' + royMonthLabel(inv.ym) + ' réglée — merci', royMailHtml('Paiement reçu, merci !', [royMailSummary(inv), 'Réglée en ligne le ' + royDateLongFr(inv.pay.paidAt) + '.' + (royOverdue(inv.boutiqueId) ? '' : ' Le réassort pro est ouvert.')], { label: 'Ouvrir KINGTOOLS', url: KT_PUBLIC_URL + '/' }, ''));
+  }
+  if (adminEmail && ktValidEmail(adminEmail)) {
+    await sendMail(adminEmail, (afterCancel ? '⚠️ Paiement reçu sur une facture annulée : ' : '💶 Redevance payée : ') + label + ' — ' + royMonthLabel(inv.ym) + ' — ' + royMoneyFr(inv.pay.total), royMailHtml(afterCancel ? 'Paiement reçu sur une facture annulée' : 'Redevance réglée en ligne', [royMailSummary(inv), 'Commande kingbase.fr n° ' + inv.pay.orderId + (inv.pay.method ? ' · ' + inv.pay.method : '') + '.' + (afterCancel ? ' La facture avait été annulée par avoir : régularise (remboursement ou imputation sur la nouvelle facture).' : '')], { label: 'Ouvrir KINGTOOLS › Royalties', url: KT_PUBLIC_URL + '/' }, ''));
+  }
+}
+
+// ---- Planificateur (toutes les 5 min + au demarrage) ----
+let royTickRunning = false;
+async function royAutoTick(opts){
+  opts = opts || {};
+  if (PG) return { error: 'mode base de données non pris en charge' };
+  if (royTickRunning) return { busy: true };
+  royTickRunning = true;
+  var out = { at: new Date().toISOString(), paid: [], invoiced: [], skipped: [], errors: [], reminded: [], blocked: [], payOrders: [] };
+  try {
+    var now = Date.now(), P = parisParts(now), ym = royYmShift(P.ym, -1);
+    // 1. Paiements en ligne a verifier (toutes les factures ouvertes, quel que soit le mois).
+    var open = royaltyInvoices.filter(function(r){ return r.type === 'facture' && r.status === 'emise' && r.pay && r.pay.state === 'pending'; });
+    for (var i = 0; i < open.length; i++) { if (await royRefreshPayment(open[i], { maxAgeMs: opts.force ? 0 : 4 * 60 * 1000 })) out.paid.push(open[i].num); }
+    if (!royAuto.enabled) return out;
+    // 2. Emission automatique du 1er (une seule fois par boutique et par mois ; rattrapage si le serveur etait arrete).
+    var runAt = parisToUtcMs(P.y, P.m, royAuto.invoiceDay, royAuto.invoiceHour, 0);
+    if (royAutoApplies(ym) && now >= runAt) {
+      var ids = boutiqueIds();
+      for (var k = 0; k < ids.length; k++) {
+        var bId = ids[k], rec = royaltiesRec(ym, bId);
+        if (rec.auto && rec.auto.at) continue;
+        var existing = royActiveInvoice(bId, ym);
+        if (existing) { royaltiesSetStatus(ym, bId, { auto: { at: new Date().toISOString(), result: 'deja_emise', num: existing.num } }); continue; }
+        var r = royIssueInvoice({ ym: ym, bId: bId, by: 'KINGTOOLS (automatique)', auto: true });
+        if (r.status !== 201) {
+          if (r.code === 'ZERO') { royaltiesSetStatus(ym, bId, { auto: { at: new Date().toISOString(), result: 'rien_a_facturer' } }); out.skipped.push(bId); }
+          else { out.errors.push({ boutiqueId: bId, error: r.error }); if (!rec.autoErrorAt) { royaltiesSetStatus(ym, bId, { autoErrorAt: new Date().toISOString(), autoError: r.error }); royLog('invoice_error', { num: null, boutiqueId: bId, ym: ym }, r.error); } }
+          continue;
+        }
+        royaltiesSetStatus(ym, bId, { auto: { at: new Date().toISOString(), result: 'emise', num: r.rec.num } });
+        royLog('invoiced', r.rec, royMoneyFr(r.rec.ttc) + ' TTC · échéance ' + royDateFr(r.rec.echeance));
+        out.invoiced.push(r.rec.num);
+        var pr = await royEnsurePayOrder(r.rec);
+        if (pr.ok) out.payOrders.push(r.rec.num);
+        await royNotifyInvoice(r.rec);
+      }
+    }
+    // 3. Suivi des factures du regime automatique : lien de paiement manquant, rappel, blocage.
+    var list = royaltyInvoices.filter(function(r){ return r.type === 'facture' && r.status === 'emise' && royAutoApplies(r.ym) && !royPaid(r); });
+    for (var j = 0; j < list.length; j++) {
+      var inv = list[j], ech = Date.parse(inv.echeance), rc = royaltiesRec(inv.ym, inv.boutiqueId);
+      var canRetry = !(inv.pay && (inv.pay.state === 'pending' || inv.pay.state === 'error' || (inv.pay.history || []).length >= 4));
+      if (canRetry && (!inv.payRetryAt || now - inv.payRetryAt > 30 * 60 * 1000)) {
+        inv.payRetryAt = now; var pr2 = await royEnsurePayOrder(inv); if (pr2.ok) out.payOrders.push(inv.num);
+      }
+      var n1 = royYmShift(inv.ym, 1);
+      var remindAt = parisToUtcMs(+n1.slice(0, 4), +n1.slice(5, 7), royAuto.remindDay, 9, 0);
+      if (!inv.remindedAt && now >= remindAt && now <= ech && Date.parse(inv.date) < remindAt) {
+        inv.remindedAt = new Date().toISOString(); persist(); await royNotifyReminder(inv); out.reminded.push(inv.num);
+      }
+      if (royAuto.block && now > ech && !rc.noBlock && !inv.blockNotifiedAt) {
+        inv.blockNotifiedAt = new Date().toISOString(); persist(); await royNotifyBlocked(inv); out.blocked.push(inv.num);
+      }
+    }
+  } catch (e) {
+    console.error('Redevances automatiques :', (e && e.message) || e); out.errors.push({ error: String((e && e.message) || e) });
+  } finally {
+    royTickRunning = false; royAuto.lastTickAt = new Date().toISOString(); persist();
+  }
+  return out;
+}
+// Apercu (admin) de ce que le prochain lancement emettrait — rien n'est cree.
+function royAutoPreview(ym){
+  var manque = royEntrepriseManque();
+  return boutiqueIds().map(function(id){
+    var b = boutiques[id] || {}, am = royaltiesAmount(ym, id), inv = royActiveInvoice(id, ym), rec = royaltiesRec(ym, id);
+    var ht = inv ? inv.ht : am.ht;
+    return { id: id, label: b.label || id, caHT: am.caHT, rate: am.rate, ht: ht, ttc: Math.round(ht * 120) / 100, override: !!am.override, invoice: inv ? inv.num : null, auto: rec.auto || null,
+      emails: royRecipients(id), action: inv ? 'déjà émise' : (ht > 0 ? (manque.length ? 'bloquée : identité entreprise incomplète' : 'sera émise') : 'rien à facturer') };
+  });
+}
 
 const server = http.createServer(async (req, res) => {
   res._cors = corsFor(req);
@@ -1978,10 +2400,12 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && path === '/api/royalties') {
       var rym = (u.searchParams.get('ym') || '').trim(); if(!rym){ var dN=new Date(); rym=dN.getFullYear()+'-'+('0'+(dN.getMonth()+1)).slice(-2); }
       var rids = boutiqueIds(); if (user.role !== 'admin') rids = rids.filter(function(id){ return id===user.boutiqueId; });
-      var rlist = rids.map(function(id){ var b=boutiques[id]||{}; var am=royaltiesAmount(rym, id); var rec=royaltiesRec(rym,id); return { id:id, label:(b.label||id), rate:am.rate, caHT:am.caHT, royalty:am.ht, royaltyAuto:am.auto, override:am.override, invoice:am.invoice, status:rec.status, declaredAt:rec.declaredAt||null, validatedAt:rec.validatedAt||null }; });
+      // Paiements en ligne : relecture rapide des commandes kingbase ouvertes (bornee a 4 s, la page n'attend jamais le site).
+      await royWithin(Promise.all(rids.map(function(id){ return royRefreshBoutique(id, 60000); })), 4000);
+      var rlist = rids.map(function(id){ var b=boutiques[id]||{}; var am=royaltiesAmount(rym, id); var rec=royaltiesRec(rym,id); var inv=royActiveInvoice(id, rym); var od=royOverdue(id); return { id:id, label:(b.label||id), rate:am.rate, caHT:am.caHT, royalty:am.ht, royaltyAuto:am.auto, override:am.override, invoice: inv ? royPublicView(inv) : null, status:(inv&&royPaid(inv))?'valide':rec.status, declaredAt:rec.declaredAt||null, validatedAt:rec.validatedAt||(inv&&inv.regleeAt)||null, paidOnline:rec.paidOnline||null, noBlock:rec.noBlock||null, autoApplies:royAutoApplies(rym), dueAt:(royAutoApplies(rym)?new Date(royDueMs(rym)).toISOString():null), blockedBy: od ? { num:od.num, ym:od.ym, mois:royMonthLabel(od.ym), ttc:od.ttc, echeance:od.echeance } : null, manualBlocked: proManualBlockedFor({ role:'manager', boutiqueId:id }), emails: user.role==='admin' ? royRecipients(id) : undefined }; });
       var rtot = rlist.reduce(function(a,x){ a.caHT+=x.caHT; a.royalties+=x.royalty; if(x.status==='valide')a.encaisse+=x.royalty; else a.attente+=x.royalty; return a; }, {caHT:0,royalties:0,encaisse:0,attente:0});
       Object.keys(rtot).forEach(function(k){ rtot[k]=Math.round(rtot[k]*100)/100; });
-      return send(res, 200, { role:user.role, ym:rym, boutiques:rlist, totals:rtot });
+      return send(res, 200, { role:user.role, ym:rym, boutiques:rlist, totals:rtot, auto: royAutoPublic() });
     }
     // Detail du calcul des royalties d'un mois : reconciliation TTC brut -> avoirs -> net -> CA HT.
     // Admin : n'importe quelle boutique ; manager : uniquement la sienne (transparence des deux cotes).
@@ -2027,6 +2451,7 @@ const server = http.createServer(async (req, res) => {
       var rdb = await readJson(req); var rdym=String((rdb&&rdb.ym)||''); var rdid=String((rdb&&rdb.boutiqueId)||'');
       if (user.role !== 'admin' && rdid !== user.boutiqueId) return send(res, 403, { error: 'Non autorise.' });
       if(!boutiques[rdid]) return send(res, 404, { error: 'Boutique inconnue.' });
+      if (user.role !== 'admin' && royAutoApplies(rdym)) return send(res, 409, { error: 'Pour ce mois, la redevance se règle en ligne : utilise le bouton « Payer ma redevance ».' });
       royaltiesSetStatus(rdym, rdid, { status:'declare', declaredAt:new Date().toISOString() });
       return send(res, 200, { ok:true });
     }
@@ -2034,7 +2459,9 @@ const server = http.createServer(async (req, res) => {
       if (user.role !== 'admin') return send(res, 403, { error: 'Action reservee a l administrateur.' });
       var rsb = await readJson(req); var rsst=String((rsb&&rsb.status)||'a_payer'); if(['a_payer','declare','valide'].indexOf(rsst)<0) rsst='a_payer';
       var rpatch={status:rsst}; if(rsst==='a_payer'){rpatch.declaredAt=null;rpatch.validatedAt=null;} if(rsst==='valide'){rpatch.validatedAt=new Date().toISOString();} if(rsst==='declare'){rpatch.validatedAt=null;}
+      if (rsst!=='valide') rpatch.paidOnline=null;
       royaltiesSetStatus(String((rsb&&rsb.ym)||''), String((rsb&&rsb.boutiqueId)||''), rpatch);
+      if (rsst==='valide') { var rsInv=royActiveInvoice(String((rsb&&rsb.boutiqueId)||''), String((rsb&&rsb.ym)||'')); if (rsInv) royCancelPayOrder(rsInv, 'réception validée à la main par ' + (user.name||'admin')).catch(function(){}); }
       return send(res, 200, { ok:true });
     }
     // Ajustement EXCEPTIONNEL du montant du mois (admin) : montant HT retenu + motif obligatoire, trace dans le JET.
@@ -2098,62 +2525,11 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'POST' && path === '/api/royalties/invoice') {
       if (user.role !== 'admin') return send(res, 403, { error:'Action réservée à l\'administrateur.' });
       var rgB = await readJson(req);
-      var rgYm = String((rgB&&rgB.ym)||'').trim();
-      var rgId = String((rgB&&rgB.boutiqueId)||'').trim();
-      if (!/^\d{4}-\d{2}$/.test(rgYm)) return send(res, 400, { error:'Mois invalide (AAAA-MM).' });
-      if (!boutiques[rgId]) return send(res, 404, { error:'Boutique inconnue.' });
-      var rgManque = royEntrepriseManque();
-      if (rgManque.length) return send(res, 400, { error: royEntrepriseMsg(rgManque), manque: rgManque });
-      var rgExist = royActiveInvoice(rgId, rgYm);
-      if (rgExist) return send(res, 409, { error:'Une facture existe déjà pour ce mois : '+rgExist.num+'. Émets d\'abord un avoir pour la corriger.', num:rgExist.num });
-      var RG2 = function(n){ return Math.round((Number(n)||0)*100)/100; };
-      var rgAuto = royaltiesCaHT(rgId, rgYm);
-      var rgBase = rgAuto, rgMotif = '';
-      if (rgB && rgB.base != null && rgB.base !== '') {
-        var rgRaw = Number(rgB.base);
-        if (!isFinite(rgRaw) || rgRaw < 0) return send(res, 400, { error:'Base HT invalide.' });
-        rgBase = RG2(rgRaw);
-        if (Math.abs(rgBase - rgAuto) >= 0.005) {
-          rgMotif = String((rgB&&rgB.motif)||'').trim();
-          if (rgMotif.length < 3) return send(res, 400, { error:'Motif obligatoire (3 caractères minimum) quand la base est ajustée à la main.' });
-        }
-      }
-      var rgRate = royaltiesRateFor(rgId);
-      var rgHtAuto = RG2(rgBase * rgRate / 100);          // redevance CALCULEE (base retenue x taux)
-      var rgHt = rgHtAuto;                                  // redevance RETENUE (ajustable, motif obligatoire)
-      var rgOv = royaltiesOverride(rgYm, rgId);
-      if (rgB && rgB.montant != null && rgB.montant !== '') {
-        var rgMRaw = Number(rgB.montant);
-        if (!isFinite(rgMRaw) || rgMRaw < 0) return send(res, 400, { error:'Montant HT invalide.' });
-        rgHt = RG2(rgMRaw);
-        if (Math.abs(rgHt - rgHtAuto) >= 0.005) {
-          var rgM2 = String((rgB&&rgB.motif)||'').trim();
-          var rgSameAsOv = !!(rgOv && Math.abs(rgOv.ht - rgHt) < 0.005 && rgOv.motif);   // reprend l'ajustement du mois deja motive
-          if (rgM2.length < 3 && !rgSameAsOv) return send(res, 400, { error:'Motif obligatoire (3 caractères minimum) quand le montant de la redevance est ajusté à la main.' });
-          rgMotif = rgM2.length >= 3 ? rgM2 : rgOv.motif;
-        }
-      } else if (rgOv) {
-        // Pas de montant saisi : l'ajustement exceptionnel du mois (deja motive et trace) fait foi.
-        rgHt = RG2(rgOv.ht);
-        if (Math.abs(rgHt - rgHtAuto) >= 0.005) rgMotif = [rgMotif, rgOv.motif].filter(Boolean).join(' · ');
-      }
-      if (!(rgHt > 0)) return send(res, 400, { error:'Rien à facturer : redevance nulle pour ce mois ('+rgBase.toFixed(2).replace('.',',')+' € HT × '+rgRate+' %).' });
-      var rgTva = RG2(rgHt * 0.20);
-      var rgTtc = RG2(rgHt + rgTva);
-      var rgDate = new Date();
-      var rgEch = new Date(rgDate.getTime() + 30*24*3600*1000);
-      var rgSeq = ++roySeq;
-      var rgNum = 'ROY-' + rgDate.getFullYear() + '-' + String(rgSeq).padStart(4,'0');
-      var rgRec = royCreate({
-        seq: rgSeq, num: rgNum, type: 'facture', boutiqueId: rgId, ym: rgYm,
-        baseAuto: rgAuto, baseRetenue: rgBase, motif: rgMotif, rate: rgRate,
-        ht: rgHt, tva: rgTva, ttc: rgTtc, tvaRate: 0.20,
-        date: rgDate.toISOString(), echeance: rgEch.toISOString(),
-        seller: roySellerSnapshot(), buyer: royBuyerSnapshot(rgId),
-        avoirDe: null, prevHash: royLastHash, htAuto: rgHtAuto,
-      }, { status: 'emise', par: user.name || 'admin' });
-      logFiscalEvent('FACTURE_ROYALTIES', rgId, { numero: rgNum, mois: rgYm, baseAuto: rgAuto, baseRetenue: rgBase, redevanceCalculee: rgHtAuto, motif: rgMotif, taux: rgRate, ht: rgHt, tva: rgTva, ttc: rgTtc, echeance: rgEch.toISOString(), par: user.name || 'admin' });
-      return send(res, 201, { ok:true, invoice: royPublicView(rgRec) });
+      var rgR = royIssueInvoice({ ym: rgB && rgB.ym, bId: rgB && rgB.boutiqueId, base: rgB && rgB.base, montant: rgB && rgB.montant, motif: rgB && rgB.motif, by: user.name || 'admin' });
+      if (rgR.status !== 201) return send(res, rgR.status, { error: rgR.error, manque: rgR.manque, num: rgR.num });
+      // Regime automatique : lien de paiement kingbase + e-mail a la boutique (en tache de fond, la reponse n'attend pas le site).
+      if (royAutoApplies(rgR.rec.ym)) { (async function(){ await royEnsurePayOrder(rgR.rec); await royNotifyInvoice(rgR.rec); })().catch(function(){}); }
+      return send(res, 201, { ok:true, invoice: rgR.invoice });
     }
     // AVOIR sur une facture de redevance : l'original passe « annulée » (trace), l'avoir est scelle a son tour.
     if (req.method === 'POST' && path === '/api/royalties/invoice/avoir') {
@@ -2179,6 +2555,7 @@ const server = http.createServer(async (req, res) => {
       }, { status: 'emise', par: user.name || 'admin' });
       raOrig.status = 'annulee'; raOrig.annuleeAt = raDate.toISOString(); raOrig.avoirNum = raNewNum;
       logFiscalEvent('AVOIR_ROYALTIES', raOrig.boutiqueId, { numero: raNewNum, factureOrigine: raOrig.num, mois: raOrig.ym, motif: raMotif, ht: -raOrig.ht, ttc: -raOrig.ttc, par: user.name || 'admin' });
+      royCancelPayOrder(raOrig, 'avoir ' + raNewNum).catch(function(){});
       return send(res, 201, { ok:true, invoice: royPublicView(raRec), origine: royPublicView(raOrig) });
     }
     // Suivi de reglement : émise <-> réglée (jamais sur une facture annulee ni sur un avoir).
@@ -2192,10 +2569,64 @@ const server = http.createServer(async (req, res) => {
       if (!rsRec) return send(res, 404, { error:'Facture introuvable.' });
       if (rsRec.type !== 'facture') return send(res, 400, { error:'Le statut ne se change que sur une facture (pas un avoir).' });
       if (rsRec.status === 'annulee') return send(res, 409, { error:'Facture annulée par avoir — statut figé.' });
-      if (rsSt === 'reglee') { rsRec.status='reglee'; rsRec.regleeAt=new Date().toISOString(); rsRec.regleePar=user.name||'admin'; }
+      if (rsSt === 'reglee') { rsRec.status='reglee'; rsRec.regleeAt=new Date().toISOString(); rsRec.regleePar=user.name||'admin'; royCancelPayOrder(rsRec, 'réglée à la main par ' + (user.name||'admin')).catch(function(){}); }
       else { rsRec.status='emise'; rsRec.regleeAt=null; rsRec.regleePar=null; }
       logFiscalEvent('ROYALTIES_REGLEMENT', rsRec.boutiqueId, { numero: rsRec.num, statut: rsSt, par: user.name || 'admin' });
       return send(res, 200, { ok:true, invoice: royPublicView(rsRec) });
+    }
+    // ---- Paiement EN LIGNE d'une facture de redevance (kingbase.fr) : cree / reprend la commande et renvoie le lien ----
+    if (req.method === 'POST' && path === '/api/royalties/pay') {
+      var rpB = await readJson(req);
+      var rpNum = String((rpB&&rpB.num)||'').trim();
+      var rpRec = royaltyInvoices.find(function(r){ return r.num === rpNum; });
+      if (!rpRec) return send(res, 404, { error:'Facture introuvable.' });
+      if (!royCanSee(user, rpRec)) return send(res, 403, { error:'Hors de vos boutiques.' });
+      var rpR = await royEnsurePayOrder(rpRec, { maxAgeMs: 5000 });
+      if (!rpR.ok) return send(res, rpR.code === 'PAID' ? 409 : (rpR.code === 'NOT_PAYABLE' ? 400 : 503), { error: rpR.error, code: rpR.code, invoice: royPublicView(rpRec) });
+      return send(res, 200, { ok:true, url: rpR.url, orderId: rpR.orderId, invoice: royPublicView(rpRec) });
+    }
+    // ---- Reglage + suivi du regime automatique (admin) ----
+    if (req.method === 'GET' && path === '/api/royalties/auto') {
+      if (user.role !== 'admin') return send(res, 403, { error:'Action réservée à l\'administrateur.' });
+      var raCfg = royAutoPublic();
+      var raYm = String(u.searchParams.get('ym')||'').trim(); if (!/^\d{4}-\d{2}$/.test(raYm)) raYm = raCfg.nextYm;
+      var raBlocked = boutiqueIds().map(function(id){ var od=royOverdue(id); return od ? { id:id, label:(boutiques[id]&&boutiques[id].label)||id, num:od.num, ym:od.ym, mois:royMonthLabel(od.ym), ttc:od.ttc, echeance:od.echeance } : null; }).filter(Boolean);
+      return send(res, 200, { config: raCfg, previewYm: raYm, preview: royAutoPreview(raYm), blocked: raBlocked, log: royAutoLog.slice(-60).reverse(), entrepriseManque: royEntrepriseManque() });
+    }
+    if (req.method === 'POST' && path === '/api/royalties/auto') {
+      if (user.role !== 'admin') return send(res, 403, { error:'Action réservée à l\'administrateur.' });
+      var rcB = await readJson(req) || {};
+      if (typeof rcB.enabled === 'boolean') royAuto.enabled = rcB.enabled;
+      if (typeof rcB.block === 'boolean') royAuto.block = rcB.block;
+      if (rcB.startYm != null) { if (!/^\d{4}-\d{2}$/.test(String(rcB.startYm))) return send(res, 400, { error:'Mois de départ invalide (AAAA-MM).' }); royAuto.startYm = String(rcB.startYm); }
+      royAuto.updatedAt = new Date().toISOString(); royAuto.updatedBy = user.name || 'admin';
+      royLog('config', null, 'automatique ' + (royAuto.enabled ? 'activé' : 'désactivé') + ' · blocage ' + (royAuto.block ? 'activé' : 'désactivé') + ' · depuis ' + royMonthLabel(royAuto.startYm) + ' · par ' + (user.name || 'admin'));
+      logFiscalEvent('ROYALTIES_AUTOMATIQUE', null, { actif: royAuto.enabled, blocage: royAuto.block, depuis: royAuto.startYm, par: user.name || 'admin' });
+      persist();
+      return send(res, 200, { ok:true, config: royAutoPublic() });
+    }
+    if (req.method === 'POST' && path === '/api/royalties/auto/run') {
+      if (user.role !== 'admin') return send(res, 403, { error:'Action réservée à l\'administrateur.' });
+      var rrOut = await royAutoTick({ force: true });
+      return send(res, 200, { ok:true, result: rrOut, config: royAutoPublic() });
+    }
+    // Exception (admin) : ne pas bloquer le reassort d'une boutique pour la redevance d'un mois (litige, accord de paiement...).
+    if (req.method === 'POST' && path === '/api/royalties/noblock') {
+      if (user.role !== 'admin') return send(res, 403, { error:'Action réservée à l\'administrateur.' });
+      var rnB = await readJson(req) || {};
+      var rnYm = String(rnB.ym||'').trim(), rnId = String(rnB.boutiqueId||'').trim();
+      if (!/^\d{4}-\d{2}$/.test(rnYm)) return send(res, 400, { error:'Mois invalide (AAAA-MM).' });
+      if (!boutiques[rnId]) return send(res, 404, { error:'Boutique inconnue.' });
+      var rnMotif = String(rnB.motif||'').trim().slice(0, 200);
+      if (rnB.on) {
+        royaltiesSetStatus(rnYm, rnId, { noBlock: { by: user.name || 'admin', at: new Date().toISOString(), motif: rnMotif } });
+        royLog('noblock_on', { num: (royActiveInvoice(rnId, rnYm)||{}).num || null, boutiqueId: rnId, ym: rnYm }, 'exception accordée par ' + (user.name || 'admin') + (rnMotif ? ' — ' + rnMotif : ''));
+      } else {
+        royaltiesSetStatus(rnYm, rnId, { noBlock: null });
+        royLog('noblock_off', { num: (royActiveInvoice(rnId, rnYm)||{}).num || null, boutiqueId: rnId, ym: rnYm }, 'exception retirée par ' + (user.name || 'admin'));
+      }
+      logFiscalEvent('ROYALTIES_EXCEPTION_BLOCAGE', rnId, { mois: rnYm, exception: !!rnB.on, motif: rnMotif, par: user.name || 'admin' });
+      return send(res, 200, { ok:true, noBlock: royaltiesRec(rnYm, rnId).noBlock || null, blockedBy: royOverdue(rnId) ? royOverdue(rnId).num : null });
     }
     // Export Factur-X (XML CII / EN16931) d'une facture de redevance — le coeur de la facture electronique 2026.
     if (req.method === 'GET' && path === '/api/royalties/invoice/facturx') {
@@ -3313,7 +3744,8 @@ const server = http.createServer(async (req, res) => {
     // ---------------- RÉASSORT PRO (B2B) : les franchisés commandent leur stock au réseau ----------------
     if (req.method === 'GET' && path === '/api/pro/catalog') {
       // Boutique bloquee par l'admin : pas de catalogue, seulement le message (200 pour un affichage propre cote app).
-      if (proBlockedFor(user)) return send(res, 200, { blocked: true, message: proBlockMessage(), products: [], rate: proRate, source: 'kingbase' });
+      if (user.role === 'manager' && royOverdue(user.boutiqueId)) await royWithin(royRefreshBoutique(user.boutiqueId, 5000), 4000);   // paiement tout juste fait ? on relit kingbase
+      if (proBlockedFor(user)) return send(res, 200, Object.assign({ products: [], rate: proRate, source: 'kingbase' }, proBlockPayload(user)));
       const usePro = (proProducts.length + proExtras.length) > 0;   // kingbase branche (ou references manuelles) -> catalogue de gros
       // Les FRANCHISES ne voient que les produits reellement suivis en stock chez Basecamp (proStock defini,
       // meme a 0 = rupture affichee). Un produit sans stock suivi est retire de leur catalogue a commander.
@@ -3490,7 +3922,7 @@ const server = http.createServer(async (req, res) => {
     }
     if (req.method === 'POST' && path === '/api/pro/orders') {
       if (user.role !== 'admin' && user.role !== 'manager') return send(res, 403, { error: 'Réservé au personnel' });
-      if (proBlockedFor(user)) return send(res, 403, { error: proBlockMessage(), blocked: true });   // blocage decide par l'admin
+      if (proBlockedFor(user)) return send(res, 403, Object.assign({ error: proBlockMessage(user) }, proBlockPayload(user)));   // blocage admin ou redevance impayee
       const b = await readJson(req);
       const bId = user.role === 'admin' ? (b.boutiqueId || 'aix') : user.boutiqueId;
       const items = []; let total = 0;
@@ -3544,7 +3976,7 @@ const server = http.createServer(async (req, res) => {
       return send(res, 201, { ok: true, order: o });
     }
     if (req.method === 'GET' && path === '/api/pro/orders') {
-      if (proBlockedFor(user)) return send(res, 200, { blocked: true, message: proBlockMessage(), orders: [] });   // page fermee pour cette boutique
+      if (proBlockedFor(user)) return send(res, 200, Object.assign({ orders: [] }, proBlockPayload(user)));   // page fermee pour cette boutique
       await refreshWooOrders(user);
       const list = supplyOrders.filter((o) => user.role === 'admin' ? true : o.boutiqueId === user.boutiqueId).slice().sort((a, b) => b.id - a.id);
       return send(res, 200, { orders: list });
@@ -3577,6 +4009,7 @@ const server = http.createServer(async (req, res) => {
           if (rec.status === 'valide') continue;
           if (am.invoice && am.invoice.status === 'reglee') continue;
           const inv = am.invoice ? royaltyInvoices.find((r) => r.num === am.invoice.num) : null;
+          if (inv && royPaid(inv)) continue;
           let etat = 'non_facturee', days = 0;
           const monthEnd = new Date(Number(ym.slice(0, 4)), Number(ym.slice(5, 7)), 1).getTime();   // 1er du mois suivant
           if (inv) { const ech = new Date(inv.echeance).getTime(); days = Math.floor((now - ech) / 86400000); etat = days > 0 ? 'retard' : 'facturee'; }
@@ -3584,7 +4017,8 @@ const server = http.createServer(async (req, res) => {
           else { days = Math.floor((now - monthEnd) / 86400000); }
           if (etat === 'retard') nLate++;
           totalMissing += am.ht;
-          missing.push({ boutiqueId: id, label: (boutiques[id] && boutiques[id].label) || id, ym: ym, ht: am.ht, ttc: Math.round(am.ht * 1.2 * 100) / 100, etat: etat, days: days, invoice: am.invoice ? am.invoice.num : null, echeance: inv ? inv.echeance : null, declaredAt: rec.declaredAt || null, adjusted: !!am.override });
+          const od = royOverdue(id);
+          missing.push({ boutiqueId: id, label: (boutiques[id] && boutiques[id].label) || id, ym: ym, ht: am.ht, ttc: Math.round(am.ht * 1.2 * 100) / 100, etat: etat, days: days, invoice: am.invoice ? am.invoice.num : null, echeance: inv ? inv.echeance : null, declaredAt: rec.declaredAt || null, adjusted: !!am.override, pay: inv ? royPayView(inv) : null, blocked: !!(od && inv && od.num === inv.num) });
         }
       }
       missing.sort((a, b) => (a.ym < b.ym ? -1 : (a.ym > b.ym ? 1 : (a.label < b.label ? -1 : 1))));
@@ -3600,7 +4034,7 @@ const server = http.createServer(async (req, res) => {
       const o = supplyOrders.find((x) => x.id === parseInt(mProCancel[1], 10));
       if (!o) return send(res, 404, { error: 'Commande introuvable' });
       if (user.role !== 'admin' && o.boutiqueId !== user.boutiqueId) return send(res, 403, { error: 'Accès refusé' });
-      if (proBlockedFor(user)) return send(res, 403, { error: proBlockMessage(), blocked: true });
+      if (proBlockedFor(user)) return send(res, 403, Object.assign({ error: proBlockMessage(user) }, proBlockPayload(user)));
       if (o.status !== 'attente') return send(res, 400, { error: 'Seule une commande non payée peut être annulée' });
       o.status = 'annulee'; o.canceledAt = Date.now();
       // RESTAURATION : une commande annulee rend ses quantites au stock grossiste.
@@ -3617,7 +4051,8 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && path === '/api/pro/block') {
       if (user.role !== 'admin') return send(res, 403, { error: 'Réservé à l\'administrateur réseau' });
       const bqs = Object.keys(boutiques).map((id) => ({ id: id, label: (boutiques[id] && boutiques[id].label) || id, blocked: proBlock.mode === 'all' || (proBlock.mode === 'selected' && proBlock.ids.indexOf(id) >= 0) }));
-      return send(res, 200, { mode: proBlock.mode, message: proBlock.message, ids: proBlock.ids, defaultMessage: proBlockMessage(), boutiques: bqs });
+      const autoList = Object.keys(boutiques).map((id) => { const od = royOverdue(id); return od ? { id: id, label: (boutiques[id] && boutiques[id].label) || id, num: od.num, ym: od.ym, mois: royMonthLabel(od.ym), ttc: od.ttc, echeance: od.echeance } : null; }).filter(Boolean);
+      return send(res, 200, { mode: proBlock.mode, message: proBlock.message, ids: proBlock.ids, defaultMessage: proBlockMessage(), boutiques: bqs, auto: { enabled: royAuto.enabled, block: royAuto.block, startYm: royAuto.startYm, startLabel: royMonthLabel(royAuto.startYm), dueDay: royAuto.dueDay, list: autoList } });
     }
     if (req.method === 'POST' && path === '/api/pro/block') {
       if (user.role !== 'admin') return send(res, 403, { error: 'Réservé à l\'administrateur réseau' });
@@ -3911,6 +4346,12 @@ if (!PG) {
   setTimeout(bkTick, 90 * 1000);
   setInterval(bkTick, 30 * 60 * 1000).unref();
   if (!bkConfigured()) console.log('INFO : sauvegarde externe non configuree (KT_BACKUP_S3_*) — les donnees ne sont copiees nulle part hors du serveur.');
+}
+
+// Redevances automatiques : emission du 1er, paiements en ligne, rappels et blocages — toutes les 5 minutes.
+if (!PG && process.env.KT_ROY_AUTO_TICK !== '0') {
+  setTimeout(function () { royAutoTick({}).catch(function () {}); }, 45 * 1000);
+  setInterval(function () { royAutoTick({}).catch(function () {}); }, 5 * 60 * 1000).unref();
 }
 
 // Synchro catalogue WooCommerce (reassort « en direct ») : au demarrage (differee) puis toutes les heures.
