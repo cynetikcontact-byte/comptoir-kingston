@@ -1930,7 +1930,7 @@ function setPayMode(m){ PAY_MODE=(m==='auto')?'auto':'manuel'; try{ localStorage
     var buyLine=(st.user&&st.user.role==='admin'&&p.buyPrice!=null)?'<div class="muted" style="font-size:11px;margin-top:2px">achat : '+eur2(p.buyPrice)+'/'+u+(p.pro!=null?(' · marge '+eur2(p.pro-p.buyPrice)):'')+'</div>':'';
     return '<div class="card pro-card'+(q>0?' inpanier':'')+'">'+ph+
       '<div style="font-weight:800;margin-top:8px;line-height:1.2">'+esc(p.name)+'</div>'+
-      '<div class="muted" style="font-size:12px">'+esc(p.cat)+' · '+price+'</div>'+
+      '<div class="muted" style="font-size:12px">'+price+'</div>'+
       dispo+buyLine+
       lotRow+stepper+hint+lineTot+remove+'</div>';
   }
