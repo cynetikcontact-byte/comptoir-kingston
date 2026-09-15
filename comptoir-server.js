@@ -3658,7 +3658,15 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && path === '/api/challenge') {
       const now = new Date();
       const today = now.toISOString().slice(0, 10);
-      const month = now.toISOString().slice(0, 7);
+      // Historique : ?date=YYYY-MM-DD permet de revoir le classement d'un jour passe (7 jours max).
+      // Rien n'est stocke : les classements sont recalcules depuis les factures, donc le resultat
+      // d'une journee terminee est fige par construction.
+      const HIST_DAYS = 7;
+      const minDate = new Date(now.getTime() - (HIST_DAYS - 1) * 86400000).toISOString().slice(0, 10);
+      const asked = String(u.searchParams.get('date') || '').slice(0, 10);
+      let day = today;
+      if (/^\d{4}-\d{2}-\d{2}$/.test(asked)) day = asked < minDate ? minDate : (asked > today ? today : asked);
+      const month = day.slice(0, 7);
       const r2 = (n) => Math.round(n * 100) / 100;
       function board(pred) {
         const rows = boutiqueIds().map((id) => {
@@ -3672,11 +3680,15 @@ const server = http.createServer(async (req, res) => {
         rows.forEach((row, i) => { row.rang = i + 1; });
         return rows;
       }
-      const jour = board((d) => d.slice(0, 10) === today);
+      const jour = board((d) => d.slice(0, 10) === day);
       const mois = board((d) => d.slice(0, 7) === month);
       return send(res, 200, {
         generatedAt: now.toISOString(),
-        jour: today,
+        jour: day,
+        today: today,
+        isToday: day === today,
+        minDate: minDate,
+        histDays: HIST_DAYS,
         moisLabel: month,
         you: user.role === 'admin' ? null : user.boutiqueId,
         classementJour: jour,
