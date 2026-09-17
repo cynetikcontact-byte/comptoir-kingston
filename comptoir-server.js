@@ -1476,6 +1476,24 @@ async function royWc(method, p, body){
   return j;
 }
 const royPayBusy = {};
+// Version du format des commandes de redevance sur kingbase.fr (2 = ligne produit + client + facturation complète, compatible Monetico).
+const ROY_ORDER_V = 2;
+// Produit virtuel masqué « Redevance de franchise » (SKU KT-REDEVANCE) : créé une fois sur kingbase.fr, puis mis en cache.
+let royProductId = 0;
+async function royWooRoyaltyProductId(){
+  if (royProductId) return royProductId;
+  var list = await royWc('GET', '/products?sku=KT-REDEVANCE&status=any');
+  var p = Array.isArray(list) && list[0];
+  if (!p) p = await royWc('POST', '/products', { name: 'Redevance de franchise', type: 'simple', status: 'publish', catalog_visibility: 'hidden', virtual: true, sku: 'KT-REDEVANCE', regular_price: '0', tax_status: 'none', manage_stock: false, reviews_allowed: false, short_description: 'Paiement des redevances de franchise KINGSTON (généré par KINGTOOLS).' });
+  else if (p.status !== 'publish' || p.tax_status !== 'none' || !p.virtual) { try { await royWc('PUT', '/products/' + p.id, { status: 'publish', tax_status: 'none', virtual: true, catalog_visibility: 'hidden' }); } catch (e) {} }
+  if (!p || !p.id) throw new Error('produit « Redevance de franchise » introuvable sur kingbase.fr');
+  royProductId = p.id; return royProductId;
+}
+// Compte client kingbase.fr du franchisé (même e-mail) : la commande lui est rattachée et reprend son adresse de facturation.
+async function royWooCustomer(email){
+  try { var list = await royWc('GET', '/customers?role=all&email=' + encodeURIComponent(email)); return (Array.isArray(list) && list[0]) || null; }
+  catch (e) { return null; }
+}
 // Cree (ou reprend) la commande de paiement kingbase.fr d'une facture de redevance -> lien de paiement.
 async function royEnsurePayOrder(inv, opts){
   opts = opts || {};
@@ -1485,7 +1503,12 @@ async function royEnsurePayOrder(inv, opts){
   if (inv.pay && inv.pay.orderId && inv.pay.state === 'pending') {
     await royRefreshPayment(inv, { maxAgeMs: opts.maxAgeMs != null ? opts.maxAgeMs : 15000 });
     if (royPaid(inv)) return { ok: false, code: 'PAID', error: 'Cette redevance vient d\'être réglée.' };
-    if (inv.pay.state === 'pending' && inv.pay.url) return { ok: true, url: inv.pay.url, orderId: inv.pay.orderId };
+    if (inv.pay.state === 'pending' && inv.pay.url && inv.pay.v === ROY_ORDER_V) return { ok: true, url: inv.pay.url, orderId: inv.pay.orderId };
+    // Ancienne commande (frais sans produit, refusée par Monetico) : on l'annule et on en recrée une conforme.
+    if (inv.pay.state === 'pending' && inv.pay.v !== ROY_ORDER_V) {
+      try { await royWc('PUT', '/orders/' + inv.pay.orderId, { status: 'cancelled' }); inv.pay.state = 'cancelled'; inv.pay.url = ''; royLog('pay_cancelled', inv, 'commande kingbase n° ' + inv.pay.orderId + ' annulée (ancien format refusé par Monetico, recréée)'); }
+      catch (e) { if (e && e.status === 404) { inv.pay.state = 'missing'; inv.pay.url = ''; } else throw e; }
+    }
   }
   if (royPayBusy[inv.num]) return { ok: false, code: 'BUSY', error: 'Préparation du paiement en cours — réessaie dans quelques secondes.' };
   royPayBusy[inv.num] = true;
@@ -1495,17 +1518,37 @@ async function royEnsurePayOrder(inv, opts){
     var label = buyer.label || b.label || inv.boutiqueId;
     var email = (buyer.email && ktValidEmail(buyer.email)) ? buyer.email : ((b.email && ktValidEmail(b.email)) ? b.email : '');
     var line = 'Redevance de franchise — ' + royMonthLabel(inv.ym) + ' — ' + label + ' — facture ' + inv.num + ' (' + royMoneyFr(inv.ht) + ' HT + TVA 20 % ' + royMoneyFr(inv.tva) + ')';
-    var billing = { company: String(buyer.name || label).slice(0, 100), address_1: String(buyer.address || '').slice(0, 100), postcode: String(buyer.zip || '').slice(0, 20), city: String(buyer.city || '').slice(0, 60), country: String(buyer.country || 'FR').slice(0, 2) };
-    if (email) billing.email = email;
-    var o = await royWc('POST', '/orders', {
-      status: 'pending', set_paid: false, currency: 'EUR', billing: billing,
-      fee_lines: [{ name: line.slice(0, 200), total: (Math.round(inv.ttc * 100) / 100).toFixed(2), tax_status: 'none' }],
-      meta_data: [{ key: '_kt_royalty', value: inv.num }, { key: '_kt_royalty_ym', value: inv.ym }, { key: '_kt_royalty_boutique', value: inv.boutiqueId }],
-    });
+    // Monetico (CIC) refuse le formulaire (« informations erronées ou incomplètes ») si la commande n'a ni produit
+    // (panier vide, sous-total 0) ni adresse de facturation complète (prénom, nom, adresse, CP, ville, pays : 3-D Secure).
+    // -> ligne PRODUIT « Redevance de franchise » (virtuel, masqué) + client Woo du franchisé + facturation complète.
+    var ttcStr = (Math.round(inv.ttc * 100) / 100).toFixed(2);
+    var cust = email ? await royWooCustomer(email) : null;
+    var cb = (cust && cust.billing) || {};
+    var sl = sellerFor(inv.boutiqueId) || {};
+    var pick = function(){ for (var i = 0; i < arguments.length; i++) { var v = String(arguments[i] == null ? '' : arguments[i]).trim(); if (v) return v; } return ''; };
+    var billing = {
+      first_name: pick(cb.first_name, cust && cust.first_name, 'Kingston').slice(0, 45),
+      last_name: pick(cb.last_name, cust && cust.last_name, label).slice(0, 45),
+      company: pick(buyer.name, cb.company, label).slice(0, 100),
+      address_1: pick(buyer.address, cb.address_1, sl.address).slice(0, 50),
+      postcode: pick(buyer.zip, cb.postcode, sl.zip).replace(/\s+/g, '').slice(0, 10),
+      city: pick(buyer.city, cb.city, sl.city).slice(0, 50),
+      country: pick(buyer.country, cb.country, 'FR').toUpperCase().slice(0, 2),
+    };
+    var phone = pick(cb.phone); if (phone) billing.phone = phone.slice(0, 20);
+    var billEmail = pick(email, cb.email, cust && cust.email); if (billEmail) billing.email = billEmail;
+    var productId = await royWooRoyaltyProductId();
+    var body = {
+      status: 'pending', set_paid: false, currency: 'EUR', billing: billing, shipping: Object.assign({}, billing, { email: undefined, phone: undefined }),
+      line_items: [{ product_id: productId, name: line.slice(0, 200), quantity: 1, subtotal: ttcStr, total: ttcStr }],
+      meta_data: [{ key: '_kt_royalty', value: inv.num }, { key: '_kt_royalty_ym', value: inv.ym }, { key: '_kt_royalty_boutique', value: inv.boutiqueId }, { key: '_kt_royalty_v', value: String(ROY_ORDER_V) }],
+    };
+    if (cust && cust.id) body.customer_id = cust.id;
+    var o = await royWc('POST', '/orders', body);
     if (!o || !o.id) throw new Error('réponse inattendue de kingbase.fr');
     var total = Math.round(Number(o.total) * 100) / 100;
     var history = ((prev && prev.history) || []).concat(prev && prev.orderId ? [{ orderId: prev.orderId, state: prev.state, at: prev.createdAt }] : []).slice(-5);
-    inv.pay = { orderId: o.id, url: o.payment_url || '', state: 'pending', wooStatus: o.status || 'pending', total: total, createdAt: new Date().toISOString(), checkedAt: Date.now(), history: history };
+    inv.pay = { v: ROY_ORDER_V, orderId: o.id, url: o.payment_url || '', state: 'pending', wooStatus: o.status || 'pending', total: total, createdAt: new Date().toISOString(), checkedAt: Date.now(), history: history };
     delete inv.payError;
     if (Math.abs(total - inv.ttc) >= 0.01) {
       try { await royWc('PUT', '/orders/' + o.id, { status: 'cancelled' }); } catch (e) {}
