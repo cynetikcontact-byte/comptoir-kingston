@@ -1476,6 +1476,21 @@ async function royWc(method, p, body){
   return j;
 }
 const royPayBusy = {};
+// Adresse de facturation d'une redevance, telle qu'elle DOIT partir sur kingbase.fr : fiche boutique a jour d'abord,
+// instantane de la facture ensuite. Sert a detecter qu'une commande ouverte est devenue obsolete.
+function royBillingFor(inv){
+  var b = boutiques[inv.boutiqueId] || {}, buyer = inv.buyer || {}, sl = sellerFor(inv.boutiqueId) || {};
+  var pick = function(){ for (var i = 0; i < arguments.length; i++) { var v = String(arguments[i] == null ? '' : arguments[i]).trim(); if (v) return v; } return ''; };
+  return {
+    company: pick(sl.name, buyer.name, b.label, inv.boutiqueId).slice(0, 100),
+    address_1: pick(sl.address, buyer.address).slice(0, 50),
+    postcode: pick(sl.zip, buyer.zip).replace(/\s+/g, '').slice(0, 10),
+    city: pick(sl.city, buyer.city).slice(0, 50),
+    country: pick(sl.country, buyer.country, 'FR').toUpperCase().slice(0, 2),
+  };
+}
+function roySig(bl){ bl = bl || {}; return [bl.company, bl.address_1, bl.postcode, bl.city, bl.country].map(function(x){ return String(x||'').trim().toLowerCase(); }).join('|'); }
+
 // Version du format des commandes de redevance sur kingbase.fr (2 = ligne produit + client + facturation complète, compatible Monetico).
 const ROY_ORDER_V = 2;
 // Produit virtuel masqué « Redevance de franchise » (SKU KT-REDEVANCE) : créé une fois sur kingbase.fr, puis mis en cache.
@@ -1503,10 +1518,13 @@ async function royEnsurePayOrder(inv, opts){
   if (inv.pay && inv.pay.orderId && inv.pay.state === 'pending') {
     await royRefreshPayment(inv, { maxAgeMs: opts.maxAgeMs != null ? opts.maxAgeMs : 15000 });
     if (royPaid(inv)) return { ok: false, code: 'PAID', error: 'Cette redevance vient d\'être réglée.' };
-    if (inv.pay.state === 'pending' && inv.pay.url && inv.pay.v === ROY_ORDER_V) return { ok: true, url: inv.pay.url, orderId: inv.pay.orderId };
-    // Ancienne commande (frais sans produit, refusée par Monetico) : on l'annule et on en recrée une conforme.
-    if (inv.pay.state === 'pending' && inv.pay.v !== ROY_ORDER_V) {
-      try { await royWc('PUT', '/orders/' + inv.pay.orderId, { status: 'cancelled' }); inv.pay.state = 'cancelled'; inv.pay.url = ''; royLog('pay_cancelled', inv, 'commande kingbase n° ' + inv.pay.orderId + ' annulée (ancien format refusé par Monetico, recréée)'); }
+    // La commande ouverte n'est reprise que si elle est au format courant ET batie sur la fiche boutique ACTUELLE.
+    var sigNow = roySig(royBillingFor(inv));
+    var sigOk = !inv.pay.sig || inv.pay.sig === sigNow;
+    if (inv.pay.state === 'pending' && inv.pay.url && inv.pay.v === ROY_ORDER_V && sigOk) return { ok: true, url: inv.pay.url, orderId: inv.pay.orderId };
+    // Ancien format (frais sans produit) OU fiche boutique corrigée depuis : on annule et on recrée une commande conforme.
+    if (inv.pay.state === 'pending' && (inv.pay.v !== ROY_ORDER_V || !sigOk)) {
+      try { await royWc('PUT', '/orders/' + inv.pay.orderId, { status: 'cancelled' }); inv.pay.state = 'cancelled'; inv.pay.url = ''; royLog('pay_cancelled', inv, 'commande kingbase n° ' + inv.pay.orderId + ' annulée (' + (inv.pay.v !== ROY_ORDER_V ? 'ancien format refusé par Monetico' : 'fiche boutique mise à jour') + ') — une nouvelle commande est créée'); }
       catch (e) { if (e && e.status === 404) { inv.pay.state = 'missing'; inv.pay.url = ''; } else throw e; }
     }
   }
@@ -1526,16 +1544,24 @@ async function royEnsurePayOrder(inv, opts){
     var cb = (cust && cust.billing) || {};
     var sl = sellerFor(inv.boutiqueId) || {};
     var pick = function(){ for (var i = 0; i < arguments.length; i++) { var v = String(arguments[i] == null ? '' : arguments[i]).trim(); if (v) return v; } return ''; };
-    var billing = {
+    // Identite COURANTE de la boutique (royBillingFor) : si le franchise corrige sa fiche, l'adresse suit
+    // et la commande ouverte est refaite (la facture, elle, garde son instantane legal).
+    var billing = Object.assign({
       first_name: pick(cb.first_name, cust && cust.first_name, 'Kingston').slice(0, 45),
       last_name: pick(cb.last_name, cust && cust.last_name, label).slice(0, 45),
-      company: pick(buyer.name, cb.company, label).slice(0, 100),
-      address_1: pick(buyer.address, cb.address_1, sl.address).slice(0, 50),
-      postcode: pick(buyer.zip, cb.postcode, sl.zip).replace(/\s+/g, '').slice(0, 10),
-      city: pick(buyer.city, cb.city, sl.city).slice(0, 50),
-      country: pick(buyer.country, cb.country, 'FR').toUpperCase().slice(0, 2),
-    };
-    var phone = pick(cb.phone); if (phone) billing.phone = phone.slice(0, 20);
+    }, royBillingFor(inv));
+    var phone = pick(sl.phone, cb.phone); if (phone) billing.phone = phone.slice(0, 20);
+    // Sans adresse complete, Monetico refuse le formulaire : on le dit clairement AU LIEU de creer une commande impayable.
+    var manque = [];
+    if (!billing.address_1) manque.push('adresse');
+    if (!billing.postcode) manque.push('code postal');
+    if (!billing.city) manque.push('ville');
+    if (manque.length) {
+      var msgId = 'Complète d\'abord la fiche de ta boutique (' + manque.join(', ') + ') dans « Mon compte » : la banque refuse le paiement sans adresse complète.';
+      inv.payError = { at: new Date().toISOString(), error: msgId };
+      persist(); royLog('pay_error', inv, msgId);
+      return { ok: false, code: 'IDENTITE', error: msgId };
+    }
     var billEmail = pick(email, cb.email, cust && cust.email); if (billEmail) billing.email = billEmail;
     var productId = await royWooRoyaltyProductId();
     var body = {
@@ -1548,7 +1574,7 @@ async function royEnsurePayOrder(inv, opts){
     if (!o || !o.id) throw new Error('réponse inattendue de kingbase.fr');
     var total = Math.round(Number(o.total) * 100) / 100;
     var history = ((prev && prev.history) || []).concat(prev && prev.orderId ? [{ orderId: prev.orderId, state: prev.state, at: prev.createdAt }] : []).slice(-5);
-    inv.pay = { v: ROY_ORDER_V, orderId: o.id, url: o.payment_url || '', state: 'pending', wooStatus: o.status || 'pending', total: total, createdAt: new Date().toISOString(), checkedAt: Date.now(), history: history };
+    inv.pay = { v: ROY_ORDER_V, sig: roySig(royBillingFor(inv)), orderId: o.id, url: o.payment_url || '', state: 'pending', wooStatus: o.status || 'pending', total: total, createdAt: new Date().toISOString(), checkedAt: Date.now(), history: history };
     delete inv.payError;
     if (Math.abs(total - inv.ttc) >= 0.01) {
       try { await royWc('PUT', '/orders/' + o.id, { status: 'cancelled' }); } catch (e) {}
