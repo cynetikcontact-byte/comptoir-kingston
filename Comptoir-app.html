@@ -4647,7 +4647,7 @@ function setPayMode(m){ PAY_MODE=(m==='auto')?'auto':'manuel'; try{ localStorage
     S.busy=true;
     fetch('/api/my-boutique',{headers:{'x-comptoir-token':tok()}})
       .then(function(r){ return r.ok?r.json():null; })
-      .then(function(d){ S.data=d; S.loaded=true; S.at=Date.now(); S.busy=false; })
+      .then(function(d){ S.busy=false; S.at=Date.now(); if(d&&d.seller){ S.data=d; S.loaded=true; } })   // pas de reponse exploitable -> on ne bloque pas
       .catch(function(){ S.busy=false; S.at=Date.now(); });
   }
   // Champs indispensables : ils partent sur la facture de redevance ET sur la commande de paiement kingbase.fr
