@@ -4636,5 +4636,92 @@ function setPayMode(m){ PAY_MODE=(m==='auto')?'auto':'manuel'; try{ localStorage
   window.__ktBcTimer=setInterval(ensureNav,1000); ensureNav();
   window.__ktBcRefresh=setInterval(function(){ if(document.getElementById('kt-bc-view')&&!ST.loading) load(true); },60000);
 })();</script>
+<script>/* ===== Fiche boutique obligatoire : bloque Royalties et Reassort tant que l'identite n'est pas complete ===== */
+(function(){
+  if(window.__ktFicheGuard) return; window.__ktFicheGuard=1;
+  var S={data:null,loaded:false,busy:false,at:0};
+  function tok(){ var t=localStorage.getItem('kt_session')||''; try{ var o=JSON.parse(t); return o.token||t; }catch(e){ return t; } }
+  function sess(){ try{ return JSON.parse(localStorage.getItem('kt_session')||'{}'); }catch(e){ return {}; } }
+  function load(){
+    if(S.busy) return; if(S.loaded && (Date.now()-S.at)<30000) return;
+    S.busy=true;
+    fetch('/api/my-boutique',{headers:{'x-comptoir-token':tok()}})
+      .then(function(r){ return r.ok?r.json():null; })
+      .then(function(d){ S.data=d; S.loaded=true; S.at=Date.now(); S.busy=false; })
+      .catch(function(){ S.busy=false; S.at=Date.now(); });
+  }
+  // Champs indispensables : ils partent sur la facture de redevance ET sur la commande de paiement kingbase.fr
+  // (Monetico refuse le paiement sans adresse complete).
+  function missing(){
+    var s=(S.data&&S.data.seller)||{}, m=[];
+    if(!String(s.name||'').trim()) m.push('Raison sociale');
+    if(!String(s.address||'').trim()) m.push('Adresse');
+    if(!String(s.zip||'').trim()) m.push('Code postal');
+    if(!String(s.city||'').trim()) m.push('Ville');
+    if(!String(s.siren||'').replace(/\D/g,'')) m.push('SIREN');
+    if(!String((S.data&&S.data.email)||'').trim()) m.push('E-mail');
+    return m;
+  }
+  function onBlocked(){
+    var roy=document.getElementById('kt-roy-view');
+    if(roy && roy.offsetParent!==null) return 'Royalties';
+    var nav=document.querySelector('#side .nav-item[data-view="pro"].active');
+    if(nav && document.getElementById('pro-main')) return 'Réassort';
+    return null;
+  }
+  function css(){
+    if(document.getElementById('kt-fiche-css')) return;
+    var st=document.createElement('style'); st.id='kt-fiche-css';
+    st.textContent='#kt-fiche-ov{position:fixed;inset:0;z-index:9000;background:rgba(26,26,26,.55);display:flex;align-items:center;justify-content:center;padding:20px}'
+      +'#kt-fiche-ov .bx{background:#fff;border:1px solid #e6d7b0;border-radius:16px;max-width:460px;width:100%;padding:24px;box-shadow:0 18px 50px rgba(0,0,0,.25);font-family:inherit}'
+      +'#kt-fiche-ov h3{margin:0 0 8px;font-size:20px;font-weight:800;color:#1a1a1a}'
+      +'#kt-fiche-ov p{margin:0 0 12px;font-size:14px;color:#4a4237;line-height:1.5}'
+      +'#kt-fiche-ov ul{margin:0 0 16px 18px;padding:0;font-size:14px;color:#8a5b00}'
+      +'#kt-fiche-ov li{margin:2px 0}'
+      +'#kt-fiche-ov .btns{display:flex;gap:10px;flex-wrap:wrap}'
+      +'#kt-fiche-ov button{border:0;border-radius:10px;padding:11px 16px;font-size:14px;font-weight:700;cursor:pointer}'
+      +'#kt-fiche-ov .go{background:#b5872f;color:#fff}'
+      +'#kt-fiche-ov .bk{background:#f3efe7;color:#4a4237}';
+    document.head.appendChild(st);
+  }
+  function show(where,list){
+    css();
+    var ov=document.getElementById('kt-fiche-ov');
+    if(!ov){
+      ov=document.createElement('div'); ov.id='kt-fiche-ov';
+      ov.innerHTML='<div class="bx"><h3>Complète d\'abord les informations de ta boutique</h3>'
+        +'<p id="kt-fiche-txt"></p><ul id="kt-fiche-list"></ul>'
+        +'<p style="font-size:13px;color:#7a7268">Ces informations servent à établir ta facture et à autoriser le paiement par carte. Sans elles, la banque refuse le paiement.</p>'
+        +'<div class="btns"><button class="go" id="kt-fiche-go">Compléter mes informations</button>'
+        +'<button class="bk" id="kt-fiche-bk">Retour au tableau de bord</button></div></div>';
+      document.body.appendChild(ov);
+      ov.addEventListener('click',function(e){ e.stopPropagation(); },true);
+      document.getElementById('kt-fiche-go').onclick=function(){
+        S.loaded=false; ov.remove();
+        var n=document.getElementById('nav-moncompte'); if(n) n.click();
+      };
+      document.getElementById('kt-fiche-bk').onclick=function(){
+        ov.remove();
+        var d=document.querySelector('#side .nav-item[data-view="dash"]'); if(d) d.click();
+      };
+    }
+    var t=document.getElementById('kt-fiche-txt');
+    if(t) t.textContent='L\'onglet '+where+' n\'est pas accessible tant que la fiche de ta boutique est incomplète. Il manque :';
+    var ul=document.getElementById('kt-fiche-list');
+    if(ul) ul.innerHTML=list.map(function(x){ return '<li>'+x+'</li>'; }).join('');
+  }
+  function hide(){ var ov=document.getElementById('kt-fiche-ov'); if(ov) ov.remove(); }
+  function tick(){
+    var u=sess();
+    if(!u || u.role!=='manager'){ hide(); return; }
+    var where=onBlocked();
+    if(!where){ hide(); return; }
+    load();
+    if(!S.loaded) return;
+    var m=missing();
+    if(m.length) show(where,m); else hide();
+  }
+  window.__ktFicheTimer=setInterval(tick,600); tick();
+})();</script>
 </body>
 </html>
