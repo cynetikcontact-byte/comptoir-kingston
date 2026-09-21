@@ -4695,7 +4695,8 @@ function setPayMode(m){ PAY_MODE=(m==='auto')?'auto':'manuel'; try{ localStorage
         +'<div class="btns"><button class="go" id="kt-fiche-go">Compléter mes informations</button>'
         +'<button class="bk" id="kt-fiche-bk">Retour au tableau de bord</button></div></div>';
       document.body.appendChild(ov);
-      ov.addEventListener('click',function(e){ e.stopPropagation(); },true);
+      // Clic sur le fond : on bloque, sans jamais empecher les boutons de la fenetre de fonctionner.
+      ov.addEventListener('click',function(e){ if(e.target===ov){ e.preventDefault(); e.stopPropagation(); } });
       document.getElementById('kt-fiche-go').onclick=function(){
         S.loaded=false; ov.remove();
         var n=document.getElementById('nav-moncompte'); if(n) n.click();
