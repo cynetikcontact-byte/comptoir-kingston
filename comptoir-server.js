@@ -319,6 +319,193 @@ let proExtras = [];   // [{ id:'kx..', name, cat, unit:'g'|'u', proPrice? , sour
 // Renommages decides par l'admin : { productId: nouveau nom }. Applique apres chaque synchro kingbase
 // (sinon la synchro horaire remettrait le nom du site) et pousse vers Woo quand le produit y est lie.
 let proRename = {};
+// ===== KT_WAREHOUSE_V1 : receptions et lots du stock grossiste =====
+// Le total historique reste la reference. Sa part non ventilee n'est jamais transformee en lot fictif.
+var warehouse = { version: 1, revision: 0, lots: [], receipts: [], moves: [], settings: {}, legacyCosts: {} };
+function whRound(n) { return Math.round(n * 100) / 100; }
+function whFail(message, status) { var e = new Error(message); e.status = status || 400; throw e; }
+function whText(v, max) { return String(v == null ? '' : v).trim().slice(0, max || 160); }
+function whId() { return crypto.randomBytes(12).toString('hex'); }
+function whProduct(pid) { var p = allProProducts().find(function(x) { return x.id === pid; }); if (!p) whFail('Produit de gros introuvable.', 404); return p; }
+function whService(p) { return p.sku === 'KT-REDEVANCE' || /^redevance de franchise$/i.test(p.name || ''); }
+function whDay(v, optional) {
+  if (!v && optional) return '';
+  if (typeof v !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(v) || !Number.isFinite(Date.parse(v)) || new Date(v).toISOString().slice(0, 10) !== v) whFail('Date invalide.');
+  return v;
+}
+function whNumber(v, unit, positive) {
+  if ((typeof v !== 'number' && typeof v !== 'string') || v === '' || (typeof v === 'string' && !v.trim())) whFail('Nombre requis.');
+  var n = Number(v);
+  if (!Number.isFinite(n) || n < 0 || n > 100000000 || (positive && n <= 0) || (unit === 'u' && !Number.isInteger(n)) || Math.abs(n * 100 - Math.round(n * 100)) > 0.00001) whFail('Quantite ou prix invalide (unites entieres, deux decimales maximum).');
+  return whRound(n);
+}
+function whLots(pid) { return warehouse.lots.filter(function(l) { return l.pid === pid; }); }
+function whExpired(l) { return l.qty>0 && l.expiry && l.expiry < new Date().toISOString().slice(0,10); }
+function whAvailable(pid) { if(proStock[pid]==null)return null; return whRound(Math.max(0,proStock[pid]-whLots(pid).filter(whExpired).reduce(function(s,l){return s+l.qty;},0))); }
+function whTracked(pid) { return whRound(whLots(pid).reduce(function(s,l) { return s + l.qty; }, 0)); }
+function whLegacy(pid) { return whRound(Math.max(0, (proStock[pid] || 0) - whTracked(pid))); }
+function whCaptureCost(pid) { if (!Object.prototype.hasOwnProperty.call(warehouse.legacyCosts, pid)) warehouse.legacyCosts[pid] = proBuyPrice[pid] == null ? null : proBuyPrice[pid]; }
+function whAverage(pid) {
+  var qty = proStock[pid]; if (!(qty > 0)) return null;
+  var pool = whLegacy(pid), lc = Object.prototype.hasOwnProperty.call(warehouse.legacyCosts, pid) ? warehouse.legacyCosts[pid] : (proBuyPrice[pid] == null ? null : proBuyPrice[pid]);
+  if (pool > 0 && lc == null) return null;
+  var value = pool * (lc || 0), lots = whLots(pid);
+  for (var l of lots) { if (l.qty > 0 && l.buy == null) return null; value += l.qty * (l.buy || 0); }
+  return value / qty;
+}
+function whReprice(pid) { var avg = whAverage(pid); if (avg == null) delete proBuyPrice[pid]; else proBuyPrice[pid] = whRound(avg); }
+function whMove(type, pid, lot, delta, reason, user, extra) {
+  warehouse.moves.push(Object.assign({ id: whId(), date: new Date().toISOString(), type: type, pid: pid, lot: lot || '', delta: delta, reason: reason, who: (user && (user.name || user.uname)) || 'Systeme', productName:(allProProducts().find(function(p){return p.id===pid;})||{}).name || pid, unit:(allProProducts().find(function(p){return p.id===pid;})||{}).unit || '', stockAfter: proStock[pid] == null ? null : proStock[pid] }, extra || {}));
+  warehouse.revision++;
+}
+function whRevision() {
+  return crypto.createHash('sha256').update(JSON.stringify([warehouse.revision, proStock, proBuyPrice, proSellPrice, allProProducts().map(function(p) { return [p.id,p.name,p.proPrice,p.unit]; })])).digest('hex').slice(0, 24);
+}
+function whSnapshot() {
+  return { version: 'KT_WAREHOUSE_V1', revision: whRevision(), products: allProProducts().filter(function(p) { return !whService(p); }).map(function(p) {
+    var setting = warehouse.settings[p.id] || {}, lots = whLots(p.id).map(function(l) { return Object.assign({}, l); }), pool = whLegacy(p.id);
+    if (pool > 0) lots.unshift({ id: 'legacy:' + p.id, pid: p.id, code: 'Stock anterieur a ventiler', legacy: true, qty: pool, initial: pool, buy: Object.prototype.hasOwnProperty.call(warehouse.legacyCosts,p.id) ? warehouse.legacyCosts[p.id] : (proBuyPrice[p.id] == null ? null : proBuyPrice[p.id]), received: '', expiry: '', supplier: '', reference: '' });
+    return { id:p.id, name:p.name, sku:p.sku || p.id, family:p.cat || 'Gros', unit:p.unit === 'g' ? 'g' : 'u', sell:proUnitInfo(p).price, sitePrice:p.proPrice == null ? null : p.proPrice, tracked:proStock[p.id] != null, stock:proStock[p.id] == null ? null : proStock[p.id], available:whAvailable(p.id), threshold:setting.threshold == null ? null : setting.threshold, lots:lots, average:whAverage(p.id), linked:!!p.wooId && p.unit !== 'g', manual:p.source === 'manuel' };
+  }), receipts:warehouse.receipts.slice().reverse(), movements:warehouse.moves.slice(-2000).reverse(), push:{configured:proPushConfigured(),state:proStockPush}, site:PRO_WP_URL, historyTruncated:warehouse.moves.length > 2000 };
+}
+// Sauvegarder avant de confirmer : une reception ne doit pas disparaitre apres un redemarrage.
+function whCommit(fn) {
+  if (PG) whFail('Suivi des receptions indisponible avec ce mode de stockage.', 503);
+  var old = { warehouse: JSON.parse(JSON.stringify(warehouse)), proStock:Object.assign({},proStock), proBuyPrice:Object.assign({},proBuyPrice), proSellPrice:Object.assign({},proSellPrice), proExtras:JSON.parse(JSON.stringify(proExtras)), proRename:Object.assign({},proRename), proProducts:JSON.parse(JSON.stringify(proProducts)) };
+  try { var result = fn(); warehouse.revision++; writeDataFileNow(); return result; }
+  catch(e) { warehouse=old.warehouse; proStock=old.proStock; proBuyPrice=old.proBuyPrice; proSellPrice=old.proSellPrice; proExtras=old.proExtras; proRename=old.proRename; proProducts=old.proProducts; if (!e.status) e.status=503; throw e; }
+}
+// Les reserves de reassort consomment les vrais lots, dans l'ordre des peremptions, puis le reliquat historique.
+function whTake(pid, qty, user, reason, type, before) {
+  whCaptureCost(pid);
+  var left = qty, parts = [];
+  whLots(pid).filter(function(l) { return l.qty > 0 && !whExpired(l); }).sort(function(a,b) { return (a.expiry || '9999').localeCompare(b.expiry || '9999') || (a.received || '').localeCompare(b.received || ''); }).forEach(function(l) {
+    if (left <= 0) return; var q = Math.min(left,l.qty); l.qty=whRound(l.qty-q); left=whRound(left-q); parts.push({id:l.id,code:l.code,qty:q,expiry:l.expiry});
+  });
+  if (left > 0) parts.push({id:null,code:'',qty:left,expiry:''});
+  var remaining = before == null ? (proStock[pid] || 0) : before;
+  parts.forEach(function(l) { remaining = whRound(remaining-l.qty); whMove(type || 'Reservation reassort',pid,l.code || 'Stock anterieur non ventile',-l.qty,reason,user,{stockAfter:remaining}); });
+  return parts;
+}
+function whRestore(pid, parts, qty, user, reason) {
+  if (Array.isArray(parts)) parts.forEach(function(a) { var l=warehouse.lots.find(function(x) { return x.id===a.id && x.pid===pid; }); if(l) l.qty=whRound(l.qty+a.qty); });
+  whMove('Retour reservation',pid,(parts || []).map(function(a) { return a.code; }).filter(Boolean).join(', '),qty,reason,user);
+}
+// Une preparation partielle libere exactement les lots non expedies ; une hausse les reserve a nouveau.
+function whResizeReservation(it, quantity, order, user) {
+  if (!Array.isArray(it.warehouseLots)) return;
+  var current = whRound(it.warehouseLots.reduce(function(s,l){return s+l.qty;},0));
+  if (quantity === current) return;
+  if (quantity < current) {
+    var back = whRound(current-quantity), left=back;
+    for(var i=it.warehouseLots.length-1;i>=0 && left>0;i--) {
+      var part=it.warehouseLots[i],q=Math.min(left,part.qty),l=warehouse.lots.find(function(x){return x.id===part.id && x.pid===it.productId;});
+      if(l)l.qty=whRound(l.qty+q);part.qty=whRound(part.qty-q);left=whRound(left-q);
+    }
+    it.warehouseLots=it.warehouseLots.filter(function(p){return p.qty>0;});proStock[it.productId]=whRound((proStock[it.productId]||0)+back);
+    whMove('Preparation partielle',it.productId,'',back,order.numero+' · quantite confirmee '+quantity,user);
+  } else {
+    var extra=whRound(quantity-current),parts=whTake(it.productId,extra,user,order.numero+' · complement de preparation');
+    parts.forEach(function(part){var existing=it.warehouseLots.find(function(l){return l.id===part.id;});if(existing)existing.qty=whRound(existing.qty+part.qty);else it.warehouseLots.push(part);});
+    proStock[it.productId]=whRound(proStock[it.productId]-extra);
+  }
+  it.lot=it.warehouseLots.map(function(l){return (l.code||'Stock anterieur non ventile')+' ('+l.qty+' '+it.unit+')';}).join(', ');
+  whReprice(it.productId);
+}
+function whLegacyStock(pid, before, user, reason) {
+  var after=proStock[pid];
+  if (before===after) return;
+  if (after != null && before != null && after < before) whTake(pid,whRound(before-after),user,reason,'Correction historique',before);
+  else whMove('Stock historique',pid,'',after == null ? null : whRound(after-(before || 0)),reason,user);
+  if (whLots(pid).length) whReprice(pid);
+}
+function whReceipt(b,user) {
+  var requestId=whText(b.requestId,100); if (!/^[a-zA-Z0-9_-]{12,100}$/.test(requestId)) whFail('Identifiant de reception requis.');
+  var payload={supplier:whText(b.supplier),ref:whText(b.ref),date:whDay(b.date),note:whText(b.note,1000),lines:b.lines};
+  var hash=crypto.createHash('sha256').update(JSON.stringify(payload)).digest('hex');
+  var replay=warehouse.receipts.find(function(r) { return r.requestId===requestId; });
+  if(replay) { if(replay.hash!==hash)whFail('Cette reception a deja ete enregistree avec un autre contenu.',409); return {ok:true,receipt:replay,replayed:true}; }
+  if(b.revision!==whRevision()) whFail('Le stock a change. Actualisez puis verifiez a nouveau la reception.',409);
+  if(!payload.supplier || !payload.ref)whFail('Fournisseur et bon de livraison requis.');
+  if(payload.date > new Date().toISOString().slice(0,10))whFail('La reception ne peut pas etre datee dans le futur.');
+  if(!Array.isArray(b.lines) || !b.lines.length || b.lines.length > 100) whFail('Saisissez entre 1 et 100 lignes de reception.');
+  var seen={}, prices={}, lines=b.lines.map(function(it) {
+    var p=whProduct(whText(it.pid,80)); if(whService(p))whFail('Ce service ne gere pas de stock.');
+    var code=whText(it.code,60), qty=whNumber(it.qty,p.unit,true), buy=whNumber(it.buy), expiry=whDay(it.expiry,true);
+    if(!code)whFail('Numero de lot fournisseur requis.');
+    if(expiry && expiry < new Date().toISOString().slice(0,10))whFail('Un lot perime ne peut pas etre receptionne en stock disponible.');
+    var key=p.id+'|'+code.toLowerCase(); if(seen[key])whFail('Regroupez les quantites du meme lot sur une seule ligne.'); seen[key]=true;
+    var existing=whLots(p.id).find(function(l) { return l.code.toLowerCase()===code.toLowerCase(); });
+    if(existing && (existing.buy!==buy || existing.expiry!==expiry || existing.supplier!==payload.supplier))whFail('Lot '+code+' deja connu : fournisseur, cout et peremption doivent correspondre.');
+    var changeSell=it.changeSell===true, sell=changeSell?whNumber(it.sell):proUnitInfo(p).price;
+    if(changeSell) { if(prices[p.id]!==undefined && prices[p.id]!==sell)whFail('Un seul prix de vente par produit.'); prices[p.id]=sell; }
+    return {pid:p.id,name:p.name,unit:p.unit,code:existing?existing.code:code,qty:qty,buy:buy,expiry:expiry,existingId:existing?existing.id:null,changeSell:changeSell,sell:sell};
+  });
+  var receipt=whCommit(function() {
+    var r={id:'REC-'+new Date().getUTCFullYear()+'-'+String(warehouse.receipts.length+1).padStart(5,'0'),requestId:requestId,hash:hash,supplier:payload.supplier,ref:payload.ref,date:payload.date,note:payload.note,createdAt:new Date().toISOString(),by:user.name || '',lines:lines};
+    lines.forEach(function(it) {
+      whCaptureCost(it.pid); var l=it.existingId?warehouse.lots.find(function(x) {return x.id===it.existingId;}):null;
+      if(l) { l.qty=whRound(l.qty+it.qty); l.initial=whRound(l.initial+it.qty); }
+      else { l={id:whId(),pid:it.pid,code:it.code,qty:it.qty,initial:it.qty,buy:it.buy,received:r.date,expiry:it.expiry,supplier:r.supplier,reference:r.ref}; warehouse.lots.push(l); }
+      it.lotId=l.id; proStock[it.pid]=whRound((proStock[it.pid] || 0)+it.qty);
+      if(it.changeSell) { var before=proUnitInfo(whProduct(it.pid)).price; proSellPrice[it.pid]=it.sell; whMove('Prix de vente',it.pid,it.code,null,r.id,user,{before:before,after:it.sell}); }
+      whMove('Reception',it.pid,it.code,it.qty,r.id+' · '+r.supplier+' · '+r.ref,user,{receiptId:r.id});
+    });
+    lines.forEach(function(it) { whReprice(it.pid); });
+    warehouse.receipts.push(r); return r;
+  });
+  schedulePushProStock(lines.map(function(l) {return l.pid;}));
+  return {ok:true,receipt:receipt};
+}
+function whMutate(action,b,user) {
+  if(b.revision!==whRevision())whFail('Les donnees ont change. Actualisez la fiche avant de recommencer.',409);
+  var ids=[];
+  var result=whCommit(function() {
+    if(action==='product') {
+      var name=whText(b.name,80),sku=whText(b.sku,80),unit=b.unit,cat=whText(b.family,40);
+      if(!name || !sku || ['g','u'].indexOf(unit)<0 || !cat)whFail('Nom, reference, famille et unite requis.');
+      if(allProProducts().some(function(p) {return (p.sku || p.id).toLowerCase()===sku.toLowerCase();}))whFail('Reference deja utilisee.');
+      var p={id:'kx'+whId(),sku:sku,name:name,cat:cat,unit:unit,source:'manuel',custom:true,img:''};
+      var sell=whNumber(b.sell),threshold=whNumber(b.threshold,unit); proExtras.push(p); proStock[p.id]=0; proSellPrice[p.id]=sell; warehouse.settings[p.id]={threshold:threshold};
+      whMove('Creation produit',p.id,'',0,'Fiche creee',user); return {productId:p.id};
+    }
+    var p=whProduct(whText(b.pid,80)),reason=whText(b.reason,500);
+    if(action==='settings') {
+      var name=whText(b.name,80); if(!name)whFail('Nom requis.');
+      warehouse.settings[p.id]={threshold:whNumber(b.threshold,p.unit)}; p.name=name; if(p.source!=='manuel')proRename[p.id]=name;
+      whMove('Fiche produit',p.id,'',null,'Nom et seuil mis a jour',user); return {};
+    }
+    if(!reason)whFail('Motif ou justificatif obligatoire.');
+    if(action==='price') { var sell=whNumber(b.sell),old=proUnitInfo(p).price; proSellPrice[p.id]=sell; whMove('Prix de vente',p.id,'',null,reason,user,{before:old,after:sell}); ids.push(p.id); return {}; }
+    var legacy=b.lotId==='legacy:'+p.id, l=legacy?null:warehouse.lots.find(function(x) {return x.id===b.lotId && x.pid===p.id;});
+    if(!l && !legacy)whFail('Lot introuvable.',404);
+    whCaptureCost(p.id);
+    if(action==='allocate') {
+      if(!legacy)whFail('Selectionnez le stock anterieur a ventiler.');
+      var qty=whNumber(b.qty,p.unit,true),code=whText(b.code,60),supplier=whText(b.supplier),buy=whNumber(b.buy),expiry=whDay(b.expiry,true);
+      if(qty>whLegacy(p.id))whFail('Quantite superieure au stock a ventiler.');
+      if(!code || !supplier)whFail('Numero de lot et fournisseur requis.');
+      if(whLots(p.id).some(function(x) {return x.code.toLowerCase()===code.toLowerCase();}))whFail('Ce numero de lot existe deja.');
+      warehouse.lots.push({id:whId(),pid:p.id,code:code,qty:qty,initial:qty,buy:buy,received:'',expiry:expiry,supplier:supplier,reference:'Reprise du stock existant'});
+      whMove('Ventilation du stock anterieur',p.id,code,0,reason,user,{allocated:qty}); whReprice(p.id); ids.push(p.id); return {};
+    }
+    if(action==='lotprice') {
+      var cost=whNumber(b.buy),old=legacy?warehouse.legacyCosts[p.id]:l.buy;
+      if(legacy)warehouse.legacyCosts[p.id]=cost;else l.buy=cost;
+      whReprice(p.id);whMove('Cout d achat corrige',p.id,legacy?'Stock anterieur':l.code,null,reason,user,{before:old,after:cost});return {};
+    }
+    if(action!=='adjust' && action!=='out')whFail('Operation inconnue.',404);
+    var old=legacy?whLegacy(p.id):l.qty,q=whNumber(b.qty,p.unit,action==='out');
+    if(action==='out' && q>old)whFail('Sortie superieure au stock du lot.');
+    var delta=action==='out'?-q:whRound(q-old);if(!delta)whFail('Quantite inchangee.');
+    if(l)l.qty=whRound(old+delta);proStock[p.id]=whRound((proStock[p.id] || 0)+delta);
+    whMove(action==='out'?'Sortie manuelle':'Correction de stock',p.id,legacy?'Stock anterieur':l.code,delta,reason,user);whReprice(p.id);ids.push(p.id);return {};
+  });
+  if(ids.length)schedulePushProStock(ids);
+  return Object.assign({ok:true},result);
+}
+// ===== FIN KT_WAREHOUSE_V1 =====
+
 function allProProducts() { return proExtras.length ? proProducts.concat(proExtras) : proProducts; }
 // Nom normalise pour rapprocher un inventaire dicte des fiches existantes ("KING4" == "King 4").
 function proNorm(s) {
@@ -368,7 +555,7 @@ async function pushProStockToWoo(ids) {
   for (const p of targets) {
     try {
       const body = {};
-      if (proStock[p.id] != null) { body.manage_stock = true; body.stock_quantity = Math.max(0, Math.floor(proStock[p.id])); }
+      if (proStock[p.id] != null) { body.manage_stock = true; body.stock_quantity = Math.max(0, Math.floor(whAvailable(p.id))); }
       if (proSellPrice[p.id] != null) {
         const ratio = await wooDisplayRatio(p, auth);
         if (ratio != null) body.regular_price = String(Math.round((proSellPrice[p.id] / ratio) * 100) / 100);
@@ -732,7 +919,7 @@ function writeDataFileNow() {
   // Écriture ATOMIQUE : fichier temporaire puis renommage -> jamais de fichier tronqué en cas de coupure.
   // NB : fiscalKey n'est PLUS écrite ici (stockée à part, fichier protégé).
   const tmp = DATA_FILE + '.tmp';
-  fs.writeFileSync(tmp, JSON.stringify({ v: 1, savedAt: new Date().toISOString(), pointsPerEuro: POINTS_PER_EURO, hideBaseCatalog, customProducts, stock, boutiques, invoiceSeq, lastHash, invoices, orderSeq, orders, fiscalEvents, fiscalSeq, lastFiscalSig, clotureSeq, gtPerpetuel, gtPerpetuelAvoirs, seqByB, gtByB, gtAvoirsByB, royaltiesRates, royaltiesStatus, clotureSeqByB, supplyOrders, supplySeq, stockMoves, proRate, pontDevices, sessions, proProducts, lastProSync, proLots, proStock, proBuyPrice, proSellPrice, proStockPush, proBlock, proExtras, proRename, entreprise, adminCred, adminEmail, backupState, franchisees, sellers, royaltyInvoices, roySeq, royLastHash, posOrder, royAuto, royAutoLog }), 'utf8');
+  fs.writeFileSync(tmp, JSON.stringify({ v: 1, savedAt: new Date().toISOString(), pointsPerEuro: POINTS_PER_EURO, hideBaseCatalog, customProducts, stock, boutiques, invoiceSeq, lastHash, invoices, orderSeq, orders, fiscalEvents, fiscalSeq, lastFiscalSig, clotureSeq, gtPerpetuel, gtPerpetuelAvoirs, seqByB, gtByB, gtAvoirsByB, royaltiesRates, royaltiesStatus, clotureSeqByB, supplyOrders, supplySeq, stockMoves, proRate, pontDevices, sessions, proProducts, lastProSync, proLots, proStock, proBuyPrice, proSellPrice, proStockPush, proBlock, proExtras, proRename, warehouse, entreprise, adminCred, adminEmail, backupState, franchisees, sellers, royaltyInvoices, roySeq, royLastHash, posOrder, royAuto, royAutoLog }), 'utf8');
   fs.renameSync(tmp, DATA_FILE);
 }
 function persist() {
@@ -870,6 +1057,7 @@ function loadPersisted() {
     if (d.adminCred && typeof d.adminCred === 'object') adminCred = d.adminCred;   // mot de passe admin persiste (avant rebuildAccounts)
     if (typeof d.adminEmail === 'string') adminEmail = d.adminEmail;               // e-mail de recuperation admin
     if (d.backupState && typeof d.backupState === 'object') backupState = Object.assign(backupState, d.backupState);   // etat de la sauvegarde externe
+    if (d.warehouse && d.warehouse.version === 1 && Array.isArray(d.warehouse.lots) && Array.isArray(d.warehouse.receipts) && Array.isArray(d.warehouse.moves)) warehouse = Object.assign(warehouse, d.warehouse);
     if (d.proStock && typeof d.proStock === 'object') proStock = d.proStock;                 // stock grossiste (Basecamp/kingbase)
     if (d.proBuyPrice && typeof d.proBuyPrice === 'object') proBuyPrice = d.proBuyPrice;     // prix d'achat grossiste (admin)
     if (d.proSellPrice && typeof d.proSellPrice === 'object') proSellPrice = d.proSellPrice; // prix de vente aux franchises (override admin)
@@ -3935,6 +4123,18 @@ const server = http.createServer(async (req, res) => {
     }
 
     // ---------------- RÉASSORT PRO (B2B) : les franchisés commandent leur stock au réseau ----------------
+    if (path === '/api/pro/inventory' || path.indexOf('/api/pro/inventory/') === 0) {
+      if (user.role !== 'admin') return send(res, 403, { error: 'Reserve a l administrateur reseau.' });
+      try {
+        if (PG) return send(res, 503, { error: 'Suivi des receptions indisponible avec ce mode de stockage.' });
+        if (req.method === 'GET' && path === '/api/pro/inventory') return send(res, 200, whSnapshot());
+        if (req.method !== 'POST') return send(res, 405, { error: 'Methode non autorisee.' });
+        var wb = await readJson(req), wa = path.slice('/api/pro/inventory/'.length);
+        if (['receipt','product','settings','price','lotprice','adjust','out','allocate'].indexOf(wa) < 0) return send(res,404,{error:'Operation inconnue.'});
+        var wr = wa === 'receipt' ? whReceipt(wb,user) : whMutate(wa,wb,user);
+        return send(res, 200, Object.assign(wr, { inventory: whSnapshot() }));
+      } catch (e) { return send(res,e.status || 400,{error:e.message}); }
+    }
     if (req.method === 'GET' && path === '/api/pro/catalog') {
       // Boutique bloquee par l'admin : pas de catalogue, seulement le message (200 pour un affichage propre cote app).
       if (user.role === 'manager' && royOverdue(user.boutiqueId)) await royWithin(royRefreshBoutique(user.boutiqueId, 5000), 4000);   // paiement tout juste fait ? on relit kingbase
@@ -3949,7 +4149,7 @@ const server = http.createServer(async (req, res) => {
       const list = src.map((p) => {
         const pi = proUnitInfo(p);
         const retail = p.unit === 'g' ? ((p.tiers && p.tiers[0]) ? p.tiers[0][1] : 0) : (p.price || 0);
-        const row = { id: p.id, name: p.name, cat: p.cat, img: p.img || '', unit: p.unit, pro: pi ? pi.price : null, proUnit: pi ? pi.unit : 'u', step: pi ? pi.step : 1, retail: usePro ? null : retail, lot: proLots[p.id] || '', stock: (proStock[p.id] != null ? proStock[p.id] : null) };
+        const row = { id: p.id, name: p.name, cat: p.cat, img: p.img || '', unit: p.unit, pro: pi ? pi.price : null, proUnit: pi ? pi.unit : 'u', step: pi ? pi.step : 1, retail: usePro ? null : retail, lot: proLots[p.id] || '', stock: whAvailable(p.id) };
         if (user.role === 'admin' && proBuyPrice[p.id] != null) row.buyPrice = proBuyPrice[p.id];   // prix d'achat : ADMIN uniquement
         return row;
       });
@@ -4000,6 +4200,7 @@ const server = http.createServer(async (req, res) => {
         const pid = String((it && it.productId) || '').slice(0, 80);
         const p = allProProducts().find((x) => x.id === pid);
         if (!p) return send(res, 404, { error: 'Produit de gros inconnu (' + (pid || '?') + ') — synchronise d\'abord le catalogue kingbase.' });
+        if (whLots(pid).length && (it.stock !== undefined || it.delta !== undefined || it.buyPrice !== undefined)) return send(res,409,{error:'Produit suivi par lots : utilisez sa fiche dans Produits & stocks.'});
         if (it.stock !== undefined && it.stock !== null && it.stock !== '' && !(Math.floor(Number(it.stock)) >= 0)) return send(res, 400, { error: 'Quantité invalide (' + p.name + ').' });
         if (it.buyPrice !== undefined && it.buyPrice !== null && it.buyPrice !== '' && !(num(it.buyPrice) >= 0)) return send(res, 400, { error: 'Prix d\'achat invalide (' + p.name + ').' });
         if (it.sellPrice !== undefined && it.sellPrice !== null && it.sellPrice !== '' && !(num(it.sellPrice) >= 0)) return send(res, 400, { error: 'Prix de vente invalide (' + p.name + ').' });
@@ -4008,6 +4209,7 @@ const server = http.createServer(async (req, res) => {
       const pushIds = []; const results = [];
       for (const it of reqs) {
         const pid = String(it.productId).slice(0, 80);
+        const beforeStock = proStock[pid];
         let touched = false;
         if (it.stock !== undefined) {
           if (it.stock === null || it.stock === '') { if (proStock[pid] != null) { delete proStock[pid]; touched = true; } }
@@ -4022,6 +4224,8 @@ const server = http.createServer(async (req, res) => {
           if (it.sellPrice === null || it.sellPrice === '') { if (proSellPrice[pid] != null) { delete proSellPrice[pid]; touched = true; } }
           else { const spv = num(it.sellPrice); if (proSellPrice[pid] !== spv) touched = true; proSellPrice[pid] = spv; }
         }
+        whLegacyStock(pid, beforeStock, user, 'Ancien ecran stock grossiste');
+        if (it.buyPrice !== undefined && Object.prototype.hasOwnProperty.call(warehouse.legacyCosts,pid)) warehouse.legacyCosts[pid] = proBuyPrice[pid] == null ? null : proBuyPrice[pid];
         if (touched && pushIds.indexOf(pid) < 0) pushIds.push(pid);
         results.push({ productId: pid, stock: proStock[pid] != null ? proStock[pid] : null, buyPrice: proBuyPrice[pid] != null ? proBuyPrice[pid] : null, sellPrice: proSellPrice[pid] != null ? proSellPrice[pid] : null });
       }
@@ -4039,6 +4243,11 @@ const server = http.createServer(async (req, res) => {
       const lines = String(b.text || '').split(/\r?\n/);
       const byNorm = {};
       allProProducts().forEach((p) => { byNorm[proNorm(p.name)] = p; });
+      for (const raw of lines) {
+        const match = raw.trim().match(/^(.+?)\s*[:=]\s*([\d\s]+)\s*(?:g|gr|grammes?|u)?\s*$/i);
+        const known = match && byNorm[proNorm(match[1])];
+        if (known && whLots(known.id).length) return send(res,409,{error:'Import refuse : '+known.name+' est suivi par lots. Utilisez une reception ou une correction de lot.'});
+      }
       const updated = [], created = [], ignored = [], pushIds = [];
       let cat = '';
       let kxSeq = 0;
@@ -4059,7 +4268,9 @@ const server = http.createServer(async (req, res) => {
         } else {
           updated.push({ name: p.name, qty: qty });
         }
+        const beforeStock = proStock[p.id];
         proStock[p.id] = qty;
+        whLegacyStock(p.id,beforeStock,user,'Import inventaire historique');
         pushIds.push(p.id);
       }
       if (!updated.length && !created.length) return send(res, 400, { error: 'Aucune ligne « Nom : quantité » reconnue.' });
@@ -4103,6 +4314,7 @@ const server = http.createServer(async (req, res) => {
       const id = String(b.id || '');
       const i = proExtras.findIndex((p) => p.id === id);
       if (i < 0) return send(res, 404, { error: 'Produit manuel introuvable.' });
+      if (whLots(id).length || warehouse.moves.some(function(m){return m.pid===id;})) return send(res,409,{error:'Ce produit possede un historique de stock et ne peut pas etre supprime.'});
       const gone = proExtras.splice(i, 1)[0];
       delete proStock[id]; delete proBuyPrice[id]; delete proSellPrice[id]; delete proLots[id];
       persist();
@@ -4132,8 +4344,9 @@ const server = http.createServer(async (req, res) => {
       }
       if (!items.length) return send(res, 400, { error: 'Commande de réassort vide' });
       // STOCK GROSSISTE : refuse la commande si les quantites depassent le disponible (produits suivis).
-      const manque = [];
-      for (const it of items) { const dispo = proStock[it.productId]; if (dispo != null && it.qty > dispo) manque.push(it.name + ' (' + dispo + ' ' + it.unit + ' dispo)'); }
+      const manque = []; const requested = {};
+      for (const it of items) requested[it.productId] = (requested[it.productId] || 0) + it.qty;
+      for (const it of items) { const dispo = whAvailable(it.productId); if (dispo != null && requested[it.productId] > dispo) manque.push(it.name + ' (' + dispo + ' ' + it.unit + ' dispo)'); }
       if (manque.length) return send(res, 409, { error: 'Stock grossiste insuffisant — ' + manque.join(' · ') });
       total = Math.round(total * 100) / 100;
       // Adresse de LIVRAISON saisie par le franchise (obligatoire cote app). Le grossiste (kingbase) en a besoin
@@ -4151,7 +4364,12 @@ const server = http.createServer(async (req, res) => {
       supplySeq++; supplyOrders.push(o);
       // RESERVATION : decremente immediatement le stock grossiste (restaure si la commande est annulee).
       const touchedIds = [];
-      for (const it of items) { if (proStock[it.productId] != null) { proStock[it.productId] = Math.max(0, proStock[it.productId] - it.qty); touchedIds.push(it.productId); } }
+      for (const it of items) { if (proStock[it.productId] != null) {
+        it.warehouseLots = whTake(it.productId,it.qty,user,o.numero+' · '+bId);
+        if(it.warehouseLots.some(function(l){return !!l.id;})) it.lot = it.warehouseLots.map(function(l){return (l.code || 'Stock anterieur non ventile')+' ('+l.qty+' '+it.unit+')';}).join(', ');
+        proStock[it.productId] = whRound(Math.max(0, proStock[it.productId] - it.qty));
+        whReprice(it.productId); touchedIds.push(it.productId);
+      } }
       if (touchedIds.length) o.stockDebited = true;
       persist();
       if (touchedIds.length) schedulePushProStock(touchedIds);
@@ -4233,7 +4451,7 @@ const server = http.createServer(async (req, res) => {
       // RESTAURATION : une commande annulee rend ses quantites au stock grossiste.
       if (o.stockDebited) {
         const backIds = [];
-        for (const it of (o.items || [])) { if (proStock[it.productId] != null) { proStock[it.productId] += it.qty; backIds.push(it.productId); } }
+        for (const it of (o.items || [])) { if (proStock[it.productId] != null) { const restored = Array.isArray(it.warehouseLots) ? whRound(it.warehouseLots.reduce(function(s,l){return s+l.qty;},0)) : it.qty; proStock[it.productId] = whRound(proStock[it.productId] + restored); whRestore(it.productId,it.warehouseLots,restored,user,o.numero+' · annulation'); whReprice(it.productId); backIds.push(it.productId); } }
         o.stockDebited = false;
         if (backIds.length) schedulePushProStock(backIds);
       }
@@ -4279,6 +4497,22 @@ const server = http.createServer(async (req, res) => {
       // Les statuts intermédiaires (préparée/expédiée) restent gérés par l'admin réseau.
       if (b.status === 'recue') { if (!(user.role === 'admin' || isOwnerManager)) return send(res, 403, { error: 'Réservé au franchisé concerné ou à l\'admin' }); }
       else if (user.role !== 'admin') return send(res, 403, { error: 'Réservé à l\'administrateur réseau' });
+      if (o.status === 'annulee') return send(res,409,{error:'Commande annulee : creez un nouveau reassort.'});
+      // Verifier tous les ajustements avant de toucher au statut ou aux reservations.
+      if (Array.isArray(b.items)) {
+        var adjustedIds = {}, extraNeeded = {};
+        for (const adj of b.items) {
+          const it = o.items.find((x) => x.productId === adj.productId);
+          if (!it || !Array.isArray(it.warehouseLots) || adj.qty == null) continue;
+          if (adjustedIds[it.productId]) return send(res,400,{error:'Une seule quantite par reference.'});
+          adjustedIds[it.productId]=true;
+          const qty=Number(adj.qty), reserved=it.warehouseLots.reduce((s,l)=>s+l.qty,0);
+          if (!Number.isFinite(qty) || !Number.isInteger(qty) || qty<0 || qty>it.qty) return send(res,400,{error:'Quantite confirmee invalide.'});
+          if (o.restocked && qty!==(it.qtyConfirmed == null ? it.qty : it.qtyConfirmed)) return send(res,409,{error:'Commande deja recue : sa quantite ne peut plus etre modifiee.'});
+          extraNeeded[it.productId]=(extraNeeded[it.productId]||0)+Math.max(0,qty-reserved);
+        }
+        for(const pid in extraNeeded) if(extraNeeded[pid]>(whAvailable(pid)||0))return send(res,409,{error:'Stock insuffisant pour augmenter la preparation.'});
+      }
       o.status = b.status;
       if (!o.stepAt || typeof o.stepAt !== 'object') o.stepAt = {};
       o.stepAt[b.status] = Date.now();                                             // horodatage de chaque etape (frise cote franchise)
@@ -4288,9 +4522,10 @@ const server = http.createServer(async (req, res) => {
       if (Array.isArray(b.items)) {                                                  // réserves / ajustements + notes par produit (admin)
         for (const adj of b.items) {
           const it = o.items.find((x) => x.productId === adj.productId); if (!it) continue;
-          if (adj.qty != null && Number(adj.qty) >= 0) it.qtyConfirmed = Math.floor(Number(adj.qty));
+          if (adj.qty != null && Number(adj.qty) >= 0) { whResizeReservation(it,Math.floor(Number(adj.qty)),o,user); it.qtyConfirmed = Math.floor(Number(adj.qty)); }
           if (typeof adj.note === 'string') it.note = adj.note;
         }
+        schedulePushProStock(o.items.map(function(it){return it.productId;}));
         o.totalConfirme = Math.round(o.items.reduce((a, x) => a + ((x.unitPrice != null ? x.unitPrice : 0) * (x.qtyConfirmed != null ? x.qtyConfirmed : x.qty)), 0) * 100) / 100;
       }
       if (b.status === 'recue' && !o.restocked) {
@@ -4302,7 +4537,14 @@ const server = http.createServer(async (req, res) => {
           if (qty <= 0) continue;
           const ref = String(it.productId || '').toUpperCase();
           const lot = (o.lotRef || o.numero) + '-' + ref;            // n° de lot choisi par l'admin, sinon n° de commande + référence
-          if (it.unit === 'g') { if (!sk[it.productId] || !Array.isArray(sk[it.productId].lots)) sk[it.productId] = { lots: [] }; sk[it.productId].lots.push({ lot: lot, g: qty, exp: exp, ref: ref }); }
+          if (it.unit === 'g') {
+            if (!sk[it.productId] || !Array.isArray(sk[it.productId].lots)) sk[it.productId] = { lots: [] };
+            if (Array.isArray(it.warehouseLots)) {
+              var left = qty;
+              it.warehouseLots.forEach(function(part) { var q = Math.min(left,part.qty); if(q <= 0)return; sk[it.productId].lots.push({lot:part.code || lot,g:q,exp:part.expiry ? part.expiry.slice(0,7) : '',ref:ref,warehouseLotId:part.id || null}); left -= q; });
+              if(left > 0)sk[it.productId].lots.push({lot:lot,g:left,exp:'',ref:ref});
+            } else sk[it.productId].lots.push({ lot: lot, g: qty, exp: exp, ref: ref });
+          }
           else { if (!sk[it.productId] || typeof sk[it.productId].units !== 'number') sk[it.productId] = { units: 0 }; sk[it.productId].units += qty; }
         }
         o.restocked = true;
