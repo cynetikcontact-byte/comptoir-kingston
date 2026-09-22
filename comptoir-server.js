@@ -1489,6 +1489,26 @@ function royBillingFor(inv){
     country: pick(sl.country, buyer.country, 'FR').toUpperCase().slice(0, 2),
   };
 }
+// Balayage : aucune commande de paiement obsolete ne doit rester ouverte sur kingbase.fr.
+// Un franchise peut rouvrir un vieux lien (e-mail, onglet, « Mes commandes » sur kingbase) : si cette commande
+// date d'avant le format courant ou d'avant une correction de sa fiche, Monetico la refuse. On la remplace ici,
+// sans attendre qu'il reclique dans KINGTOOLS.
+let roySweepAt = 0;
+async function roySweepPayOrders(){
+  if (!proPushConfigured()) return { skipped: 'NO_CREDS' };
+  roySweepAt = Date.now();
+  var done = 0, errs = 0;
+  var list = royaltyInvoices.filter(function(r){
+    return r.type === 'facture' && r.status === 'emise' && !royPaid(r) && r.pay && r.pay.state === 'pending' && r.pay.orderId
+      && (r.pay.v !== ROY_ORDER_V || (r.pay.sig && r.pay.sig !== roySig(royBillingFor(r))));
+  });
+  for (var i = 0; i < list.length; i++) {
+    try { var out = await royEnsurePayOrder(list[i], { maxAgeMs: 60000 }); if (out && out.ok) done++; else if (out && out.code !== 'PAID') errs++; }
+    catch (e) { errs++; }
+  }
+  if (done || errs) console.log('Redevances : ' + done + ' lien(s) de paiement régénéré(s), ' + errs + ' en échec.');
+  return { checked: list.length, done: done, errs: errs };
+}
 function roySig(bl){ bl = bl || {}; return [bl.company, bl.address_1, bl.postcode, bl.city, bl.country].map(function(x){ return String(x||'').trim().toLowerCase(); }).join('|'); }
 
 // Version du format des commandes de redevance sur kingbase.fr (2 = ligne produit + client + facturation complète, compatible Monetico).
@@ -4525,6 +4545,9 @@ if (!PG) {
 if (!PG && process.env.KT_ROY_AUTO_TICK !== '0') {
   setTimeout(function () { royAutoTick({}).catch(function () {}); }, 45 * 1000);
   setInterval(function () { royAutoTick({}).catch(function () {}); }, 5 * 60 * 1000).unref();
+  // Liens de paiement obsoletes : nettoyage au demarrage puis toutes les heures.
+  setTimeout(function () { roySweepPayOrders().catch(function () {}); }, 75 * 1000);
+  setInterval(function () { roySweepPayOrders().catch(function () {}); }, 60 * 60 * 1000).unref();
 }
 
 // Synchro catalogue WooCommerce (reassort « en direct ») : au demarrage (differee) puis toutes les heures.
