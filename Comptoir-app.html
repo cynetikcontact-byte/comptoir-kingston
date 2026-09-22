@@ -4724,5 +4724,37 @@ function setPayMode(m){ PAY_MODE=(m==='auto')?'auto':'manuel'; try{ localStorage
   }
   window.__ktFicheTimer=setInterval(tick,600); tick();
 })();</script>
+<script>/* ===== Modales mobiles : c'est la fenetre qui defile, plus la page derriere ===== */
+(function(){
+  if(window.__ktModalScroll) return; window.__ktModalScroll=1;
+  var st=document.createElement('style'); st.id='kt-modal-scroll-css';
+  st.textContent=
+    '.modal-backdrop{overscroll-behavior:contain}'
+   +'.modal-b{overscroll-behavior:contain}'
+   +'body.kt-modal-open{position:fixed;left:0;right:0;width:100%;overflow:hidden}'
+   +'@media(max-width:820px){'
+     +'.modal-backdrop{overflow-y:auto;-webkit-overflow-scrolling:touch;padding:0 0 24px;align-items:flex-start}'
+     +'.modal{max-height:none;overflow:visible}'
+     +'.modal-b{overflow:visible;max-height:none}'
+   +'}';
+  document.head.appendChild(st);
+  var root=document.getElementById('modal-root'); if(!root) return;
+  var y=0, locked=false;
+  function lock(){
+    if(locked) return; locked=true;
+    y=window.pageYOffset||document.documentElement.scrollTop||0;
+    document.body.style.top=(-y)+'px';
+    document.body.classList.add('kt-modal-open');
+  }
+  function unlock(){
+    if(!locked) return; locked=false;
+    document.body.classList.remove('kt-modal-open');
+    document.body.style.top='';
+    window.scrollTo(0,y);
+  }
+  function sync(){ if(root.children.length) lock(); else unlock(); }
+  new MutationObserver(sync).observe(root,{childList:true});
+  sync();
+})();</script>
 </body>
 </html>
