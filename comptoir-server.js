@@ -676,7 +676,14 @@ function schedulePushProStock(ids) { setTimeout(() => { pushProStockToWoo(ids).c
 // Reflet kingbase des commandes de reassort (lazy, borne a 10, throttle par commande, non bloquant) :
 //  - paiement detecte -> la commande passe 'envoyee' (validee) ;
 //  - mode de livraison CHOISI SUR KINGBASE (Colissimo / retrait sur place) -> shipChoice, si le plugin le renvoie.
-async function refreshWooOrders(user) {
+const wooRefreshJobs = new Map();
+function refreshWooOrders(user) {
+  const key=(!user||user.role==='admin')?'network':String(user.boutiqueId||'');
+  if(wooRefreshJobs.has(key))return wooRefreshJobs.get(key);
+  const job=Promise.resolve().then(()=>refreshWooOrdersWorker(user)).finally(()=>{if(wooRefreshJobs.get(key)===job)wooRefreshJobs.delete(key);});
+  wooRefreshJobs.set(key,job);return job;
+}
+async function refreshWooOrdersWorker(user) {
   if (!(proConnector && typeof proConnector.getOrderStatus === 'function')) return;
   const now = Date.now();
   const toRefresh = supplyOrders
@@ -4514,7 +4521,7 @@ const server = http.createServer(async (req, res) => {
     // ---- BASE CAMP : tableau de bord franchiseur (admin) — reassort a traiter + royalties manquantes ----
     if (req.method === 'GET' && path === '/api/basecamp') {
       if (user.role !== 'admin') return send(res, 403, { error: 'Réservé à l\'administrateur réseau' });
-      await refreshWooOrders(user);
+      if(u.searchParams.get('sync')!=='0')refreshWooOrders(user).catch(()=>{});
       const now = Date.now();const scope=String(u.searchParams.get('boutique')||'');if(scope&&!boutiques[scope])return send(res,400,{error:'Boutique inconnue'});const period=['day','month','year'].includes(u.searchParams.get('period'))?u.searchParams.get('period'):'day';
       const OPEN = ['envoyee', 'preparation', 'preparee', 'expediee', 'retrait'];
       const orders = supplyOrders.filter((o) => OPEN.indexOf(o.status) >= 0 && (!scope||o.boutiqueId===scope)).map((o) => {
@@ -4553,7 +4560,7 @@ const server = http.createServer(async (req, res) => {
       }
       missing.sort((a, b) => (a.ym < b.ym ? -1 : (a.ym > b.ym ? 1 : (a.label < b.label ? -1 : 1))));
       return send(res, 200, {
-        now: now, curYM: curYM, overview:bcOverview(period,scope,now),boutiques:boutiqueIds().map(id=>({id:id,label: boutiques[id].label||id})),
+        now: now, curYM: curYM, syncing:wooRefreshJobs.has('network'), overview:bcOverview(period,scope,now),boutiques:boutiqueIds().map(id=>({id:id,label: boutiques[id].label||id})),
         kpis: { aPreparer: orders.filter((o) => o.status === 'envoyee' || o.status === 'preparation').length, enRetard: orders.filter((o) => o.late).length, aLivrer: orders.filter((o) => o.status === 'preparee').length, enTransit: orders.filter((o) => o.status === 'expediee' || o.status === 'retrait').length, royaltiesManquantes: Math.round(totalMissing * 100) / 100, facturesEnRetard: nLate, moisManquants: missing.length },
         orders: orders, royalties: missing, pluginShipping: supplyOrders.some((o) => o.shipChoice),
       });
