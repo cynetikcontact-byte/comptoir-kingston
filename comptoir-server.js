@@ -551,6 +551,15 @@ function ktLotHistory(id){
  return {product:{name:product.name||l.pid,unit:product.unit||''},lot:l,receipts:warehouse.receipts.filter(function(r){return r.lines.some(function(x){return x.lotId===id;});}),movements:warehouse.moves.filter(function(m){return m.lotId===id||(m.lotIds||[]).includes(id);}),distributions:ktTrace({role:'admin'},'').filter(function(r){return r.lotId===id;}),legacyHistory:!l.receiptId};
 }
 
+// Read-only local order state: no Woo refresh or accounting recalculation.
+function ktOrderNotifications(user){
+ return supplyOrders.filter(function(o){return o.boutiqueId===user.boutiqueId&&['preparation','preparee','retrait','expediee'].includes(o.status);}).map(function(o){
+  var mode=o.shipMode||o.shipChoice||(o.shippingQuote||{}).mode||'',ready=o.status==='retrait'||(o.status==='preparee'&&mode==='retrait');
+  var stage=o.status==='preparation'?'preparation':o.status==='expediee'?'expediee':ready?'retrait':'preparee',at=o.stepAt||{};
+  return {id:o.id,numero:o.numero,status:o.status,stage:stage,ready:ready,eventKey:o.id+':'+stage+':'+(stage==='retrait'?(at.preparee||at.retrait||o.ts||0):(at[o.status]||o.ts||0)),title:stage==='preparation'?'Commande en préparation':ready?'Votre commande est prête à récupérer':stage==='expediee'?'Votre commande est expédiée':'Votre commande est préparée',message:stage==='preparation'?'Kingston prépare votre commande.':ready?'Votre commande vous attend chez Kingston.':stage==='expediee'?'Votre commande est en route vers votre boutique.':mode==='poste'?'La préparation est terminée. L’expédition sera confirmée séparément.':'La préparation est terminée. Le mode de remise reste à confirmer.'};
+ }).sort(function(a,b){return Number(b.id)-Number(a.id);});
+}
+
 function ktEditFranchiseLot(order,b,user){
  if(user.role!=='admin')whFail('Réservé à l’administrateur réseau.',403);
  if(!['attente','envoyee','preparation','preparee'].includes(order.status)||order.restocked||(order.stepAt&&(order.stepAt.expediee||order.stepAt.retrait||order.stepAt.recue)))whFail('Lot verrouillé après expédition ou mise à disposition.',409);
@@ -4276,6 +4285,7 @@ const server = http.createServer(async (req, res) => {
       var targetOrder=supplyOrders.find(function(o){return o.id===Number(ktLotEditRoute[1]);});if(!targetOrder)return send(res,404,{error:'Commande introuvable'});
       try{return send(res,200,ktEditFranchiseLot(targetOrder,await readJson(req),user));}catch(e){return send(res,e.status||400,{error:e.message});}
     }
+    if(req.method==='GET'&&path==='/api/pro/notifications'){if(user.role!=='manager'||!user.boutiqueId)return send(res,403,{error:'Réservé à la boutique connectée.'});return send(res,200,{notifications:ktOrderNotifications(user)});}
     if(req.method==='GET'&&path==='/api/pro/trace'){if(user.role!=='admin'&&user.role!=='manager')return send(res,403,{error:'Acces refuse'});return send(res,200,{rows:ktTrace(user,u.searchParams.get('q'))});}
     if (path === '/api/pro/inventory' || path.indexOf('/api/pro/inventory/') === 0) {
       if (user.role !== 'admin') return send(res, 403, { error: 'Reserve a l administrateur reseau.' });

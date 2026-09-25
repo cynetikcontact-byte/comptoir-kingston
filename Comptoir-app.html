@@ -1937,6 +1937,44 @@ function setPayMode(m){ PAY_MODE=(m==='auto')?'auto':'manuel'; try{ localStorage
   }
 
   // ---------- Réassort pro (B2B) : commander du stock au réseau ----------
+// Franchise notifications: lightweight polling, local acknowledgement, cashier protection.
+var ktNotices={scope:'',rows:[],seen:{},next:0,busy:false,epoch:0,shown:null,toast:null};
+function ktNoticeScope(){var u=st.user;return API.on&&u&&u.role==='manager'&&u.boutiqueId?[(API.base||location.origin),u.boutiqueId,u.uname||u.name||'franchise'].join('|'):'';}
+function ktNoticeCash(){return ['pos','borne'].includes(st.view)||!!document.querySelector('#payok,[data-act="payok"]');}
+function ktNoticeRemember(n){ktNotices.seen[n.eventKey]=true;try{localStorage.setItem('kt_order_notices:'+ktNotices.scope,JSON.stringify(ktNotices.seen));}catch(e){}}
+function ktNoticeRemove(id){var e=document.getElementById(id);if(e)e.remove();}
+function ktNoticeDismiss(){ktNoticeRemove('kt-order-popup');ktNotices.shown=null;}
+function ktNoticeOpen(){ktNoticeDismiss();ktNoticeRemove('kt-order-toast');var nav=document.querySelector('.nav-item[data-view="pro"]');if(nav)nav.click();ktNotices.next=0;}
+function ktNoticePaint(){
+ var scope=ktNoticeScope();if(scope!==ktNotices.scope){ktNotices.scope=scope;ktNotices.epoch++;ktNotices.rows=[];ktNotices.next=0;ktNotices.seen={};ktNoticeDismiss();ktNoticeRemove('kt-order-toast');try{ktNotices.seen=JSON.parse(localStorage.getItem('kt_order_notices:'+scope)||'{}')||{};}catch(e){} }
+ var bar=document.querySelector('.top');if(!bar)bar=document.querySelector('.top-r');
+ var banner=document.getElementById('kt-order-banner');if(!scope){if(banner)banner.remove();ktNoticeDismiss();ktNoticeRemove('kt-order-toast');return;}
+ var cash=ktNoticeCash(),rows=ktNotices.rows,ready=rows.filter(function(n){return n.stage!=='preparation';}).sort(function(a,b){return Number(b.ready)-Number(a.ready);}),n=ready[0]||rows[0];
+ if(cash){ktNoticeDismiss();ktNoticeRemove('kt-order-toast');}
+ if(!n){if(banner)banner.remove();ktNoticeDismiss();ktNoticeRemove('kt-order-toast');return;}
+ if(!banner&&bar){banner=document.createElement('button');banner.id='kt-order-banner';banner.type='button';banner.addEventListener('click',function(){if(!ktNoticeCash())ktNoticeOpen();});bar.insertBefore(banner,bar.querySelector('.top-r'));}
+ if(banner){banner.className=cash?'kt-order-cash':(ready.length?'kt-order-ready':'');banner.textContent=cash?'● '+rows.length:(rows.length>1?rows.length+' commandes à suivre · Voir mes commandes':n.numero+' · '+n.title+' →');banner.disabled=cash;banner.setAttribute('aria-label',cash?rows.length+' notifications de réassort en attente':banner.textContent);banner.title=cash?'Notification disponible après la caisse':'';}
+ if(ktNotices.shown&&!rows.some(function(x){return x.eventKey===ktNotices.shown;}))ktNoticeDismiss();
+ if(cash||document.hidden||document.querySelector('.modal-backdrop,#kt-order-popup,#kt-order-toast,[role="dialog"]')||!document.hasFocus())return;
+ var pending=ready.concat(rows.filter(function(x){return x.stage==='preparation';})).find(function(x){return !ktNotices.seen[x.eventKey];});if(!pending)return;
+ // Mark only when displayed, so updates received in the cash register stay pending.
+ ktNoticeRemember(pending);
+ if(pending.stage==='preparation'||pending.stage==='expediee'){
+  var toastBox=document.createElement('div');toastBox.id='kt-order-toast';toastBox.setAttribute('role','status');toastBox.innerHTML='<button aria-label="Fermer la notification" type="button">×</button><strong>'+esc(pending.title)+'</strong><p>'+esc(pending.numero)+' · '+esc(pending.message)+'</p>';toastBox.querySelector('button').onclick=function(){toastBox.remove();};document.body.appendChild(toastBox);setTimeout(function(){toastBox.remove();},9000);return;
+ }
+ var modal=document.createElement('div');modal.id='kt-order-popup';modal.innerHTML='<section role="dialog" aria-modal="true" aria-labelledby="kt-order-popup-title"><button class="kt-order-x" type="button" aria-label="Fermer">×</button><div class="kt-order-icon">✓</div><h2 id="kt-order-popup-title">'+esc(pending.title)+' !</h2><p>'+esc(pending.numero)+' · '+esc(pending.message)+'</p><button class="btn btn-gold kt-order-details" type="button">Voir mes commandes</button><button class="btn kt-order-later" type="button">Plus tard</button></section>';
+ modal.querySelector('.kt-order-details').onclick=ktNoticeOpen;modal.querySelector('.kt-order-later').onclick=ktNoticeDismiss;modal.querySelector('.kt-order-x').onclick=ktNoticeDismiss;modal.addEventListener('click',function(e){if(e.target===modal)ktNoticeDismiss();});modal.addEventListener('keydown',function(e){if(e.key==='Escape')ktNoticeDismiss();if(e.key==='Tab'){var bs=modal.querySelectorAll('button'),first=bs[0],last=bs[bs.length-1];if(e.shiftKey&&document.activeElement===first){e.preventDefault();last.focus();}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus();}}});ktNotices.shown=pending.eventKey;document.body.appendChild(modal);modal.querySelector('.kt-order-details').focus();
+}
+function ktNoticeTick(){
+ ktNoticePaint();if(!ktNotices.scope||document.hidden||ktNotices.busy||Date.now()<ktNotices.next)return;
+ ktNotices.busy=true;ktNotices.next=Date.now()+30000;var scope=ktNotices.scope,epoch=ktNotices.epoch,controller=new AbortController(),timer=setTimeout(function(){controller.abort();},8000);
+ fetch(API.base+'/api/pro/notifications',{headers:apiHeaders(),cache:'no-store',signal:controller.signal}).then(function(r){if(!r.ok)throw Error('Notifications indisponibles');return r.json();}).then(function(d){if(scope!==ktNoticeScope()||epoch!==ktNotices.epoch)return;ktNotices.rows=d.notifications||[];ktNoticePaint();}).catch(function(){ktNotices.next=Date.now()+60000;}).finally(function(){clearTimeout(timer);ktNotices.busy=false;});
+}
+window.addEventListener('storage',function(e){if(e.key==='kt_order_notices:'+ktNotices.scope){try{ktNotices.seen=JSON.parse(e.newValue||'{}');}catch(x){}}});
+document.addEventListener('visibilitychange',function(){if(!document.hidden){ktNotices.next=0;ktNoticeTick();}});
+setInterval(ktNoticeTick,2000);
+var ktNoticeCss=document.createElement('style');ktNoticeCss.textContent='#kt-order-banner{border:1px solid #e8dfc8;background:#fbf6e8;color:#654d18;border-radius:8px;padding:8px 12px;font:inherit;font-size:12px;max-width:480px;white-space:normal;cursor:pointer;margin:0 12px}#kt-order-banner.kt-order-ready{background:#edf8f1;border-color:#cfe5d7;color:#226943}#kt-order-banner.kt-order-cash{background:transparent;border:0;color:#8b702d;max-width:55px;margin:0;padding:4px;cursor:default}#kt-order-popup{position:fixed;inset:0;background:#0005;display:grid;place-items:center;z-index:2000;padding:20px}#kt-order-popup section{position:relative;background:white;color:#242320;border-radius:16px;padding:32px;max-width:440px;width:100%;box-sizing:border-box;text-align:center;box-shadow:0 20px 60px #0003}#kt-order-popup h2{font-size:24px}#kt-order-popup p{line-height:1.6;color:#64645e}#kt-order-popup .btn{margin:8px}.kt-order-icon{font-size:36px;color:#28714b}.kt-order-x,#kt-order-toast>button{float:right;border:0;background:none;font-size:22px;cursor:pointer}#kt-order-toast{position:fixed;right:24px;top:85px;max-width:350px;background:white;border:1px solid #e7dfcb;border-radius:12px;padding:18px;box-shadow:0 8px 24px #0002;z-index:1500;color:#242320}#kt-order-toast p{font-size:13px;line-height:1.5}@media(max-width:700px){#kt-order-banner{max-width:220px;font-size:11px;padding:5px;margin:0 4px}#kt-order-toast{left:16px;right:16px}}';document.head.appendChild(ktNoticeCss);
+
   var proData={loaded:false,loading:false,catalog:[],orders:[],rate:0.5};
   var netData={boutiques:[]};
   function loadPro(){
@@ -2299,7 +2337,7 @@ function ktSaveFranchiseLot(el){
         ((o.status==='expediee'||o.status==='retrait')
           ? '<button class="btn" data-act="pro-recue-modal" data-id="'+o.id+'">Marquer reçue</button>'
           : '<button class="btn" data-act="pro-ship" data-mode="poste" style="margin-left:auto">Envoyée (La Poste) 📮</button><button class="btn" data-act="pro-ship" data-mode="retrait" style="margin-left:6px">Prête à récupérer 🏪</button>')+
-        '<button class="btn btn-gold" data-act="pro-confirm">'+(o.status==='envoyee'?'Confirmer la commande':'Enregistrer')+'</button>';
+        ( ['attente','envoyee','preparation'].includes(o.status)?'<button class="btn" data-act="kt-pro-prepare">Mettre en préparation</button>':'')+'<button class="btn btn-gold" data-act="pro-confirm">Marquer préparée</button>';
     }
     openModal('<div class="modal-h">Commande '+esc(o.numero)+' — '+esc(blabel)+'</div>'+
       '<div class="modal-b">'+ktOrderShipping(o)+ktOrderLineage(o)+
@@ -2546,6 +2584,7 @@ function ktSaveFranchiseLot(el){
     }); }catch(e){}
   }
   function render(){
+    if(typeof ktNoticePaint==='function'&&ktNotices)ktNoticePaint();
     if(!st.user){showLogin();return;}
     var lr=document.getElementById('login-root');if(lr)lr.innerHTML='';
     // VENDEUR : si la vue demandee n'est pas dans ses onglets autorises, basculer sur son premier onglet permis.
@@ -3257,11 +3296,12 @@ function ktSaveFranchiseLot(el){
     if(a==='pro-cart-dec'){ var did=el.getAttribute('data-id'); var dst=+el.getAttribute('data-step')||1; st.proCart=st.proCart||{}; var nv=(st.proCart[did]||0)-dst; if(nv>0)st.proCart[did]=nv; else delete st.proCart[did]; if(proCartCount())openProCartModal();else closeModal(); renderProCat(); return; }
     if(a==='pro-cart-del'){ var ddid=el.getAttribute('data-id'); if(st.proCart)delete st.proCart[ddid]; if(proCartCount())openProCartModal();else closeModal(); renderProCat(); return; }
     if(a==='pro-order-confirm'){ if(!API.on)return;if(!ktCartQuote){toast('Calculez les frais avant de valider.');return;} var pit=[]; for(var pk in (st.proCart||{})) if(st.proCart[pk]>0) pit.push({productId:pk,qty:st.proCart[pk]}); if(!pit.length){toast('Ton panier est vide');return;} if(ktCartQuote.mode==='poste'&&!proShipOk()){toast('Renseigne ton adresse de livraison (nom, adresse, code postal, ville)');var ff=document.querySelector('.ship-f');if(ff)ff.focus();return;} var sh2=proShipGet(); try{localStorage.setItem('kt_ship',JSON.stringify(sh2));}catch(e){} var cbtn=el; cbtn.textContent='Envoi…'; cbtn.setAttribute('disabled','disabled'); apiPost('/api/pro/orders',{items:pit,ship:sh2,requestId:ktOrderRequest,shippingMode:ktCartQuote.mode,shippingFingerprint:ktCartQuote.fingerprint}).then(function(d){st.proCart={};proData.loaded=false;proData.loading=false;loadPro();if(d&&d.order)openProPayModal(d.order);else{closeModal();toast('Commande créée');}}).catch(function(e){toast('Échec : '+(e.message||e));ktCartQuote=null;if(cbtn){cbtn.textContent='Recalculer les frais';cbtn.setAttribute('disabled','disabled');}}); return; }
-    if(a==='pro-recue'){ var roid=el.getAttribute('data-id'); var lotEl=document.getElementById('prolot-'+roid); var rbody={status:'recue'}; if(lotEl&&lotEl.value.trim())rbody.lot=lotEl.value.trim(); apiPost('/api/pro/orders/'+roid+'/status',rbody).then(function(){toast('Stock reçu et ajouté à la boutique ✓');proData.loaded=false;proData.loading=false;loadPro();}).catch(function(e){toast('Échec : '+(e.message||e));}); return; }
+    if(a==='pro-recue'){ var roid=el.getAttribute('data-id'); var lotEl=document.getElementById('prolot-'+roid); var rbody={status:'recue'}; if(lotEl&&lotEl.value.trim())rbody.lot=lotEl.value.trim(); apiPost('/api/pro/orders/'+roid+'/status',rbody).then(function(){ktNotices.next=0;ktNoticeTick();toast('Stock reçu et ajouté à la boutique ✓');proData.loaded=false;proData.loading=false;loadPro();}).catch(function(e){toast('Échec : '+(e.message||e));}); return; }
     if(a==='pro-cancel'){ var canid=el.getAttribute('data-id'); if(!confirm('Annuler cette commande non payée ?'))return; apiPost('/api/pro/orders/'+canid+'/cancel',{}).then(function(){toast('Commande annulée');proData.loaded=false;proData.loading=false;loadPro();}).catch(function(e){toast('Échec : '+(e.message||e));}); return; }
     if(a==='kt-fr-save'){ktSaveFranchiseLot(el);return;}
     if(a==='pro-open'){ openProOrder(el.getAttribute('data-id')); return; }
     if(a==='pro-rupture'){ var rpid=el.getAttribute('data-pid'); var rq=document.getElementById('poq-'+rpid), rn=document.getElementById('pon-'+rpid); if(rq)rq.value=0; if(rn&&!rn.value.trim())rn.value='Rupture de stock'; return; }
+    if(a==='kt-pro-prepare'){var prep=proCollect();if(!prep||!proData.cur)return;prep.status='preparation';el.disabled=true;apiPost('/api/pro/orders/'+proData.cur.id+'/status',prep).then(function(){closeModal();toast('Commande en préparation · la franchise sera informée');proData.loaded=false;proData.loading=false;loadPro();}).catch(function(e){el.disabled=false;toast(e.message);});return;}
     if(a==='pro-confirm'){ var pc=proCollect(); if(!pc||!proData.cur)return; pc.status='preparee'; apiPost('/api/pro/orders/'+proData.cur.id+'/status',pc).then(function(){closeModal();toast('Commande confirmée ✓');proData.loaded=false;proData.loading=false;loadPro();}).catch(function(e){toast('Échec : '+(e.message||e));}); return; }
     if(a==='pro-ship'){ var ps=proCollect(); if(!ps||!proData.cur)return; var psRet=el.getAttribute('data-mode')==='retrait'; ps.status=psRet?'retrait':'expediee'; apiPost('/api/pro/orders/'+proData.cur.id+'/status',ps).then(function(){closeModal();toast(psRet?'Commande prête à récupérer 🏪':'Commande envoyée par La Poste 📮');proData.loaded=false;proData.loading=false;loadPro();}).catch(function(e){toast('Échec : '+(e.message||e));}); return; }
     if(a==='pro-recue-modal'){ var mrid=el.getAttribute('data-id'); var mlot=document.getElementById('po-lot'); var mb={status:'recue'}; if(mlot&&mlot.value.trim())mb.lot=mlot.value.trim(); apiPost('/api/pro/orders/'+mrid+'/status',mb).then(function(){closeModal();toast('Stock reçu et ajouté ✓');proData.loaded=false;proData.loading=false;loadPro();}).catch(function(e){toast('Échec : '+(e.message||e));}); return; }
