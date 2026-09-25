@@ -4630,7 +4630,7 @@ function render(){var box=document.getElementById('kt-bc-view');if(!box)return;i
       if(seq!==ST.request)return;
       if(o.s===200){ST.data=o.j;ST.err=null;ST.at=Date.now();}else ST.err=(o.j&&o.j.error)||('Erreur '+o.s);
       ST.loading=false;render();
-      if(o.s===200&&o.j.syncing&&(ST.polls||0)<12){ST.polls=(ST.polls||0)+1;ST.syncTimer=setTimeout(function(){if(document.getElementById('kt-bc-view')&&seq===ST.request)load(true,true);},1500);}
+      if(o.s===200&&o.j.syncing&&(ST.polls||0)<1){ST.polls=(ST.polls||0)+1;ST.syncTimer=setTimeout(function(){if(document.getElementById('kt-bc-view')&&seq===ST.request)load(true,true);},10000);}
     }).catch(function(){if(seq!==ST.request)return;ST.err='Connexion indisponible. Réessayez.';ST.loading=false;render();});
   }
   var PILL={envoyee:'Payée · à préparer',preparation:'En préparation',preparee:'Terminée · prête',expediee:'Envoyée (La Poste)',retrait:'À récupérer sur place'};

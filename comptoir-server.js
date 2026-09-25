@@ -319,7 +319,9 @@ let proExtras = [];   // [{ id:'kx..', name, cat, unit:'g'|'u', proPrice? , sour
 // Renommages decides par l'admin : { productId: nouveau nom }. Applique apres chaque synchro kingbase
 // (sinon la synchro horaire remettrait le nom du site) et pousse vers Woo quand le produit y est lie.
 let proRename = {};
-function ktParisDay(v){var d=new Date(v);if(!Number.isFinite(d.getTime()))return '';return new Intl.DateTimeFormat('sv-SE',{timeZone:'Europe/Paris',year:'numeric',month:'2-digit',day:'2-digit'}).format(d); }
+const ktParisDayFormatter=new Intl.DateTimeFormat('sv-SE',{timeZone:'Europe/Paris',year:'numeric',month:'2-digit',day:'2-digit'});
+const ktParisHourFormatter=new Intl.DateTimeFormat('fr-FR',{timeZone:'Europe/Paris',hour:'2-digit',hourCycle:'h23'});
+function ktParisDay(v){var d=new Date(v);if(!Number.isFinite(d.getTime()))return '';return ktParisDayFormatter.format(d); }
 // ===== KT_WAREHOUSE_V1 : receptions et lots du stock grossiste =====
 // Le total historique reste la reference. Sa part non ventilee n'est jamais transformee en lot fictif.
 var warehouse = { version: 1, revision: 0, lots: [], receipts: [], moves: [], settings: {}, legacyCosts: {}, archived: {} };
@@ -527,7 +529,7 @@ function bcOverview(period,bid,now){
  var prefix=period==='year'?year:period==='month'?month:today;
  var n=period==='year'?12:period==='month'?new Date(Number(year),Number(month.slice(5)),0).getDate():24;
  var points=Array.from({length:n},function(_,i){return {label:period==='day'?String(i).padStart(2,'0')+'h':period==='month'?String(i+1):['Jan','Fév','Mar','Avr','Mai','Juin','Juil','Août','Sep','Oct','Nov','Déc'][i],orders:0,royalties:0};});
- function put(date,value,key){var dt=new Date(date);if(!Number.isFinite(dt.getTime()))return;var day=ktParisDay(dt);if(!day.startsWith(prefix))return;var index=period==='year'?Number(day.slice(5,7))-1:period==='month'?Number(day.slice(8,10))-1:Number(new Intl.DateTimeFormat('fr-FR',{timeZone:'Europe/Paris',hour:'2-digit',hourCycle:'h23'}).formatToParts(dt).find(function(p){return p.type==='hour';}).value);if(points[index])points[index][key]+=Number(value)||0;}
+ function put(date,value,key){var dt=new Date(date);if(!Number.isFinite(dt.getTime()))return;var day=ktParisDay(dt);if(!day.startsWith(prefix))return;var index=period==='year'?Number(day.slice(5,7))-1:period==='month'?Number(day.slice(8,10))-1:Number(ktParisHourFormatter.formatToParts(dt).find(function(p){return p.type==='hour';}).value);if(points[index])points[index][key]+=Number(value)||0;}
  var paid=supplyOrders.filter(function(o){return (!bid||o.boutiqueId===bid)&&['envoyee','preparation','preparee','expediee','retrait','recue'].includes(o.status);});
  paid.forEach(function(o){put(o.paidAt||o.ts,o.totalConfirme!=null?o.totalConfirme:o.total,'orders');});
  royaltyInvoices.filter(function(r){return !bid||r.boutiqueId===bid;}).forEach(function(r){put(r.date,r.ht,'royalties');});
@@ -1604,8 +1606,8 @@ function royaltiesRec(ym, boutiqueId){ var m=royaltiesStatus[ym]||{}; return m[b
 // Ajustement EXCEPTIONNEL du montant du mois (admin, motif obligatoire, trace dans le JET) : { ht, auto, motif, by, at }.
 function royaltiesOverride(ym, boutiqueId){ var r=royaltiesRec(ym, boutiqueId); return (r.override && typeof r.override.ht==='number') ? r.override : null; }
 // Montant HT de la redevance d'un mois. Priorite : facture deja emise (figee) > ajustement manuel > calcul CA HT x taux.
-function royaltiesAmount(ym, boutiqueId){
-  var caHT=royaltiesCaHT(boutiqueId, ym), rate=royaltiesRateFor(boutiqueId);
+function royaltiesAmount(ym, boutiqueId, precomputedCaHT){
+  var caHT=precomputedCaHT===undefined?royaltiesCaHT(boutiqueId, ym):precomputedCaHT, rate=royaltiesRateFor(boutiqueId);
   var auto=Math.round(caHT*rate)/100;
   var inv=royActiveInvoice(boutiqueId, ym);
   var ov=royaltiesOverride(ym, boutiqueId);
@@ -1615,11 +1617,7 @@ function royaltiesAmount(ym, boutiqueId){
 function royaltiesSetStatus(ym, boutiqueId, patch){ if(!royaltiesStatus[ym]) royaltiesStatus[ym]={}; var cur=royaltiesStatus[ym][boutiqueId]||{status:'a_payer',declaredAt:null,validatedAt:null}; royaltiesStatus[ym][boutiqueId]=Object.assign({},cur,patch); persist(); }
 // Mois d'une facture en HEURE DE PARIS (le serveur tourne en UTC : sans ca, les ventes de debut de
 // nuit glissaient sur le mauvais mois en bordure de mois).
-function parisYM(dateStr){
-  try { var s = new Date(dateStr).toLocaleDateString('fr-CA', { timeZone: 'Europe/Paris' }); if (/^\d{4}-\d{2}/.test(s)) return s.slice(0, 7); } catch (e) {}
-  var d = new Date(dateStr); if (isNaN(d)) return '';
-  return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2);
-}
+function parisYM(dateStr){return ktParisDay(dateStr).slice(0,7);}
 // HT d'une facture : la ventilation TVA enregistree si presente ; sinon recalcul ligne par ligne avec le
 // taux de CHAQUE ligne (remise repartie au prorata) ; en dernier recours division par 1,2.
 function invoiceHT(inv){
@@ -1687,8 +1685,9 @@ function royMoneyFr(n){ return (Math.round((Number(n)||0)*100)/100).toLocaleStri
 function royDateFr(iso){ try { return new Date(iso).toLocaleDateString('fr-FR',{ timeZone:'Europe/Paris', day:'2-digit', month:'2-digit', year:'numeric' }); } catch (e) { return String(iso||'').slice(0,10); } }
 function royDateLongFr(iso){ try { return new Date(iso).toLocaleDateString('fr-FR',{ timeZone:'Europe/Paris', day:'numeric', month:'long', year:'numeric' }); } catch (e) { return String(iso||'').slice(0,10); } }
 // Date/heure de Paris d'un instant (le serveur tourne en UTC).
+const ktParisPartsFormatter=new Intl.DateTimeFormat('en-GB',{timeZone:'Europe/Paris',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23'});
 function parisParts(ms){
-  var f = new Intl.DateTimeFormat('en-GB', { timeZone:'Europe/Paris', year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit', hourCycle:'h23' });
+  var f = ktParisPartsFormatter;
   var o = {}; f.formatToParts(new Date(ms)).forEach(function(p){ o[p.type] = p.value; });
   var y = +o.year, m = +o.month, d = +o.day, h = (+o.hour) % 24, mi = +o.minute;
   return { y:y, m:m, d:d, h:h, mi:mi, ym: y + '-' + ('0'+m).slice(-2) };
@@ -4537,10 +4536,13 @@ const server = http.createServer(async (req, res) => {
       // Royalties manquantes : chaque mois clos (12 derniers) ou l'argent n'est pas rentre (ni validee recue, ni facture reglee).
       const dn = new Date(); const curYM = dn.getFullYear() + '-' + ('0' + (dn.getMonth() + 1)).slice(-2);
       const months = []; for (let k = 1; k <= 12; k++) { const d = new Date(dn.getFullYear(), dn.getMonth() - k, 1); months.push(d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2)); }
+      // One pass over the sales journal, instead of twelve scans/conversions per shop.
+      const bcMonths=new Set(months),bcRevenue=new Map();
+      invoices.forEach(function(inv){if(scope&&inv.boutiqueId!==scope)return;const ym=parisYM(inv.date);if(!bcMonths.has(ym))return;const key=inv.boutiqueId+'|'+ym;bcRevenue.set(key,(bcRevenue.get(key)||0)+invoiceHT(inv));});
       const missing = []; let totalMissing = 0, nLate = 0;
       for (const id of boutiqueIds().filter(id=>!scope||id===scope)) {
         for (const ym of months) {
-          const am = royaltiesAmount(ym, id);
+          const am = royaltiesAmount(ym,id,Math.round((bcRevenue.get(id+'|'+ym)||0)*100)/100);
           if (!(am.ht > 0)) continue;
           const rec = royaltiesRec(ym, id);
           if (rec.status === 'valide') continue;
