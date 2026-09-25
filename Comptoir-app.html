@@ -2283,6 +2283,24 @@ function ktSaveFranchiseLot(el){
       return s;
     }).join(', ');
   }
+var ktOrderActionBusy=false;
+function ktOrderActions(o,modal){
+ if((st.user||{}).role!=='admin')return '';
+ if(o.status==='recue')return '<span class="tag tag-ok">'+((o.shipMode||o.shipChoice)==='retrait'?'Récupérée':'Réception confirmée')+' ✓ · stock ajouté</span>';
+ if(o.status==='attente'||o.status==='annulee')return '<span class="muted">'+proStatusLabel(o.status)+'</span>';
+ var pre=['envoyee','preparation','preparee'].includes(o.status),pickup=o.status==='retrait',delivery=o.status==='expediee';
+ return '<div style="display:flex;gap:7px;flex-wrap:wrap;white-space:normal" aria-label="Suivi de la commande">'+[
+ ['preparation','En préparation',pre&&o.status!=='preparation'],['retrait','Prête à récupérer',pre],['expediee','Expédiée',pre],['recue',delivery?'Réception confirmée':'Récupérée',pickup||delivery]
+ ].map(function(a){return '<button type="button" class="btn '+(a[2]?'btn-gold':'')+'" data-act="kt-order-stage" data-id="'+o.id+'" data-stage="'+a[0]+'" data-modal="'+(modal?'1':'0')+'" '+(!a[2]?'disabled':'')+' style="padding:7px 10px;font-size:12px">'+a[1]+(o.status===a[0]?' ✓':'')+'</button>';}).join('')+'</div>';
+}
+function ktOrderStage(el){
+ if(ktOrderActionBusy)return;
+ var o=(proData.orders||[]).find(function(x){return String(x.id)===el.dataset.id;});if(!o||(st.user||{}).role!=='admin')return;
+ var body=el.dataset.modal==='1'?proCollect():{};if(!body)return;body.status=el.dataset.stage||o.status;body.expectedStatus=o.status;
+ ktOrderActionBusy=true;el.disabled=true;var original=el.textContent;el.textContent='Enregistrement…';
+ apiPost('/api/pro/orders/'+o.id+'/status',body).then(function(r){Object.assign(o,r.order);if(el.dataset.modal==='1')closeModal();renderProOrders();toast(body.status==='recue'?((o.shipMode||o.shipChoice)==='retrait'?'Commande récupérée · stock franchise ajouté ✓':'Réception confirmée · stock franchise ajouté ✓'):body.status==='retrait'?'Prête à récupérer · franchise informée':body.status==='expediee'?'Expédiée · franchise informée':body.status==='preparation'?'En préparation · franchise informée':'Modifications enregistrées');}).catch(function(e){el.disabled=false;el.textContent=original;toast('Échec : '+e.message);proData.loaded=false;proData.loading=false;loadPro();}).finally(function(){ktOrderActionBusy=false;});
+}
+
   function renderProOrders(){
     var el=document.getElementById('pro-orders'); if(!el)return;
     var isAdmin=st.user.role==='admin';
@@ -2303,7 +2321,7 @@ function ktSaveFranchiseLot(el){
         ? '<span class="tag tag-low">⏳ En attente de paiement</span>'
         : '<span class="tag '+tagcl+'">'+proStatusLabel(o.status)+'</span>'+(o.wooPaid?' <span class="tag tag-ok" style="font-size:10px">payé ✓</span>':'');
       var act;
-      if(isAdmin){ var wooLink=o.wooUrl?'<a class="btn" href="'+esc(o.wooUrl)+'" target="_blank" rel="noopener" onclick="event.stopPropagation()" title="Ouvrir cette commande dans WooCommerce" style="text-decoration:none;margin-right:6px">🛒</a>':''; act=wooLink+'<button class="btn'+(o.status==='envoyee'?' btn-gold':'')+'" data-act="pro-open" data-id="'+o.id+'">'+(o.status==='recue'?'Voir ›':'Traiter ›')+'</button>'; }
+      if(isAdmin){ var wooLink=o.wooUrl?'<a class="btn" href="'+esc(o.wooUrl)+'" target="_blank" rel="noopener" onclick="event.stopPropagation()" title="Ouvrir cette commande dans WooCommerce" style="text-decoration:none;margin-right:6px">🛒</a>':''; act=wooLink+'<button class="btn'+(o.status==='envoyee'?' btn-gold':'')+'" data-act="pro-open" data-id="'+o.id+'">'+(o.status==='recue'?'Voir ›':'Détails / lots ›')+'</button><div style="margin-top:8px">'+ktOrderActions(o,false)+'</div>'; }
       else if(isAttente && ownerOwn){ var payB=o.payUrl?'<a class="btn btn-gold" href="'+esc(o.payUrl)+'" target="_blank" rel="noopener" onclick="event.stopPropagation()" title="Payer pour valider la commande" style="text-decoration:none;margin-right:6px">💳 Payer pour valider</a>':'<span class="muted" style="font-size:12px;margin-right:6px">lien indisponible</span>'; act=payB+'<button class="btn" data-act="pro-cancel" data-id="'+o.id+'" style="color:#b4452f">Annuler</button>'; }
       else if(ownerCanRecv){ act='<input id="prolot-'+o.id+'" placeholder="n° de lot (opt.)" style="width:118px;margin-right:6px;padding:6px 8px;border:1px solid var(--line);border-radius:8px;font-size:12px"/><button class="btn btn-gold" data-act="pro-recue" data-id="'+o.id+'">Commande reçue</button>'; }
       else { act='<span class="muted" style="font-size:12px">'+(o.status==='recue'?'stock ajouté ✓':proStatusLabel(o.status))+'</span>'; }
@@ -2315,13 +2333,13 @@ function ktSaveFranchiseLot(el){
         '<td style="text-align:right;white-space:nowrap">'+act+'</td></tr>';
     }).join('')||'<tr><td colspan="5" class="muted" style="padding:12px">Aucune commande de réassort pour le moment.</td></tr>';
     el.innerHTML='<table class="tbl"><thead><tr><th>N°</th><th>Articles</th><th>Total</th><th>Statut</th><th></th></tr></thead><tbody>'+rows+'</tbody></table>'+
-      (isAdmin?'<div class="muted" style="font-size:12px;padding:8px 2px 0">Clique une commande pour la traiter : ajuster les quantités envoyées, ajouter des réserves/notes, confirmer ou marquer expédiée.</div>':'');
+      (isAdmin?'<div class="muted" style="font-size:12px;padding:8px 2px 0">Change le statut directement avec les boutons. Ouvre Détails / lots pour ajuster les quantités et les numéros avant l’envoi.</div>':'');
   }
   // Détail d'une commande de réassort (admin) : voir la commande, poser des réserves/notes, confirmer, expédier.
   function openProOrder(id){
     var o=(proData.orders||[]).filter(function(x){return String(x.id)===String(id);})[0]; if(!o){toast('Commande introuvable');return;} proData.cur=o;
     var bl=(netData.boutiques||[]).filter(function(b){return b.id===o.boutiqueId;})[0]; var blabel=bl?bl.label:o.boutiqueId;
-    var locked=(o.status==='recue');
+    var locked=['recue','expediee','retrait'].includes(o.status);
     var rows=(o.items||[]).map(function(it){
       var conf=(it.qtyConfirmed!=null?it.qtyConfirmed:it.qty); var u=proUnitSym(it.unit); var dis=locked?' disabled':'';
       return '<tr><td><b>'+esc(it.name)+'</b><div class="muted" style="font-size:11px">'+esc(it.productId)+(it.unitPrice!=null?' · '+eur2(it.unitPrice)+'/'+u:'')+'</div></td>'+
@@ -2329,18 +2347,9 @@ function ktSaveFranchiseLot(el){
         '<td style="white-space:nowrap"><input id="poq-'+esc(it.productId)+'" type="number" min="0" value="'+conf+'"'+dis+' style="width:74px;padding:7px 8px;border:1px solid var(--line);border-radius:8px"/> '+u+(locked?'':' <button class="btn" data-act="pro-rupture" data-pid="'+esc(it.productId)+'" style="padding:5px 9px;font-size:11px;color:#b4452f">rupture</button>')+'</td>'+
         '<td><input id="pon-'+esc(it.productId)+'" value="'+esc(it.note||'')+'"'+dis+' placeholder="spécificité, remarque…" style="width:100%;padding:7px 8px;border:1px solid var(--line);border-radius:8px"/></td></tr>';
     }).join('');
-    var foot;
-    if(locked){
-      foot='<button class="btn" data-act="closemodal">Fermer</button><span class="muted" style="margin-left:auto;align-self:center;font-size:12.5px">Reçue'+(o.receivedAt?' le '+new Date(o.receivedAt).toLocaleDateString('fr-FR'):'')+' · stock ajouté ✓</span>';
-    } else {
-      foot='<button class="btn" data-act="closemodal">Fermer</button>'+
-        ((o.status==='expediee'||o.status==='retrait')
-          ? '<button class="btn" data-act="pro-recue-modal" data-id="'+o.id+'">Marquer reçue</button>'
-          : '<button class="btn" data-act="pro-ship" data-mode="poste" style="margin-left:auto">Envoyée (La Poste) 📮</button><button class="btn" data-act="pro-ship" data-mode="retrait" style="margin-left:6px">Prête à récupérer 🏪</button>')+
-        ( ['attente','envoyee','preparation'].includes(o.status)?'<button class="btn" data-act="kt-pro-prepare">Mettre en préparation</button>':'')+'<button class="btn btn-gold" data-act="pro-confirm">Marquer préparée</button>';
-    }
+    var foot='<button class="btn" data-act="closemodal">Fermer</button>'+(locked?'':(['envoyee','preparation','preparee'].includes(o.status)?'<button class="btn" data-act="kt-order-stage" data-id="'+o.id+'" data-stage="'+o.status+'" data-modal="1">Enregistrer les quantités et notes</button>':''));
     openModal('<div class="modal-h">Commande '+esc(o.numero)+' — '+esc(blabel)+'</div>'+
-      '<div class="modal-b">'+ktOrderShipping(o)+ktOrderLineage(o)+
+      '<div class="modal-b"><section style="padding:14px;border:1px solid var(--line);border-radius:10px;margin-bottom:16px"><h3 style="margin-top:0">Statut de la commande</h3>'+ktOrderActions(o,true)+'<p class="muted" style="font-size:12px">La confirmation de récupération ou de réception ajoute le stock à la franchise une seule fois.</p></section>'+ktOrderShipping(o)+ktOrderLineage(o)+
       '<div class="muted" style="font-size:12.5px;margin-bottom:10px">Passée le '+(o.ts?new Date(o.ts).toLocaleString('fr-FR'):'—')+' · Statut <b>'+proStatusLabel(o.status)+'</b>'+(o.by?' · par '+esc(o.by):'')+'</div>'+
       (locked?'':'<div class="muted" style="font-size:12px;margin-bottom:10px">Ajuste la quantité <b>envoyée</b> si tu sers moins que demandé (rupture, partiel) — c\'est elle qui entrera dans le stock du franchisé à la réception. Ajoute une note par produit si besoin.</div>')+
       '<table class="tbl"><thead><tr><th>Produit</th><th style="text-align:center">Demandé</th><th>Envoyé</th><th>Réserve / note</th></tr></thead><tbody>'+rows+'</tbody></table>'+
@@ -2673,26 +2682,36 @@ function ktSaveFranchiseLot(el){
     for(var j=0;j<t.length;j++){ if(t[j][0]>grams){ if(price>t[j][1])price=t[j][1]; break; } }
     return Math.round(price*100)/100;
   }
-  // Inverse : combien de grammes (0,1 g près) pour un montant donné — le plus grand g tel que prix(g) <= montant.
+  // Inverse au milligramme : recherche par intervalle de palier, sans boucle sur chaque poids.
+  // Chaque intervalle est monotone, même si les tarifs baissent au palier suivant.
   function gramsForAmount(tiers,amount){
     var t=(tiers||[]).slice().sort(function(a,b){return a[0]-b[0];});
-    if(!t.length||!(amount>0))return null;
-    var last=t[t.length-1]; var maxG=Math.max(last[0],amount/(last[1]/last[0]))+last[0];
-    var best=null;
-    for(var g=Math.round(maxG*10);g>=1;g--){ var pr=tierPriceForGrams(t,g/10); if(pr!=null&&pr<=amount+1e-9){best=g/10;break;} }
-    return best;
+    if(!t.length||!Number.isFinite(amount)||!(amount>0))return null;
+    amount=Math.round(amount*100)/100;
+    for(var i=t.length-1;i>=0;i--){
+      var lo=i===0?1:Math.ceil(t[i][0]*1000),hi=i+1<t.length?Math.ceil(t[i+1][0]*1000)-1:100000000;
+      hi=Math.min(hi,100000000);
+      var best=null;
+      while(lo<=hi){
+        var mid=Math.floor((lo+hi)/2),pr=tierPriceForGrams(t,mid/1000);
+        if(pr!=null&&Number.isFinite(pr)&&pr<=amount+1e-9){best=mid;lo=mid+1;}else hi=mid-1;
+      }
+      if(best!=null)return best/1000;
+    }
+    return null;
   }
   function cgWire(p){
     var gEl=document.getElementById('cg-grams'),eEl=document.getElementById('cg-eur'),pv=document.getElementById('cg-preview');
     if(!gEl||!eEl||!pv)return;
     var upd=function(mode){
+      pv.removeAttribute('data-g');pv.removeAttribute('data-pr');pv.removeAttribute('data-ko');
       var stockG=totalStockG(p);
       if(mode==='g'&&eEl.value!=='')eEl.value='';
       if(mode==='e'&&gEl.value!=='')gEl.value='';
       var g=null,pr=null;
-      if(gEl.value!==''){ g=Math.round((parseFloat(gEl.value)||0)*10)/10; pr=tierPriceForGrams(p.tiers,g); }
+      if(gEl.value!==''){ g=Math.round((parseFloat(gEl.value)||0)*1000)/1000; pr=tierPriceForGrams(p.tiers,g); }
       else if(eEl.value!==''){ var amt=parseFloat(eEl.value)||0; g=gramsForAmount(p.tiers,amt); pr=(g!=null)?tierPriceForGrams(p.tiers,g):null; }
-      if(g==null||!(g>0)||pr==null){ pv.innerHTML='<span class="muted">Tape un grammage OU un montant — le prix suit tes paliers programmés.</span>'; return; }
+      if(!Number.isFinite(g)||!(g>0)||g>100000||!Number.isFinite(pr)||!(pr>0)){ pv.innerHTML='<span class="muted">Tape un grammage OU un montant — le prix suit tes paliers programmés.</span>'; return; }
       if(g>stockG){ pv.innerHTML='<b style="color:#b4452f">⛔ '+g+' g demandés — il ne reste que '+stockG+' g en stock.</b>'; pv.setAttribute('data-ko','1'); return; }
       pv.removeAttribute('data-ko');
       pv.innerHTML='→ <b>'+g+' g</b> pour <b>'+eur(pr)+'</b> <span class="muted">(tarif '+p.name+', déduit du stock)</span>';
@@ -2712,9 +2731,9 @@ function ktSaveFranchiseLot(el){
       (p.unit==='g'?('<div style="border-top:1px dashed var(--line);margin-top:14px;padding-top:12px">'+
         '<div style="font-size:13px;font-weight:700;margin-bottom:8px">Autre quantité ou montant <span class="muted" style="font-weight:400">(hors paliers)</span></div>'+
         '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">'+
-          '<input id="cg-grams" type="number" inputmode="decimal" step="0.1" min="0" placeholder="grammes" style="width:110px;'+inpSt+'"/><span class="muted">g</span>'+
+          '<input id="cg-grams" type="number" inputmode="decimal" step="0.001" min="0" placeholder="grammes" style="width:110px;'+inpSt+'"/><span class="muted">g</span>'+
           '<span class="muted" style="margin:0 4px">ou</span>'+
-          '<input id="cg-eur" type="number" inputmode="decimal" step="0.5" min="0" placeholder="montant" style="width:110px;'+inpSt+'"/><span class="muted">€</span>'+
+          '<input id="cg-eur" type="number" inputmode="decimal" step="0.01" min="0" placeholder="montant" style="width:110px;'+inpSt+'"/><span class="muted">€</span>'+
           '<button class="btn btn-gold" data-act="addgram-custom" data-id="'+p.id+'" style="margin-left:auto;padding:10px 18px">Ajouter</button>'+
         '</div>'+
         '<div id="cg-preview" style="font-size:13.5px;margin-top:8px;min-height:18px"></div>'+
@@ -3301,6 +3320,7 @@ function ktSaveFranchiseLot(el){
     if(a==='kt-fr-save'){ktSaveFranchiseLot(el);return;}
     if(a==='pro-open'){ openProOrder(el.getAttribute('data-id')); return; }
     if(a==='pro-rupture'){ var rpid=el.getAttribute('data-pid'); var rq=document.getElementById('poq-'+rpid), rn=document.getElementById('pon-'+rpid); if(rq)rq.value=0; if(rn&&!rn.value.trim())rn.value='Rupture de stock'; return; }
+    if(a==='kt-order-stage'){ktOrderStage(el);return;}
     if(a==='kt-pro-prepare'){var prep=proCollect();if(!prep||!proData.cur)return;prep.status='preparation';el.disabled=true;apiPost('/api/pro/orders/'+proData.cur.id+'/status',prep).then(function(){closeModal();toast('Commande en préparation · la franchise sera informée');proData.loaded=false;proData.loading=false;loadPro();}).catch(function(e){el.disabled=false;toast(e.message);});return;}
     if(a==='pro-confirm'){ var pc=proCollect(); if(!pc||!proData.cur)return; pc.status='preparee'; apiPost('/api/pro/orders/'+proData.cur.id+'/status',pc).then(function(){closeModal();toast('Commande confirmée ✓');proData.loaded=false;proData.loading=false;loadPro();}).catch(function(e){toast('Échec : '+(e.message||e));}); return; }
     if(a==='pro-ship'){ var ps=proCollect(); if(!ps||!proData.cur)return; var psRet=el.getAttribute('data-mode')==='retrait'; ps.status=psRet?'retrait':'expediee'; apiPost('/api/pro/orders/'+proData.cur.id+'/status',ps).then(function(){closeModal();toast(psRet?'Commande prête à récupérer 🏪':'Commande envoyée par La Poste 📮');proData.loaded=false;proData.loading=false;loadPro();}).catch(function(e){toast('Échec : '+(e.message||e));}); return; }

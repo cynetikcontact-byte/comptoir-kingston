@@ -3450,7 +3450,7 @@ const server = http.createServer(async (req, res) => {
         if (!p) throw new Error('Produit inconnu : ' + it.productId);
         const rate = vatRate(p);
         if (p.unit === 'g') {
-          const grams = Math.round(Number(it.grams) * 10) / 10;   // grammage libre autorise, 0,1 g pres
+          const grams = Math.round(Number(it.grams) * 1000) / 1000; // Précision identique au popup et au stock : 0,001 g
           if (!(grams > 0) || grams > 100000) throw new Error('Grammage invalide pour ' + p.name);
           const tier = (p.tiers || []).find((t) => t[0] === grams);
           // Palier exact -> prix du palier ; sinon grammage LIBRE saisi en caisse -> prix calcule
@@ -4671,6 +4671,8 @@ const server = http.createServer(async (req, res) => {
       if (b.status === 'recue') { if (!(user.role === 'admin' || isOwnerManager)) return send(res, 403, { error: 'Réservé au franchisé concerné ou à l\'admin' }); }
       else if (user.role !== 'admin') return send(res, 403, { error: 'Réservé à l\'administrateur réseau' });
       if (o.status === 'annulee') return send(res,409,{error:'Commande annulee : creez un nouveau reassort.'});
+      if(b.expectedStatus!=null&&b.expectedStatus!==o.status)return send(res,409,{error:'Le statut a changé. La liste va être actualisée.'});
+      if(o.restocked&&b.status!=='recue')return send(res,409,{error:'Commande déjà réceptionnée : son statut est définitif.'});
       // Verifier tous les ajustements avant de toucher au statut ou aux reservations.
       if (Array.isArray(b.items)) {
         var adjustedIds = {}, extraNeeded = {};
