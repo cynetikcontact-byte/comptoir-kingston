@@ -319,14 +319,15 @@ let proExtras = [];   // [{ id:'kx..', name, cat, unit:'g'|'u', proPrice? , sour
 // Renommages decides par l'admin : { productId: nouveau nom }. Applique apres chaque synchro kingbase
 // (sinon la synchro horaire remettrait le nom du site) et pousse vers Woo quand le produit y est lie.
 let proRename = {};
+function ktParisDay(v){var d=new Date(v);if(!Number.isFinite(d.getTime()))return '';return new Intl.DateTimeFormat('sv-SE',{timeZone:'Europe/Paris',year:'numeric',month:'2-digit',day:'2-digit'}).format(d); }
 // ===== KT_WAREHOUSE_V1 : receptions et lots du stock grossiste =====
 // Le total historique reste la reference. Sa part non ventilee n'est jamais transformee en lot fictif.
-var warehouse = { version: 1, revision: 0, lots: [], receipts: [], moves: [], settings: {}, legacyCosts: {} };
+var warehouse = { version: 1, revision: 0, lots: [], receipts: [], moves: [], settings: {}, legacyCosts: {}, archived: {} };
 function whRound(n) { return Math.round(n * 100) / 100; }
 function whFail(message, status) { var e = new Error(message); e.status = status || 400; throw e; }
 function whText(v, max) { return String(v == null ? '' : v).trim().slice(0, max || 160); }
 function whId() { return crypto.randomBytes(12).toString('hex'); }
-function whProduct(pid) { var p = allProProducts().find(function(x) { return x.id === pid; }); if (!p) whFail('Produit de gros introuvable.', 404); return p; }
+function whProduct(pid, includeArchived) { var p = allProProducts(includeArchived).find(function(x) { return x.id === pid; }); if (!p) whFail('Produit de gros introuvable.', 404); return p; }
 function whService(p) { return p.sku === 'KT-REDEVANCE' || /^redevance de franchise$/i.test(p.name || ''); }
 function whDay(v, optional) {
   if (!v && optional) return '';
@@ -366,7 +367,7 @@ function whSnapshot() {
     var setting = warehouse.settings[p.id] || {}, lots = whLots(p.id).map(function(l) { return Object.assign({}, l); }), pool = whLegacy(p.id);
     if (pool > 0) lots.unshift({ id: 'legacy:' + p.id, pid: p.id, code: 'Stock anterieur a ventiler', legacy: true, qty: pool, initial: pool, buy: Object.prototype.hasOwnProperty.call(warehouse.legacyCosts,p.id) ? warehouse.legacyCosts[p.id] : (proBuyPrice[p.id] == null ? null : proBuyPrice[p.id]), received: '', expiry: '', supplier: '', reference: '' });
     return { id:p.id, name:p.name, sku:p.sku || p.id, family:p.cat || 'Gros', unit:p.unit === 'g' ? 'g' : 'u', sell:proUnitInfo(p).price, sitePrice:p.proPrice == null ? null : p.proPrice, tracked:proStock[p.id] != null, stock:proStock[p.id] == null ? null : proStock[p.id], available:whAvailable(p.id), threshold:setting.threshold == null ? null : setting.threshold, lots:lots, average:whAverage(p.id), linked:!!p.wooId && p.unit !== 'g', manual:p.source === 'manuel' };
-  }), receipts:warehouse.receipts.slice().reverse(), movements:warehouse.moves.slice(-2000).reverse(), push:{configured:proPushConfigured(),state:proStockPush}, site:PRO_WP_URL, historyTruncated:warehouse.moves.length > 2000 };
+  }), archivedProducts:allProProducts(true).filter(function(p){return warehouse.archived[p.id];}).map(function(p){return {id:p.id,name:p.name,sku:p.sku||p.id,unit:p.unit,archive:warehouse.archived[p.id]};}), receipts:warehouse.receipts.slice().reverse(), movements:warehouse.moves.slice(-2000).reverse(), push:{configured:proPushConfigured(),state:proStockPush}, site:PRO_WP_URL, historyTruncated:warehouse.moves.length > 2000 };
 }
 // Sauvegarder avant de confirmer : une reception ne doit pas disparaitre apres un redemarrage.
 function whCommit(fn) {
@@ -380,7 +381,7 @@ function whTake(pid, qty, user, reason, type, before) {
   whCaptureCost(pid);
   var left = qty, parts = [];
   whLots(pid).filter(function(l) { return l.qty > 0 && !whExpired(l); }).sort(function(a,b) { return (a.expiry || '9999').localeCompare(b.expiry || '9999') || (a.received || '').localeCompare(b.received || ''); }).forEach(function(l) {
-    if (left <= 0) return; var q = Math.min(left,l.qty); l.qty=whRound(l.qty-q); left=whRound(left-q); parts.push({id:l.id,code:l.code,qty:q,expiry:l.expiry});
+    if (left <= 0) return; var q = Math.min(left,l.qty); l.qty=whRound(l.qty-q); left=whRound(left-q); parts.push({id:l.id,code:l.code,supplierCode:l.code,supplier:l.supplier,kingstonCode:l.kingstonCode||'',qty:q,expiry:l.expiry});
   });
   if (left > 0) parts.push({id:null,code:'',qty:left,expiry:''});
   var remaining = before == null ? (proStock[pid] || 0) : before;
@@ -447,7 +448,7 @@ function whReceipt(b,user) {
       whCaptureCost(it.pid); var l=it.existingId?warehouse.lots.find(function(x) {return x.id===it.existingId;}):null;
       if(l) { l.qty=whRound(l.qty+it.qty); l.initial=whRound(l.initial+it.qty); }
       else { l={id:whId(),pid:it.pid,code:it.code,qty:it.qty,initial:it.qty,buy:it.buy,received:r.date,expiry:it.expiry,supplier:r.supplier,reference:r.ref}; warehouse.lots.push(l); }
-      it.lotId=l.id; proStock[it.pid]=whRound((proStock[it.pid] || 0)+it.qty);
+      ktInternal(l); it.kingstonCode=l.kingstonCode;it.supplierCode=l.code;it.lotId=l.id; proStock[it.pid]=whRound((proStock[it.pid] || 0)+it.qty);
       if(it.changeSell) { var before=proUnitInfo(whProduct(it.pid)).price; proSellPrice[it.pid]=it.sell; whMove('Prix de vente',it.pid,it.code,null,r.id,user,{before:before,after:it.sell}); }
       whMove('Reception',it.pid,it.code,it.qty,r.id+' · '+r.supplier+' · '+r.ref,user,{receiptId:r.id});
     });
@@ -464,12 +465,27 @@ function whMutate(action,b,user) {
     if(action==='product') {
       var name=whText(b.name,80),sku=whText(b.sku,80),unit=b.unit,cat=whText(b.family,40);
       if(!name || !sku || ['g','u'].indexOf(unit)<0 || !cat)whFail('Nom, reference, famille et unite requis.');
-      if(allProProducts().some(function(p) {return (p.sku || p.id).toLowerCase()===sku.toLowerCase();}))whFail('Reference deja utilisee.');
+      if(allProProducts(true).some(function(p) {return (p.sku || p.id).toLowerCase()===sku.toLowerCase();}))whFail('Reference deja utilisee.');
       var p={id:'kx'+whId(),sku:sku,name:name,cat:cat,unit:unit,source:'manuel',custom:true,img:''};
       var sell=whNumber(b.sell),threshold=whNumber(b.threshold,unit); proExtras.push(p); proStock[p.id]=0; proSellPrice[p.id]=sell; warehouse.settings[p.id]={threshold:threshold};
       whMove('Creation produit',p.id,'',0,'Fiche creee',user); return {productId:p.id};
     }
-    var p=whProduct(whText(b.pid,80)),reason=whText(b.reason,500);
+    var p=whProduct(whText(b.pid,80),action==='restore'),reason=whText(b.reason,500);
+    if(action==='archive' || action==='restore') {
+      if(whService(p))whFail('Ce service ne peut pas etre retire ici.');
+      if(action==='restore') {
+        if(!warehouse.archived[p.id])whFail('Ce produit est deja actif.',409);
+        delete warehouse.archived[p.id];
+        whMove('Restauration produit',p.id,'',null,'Retour au catalogue',user);
+      } else {
+        if(!reason)whFail('Motif du retrait obligatoire.');
+        if((proStock[p.id]||0)>0 || whTracked(p.id)>0)whFail('Il reste du stock. Enregistrez une sortie justifiee avant de retirer ce produit.',409);
+        if(supplyOrders.some(function(o){return ['recue','annulee'].indexOf(o.status)<0 && (o.items||[]).some(function(it){return it.productId===p.id;});}))whFail('Une commande en cours contient ce produit. Terminez-la avant de le retirer.',409);
+        whMove('Retrait du catalogue',p.id,'',null,reason,user);
+        warehouse.archived[p.id]={date:new Date().toISOString(),reason:reason,by:user.name||''};
+      }
+      return {productId:p.id};
+    }
     if(action==='settings') {
       var name=whText(b.name,80); if(!name)whFail('Nom requis.');
       warehouse.settings[p.id]={threshold:whNumber(b.threshold,p.unit)}; p.name=name; if(p.source!=='manuel')proRename[p.id]=name;
@@ -479,6 +495,7 @@ function whMutate(action,b,user) {
     if(action==='price') { var sell=whNumber(b.sell),old=proUnitInfo(p).price; proSellPrice[p.id]=sell; whMove('Prix de vente',p.id,'',null,reason,user,{before:old,after:sell}); ids.push(p.id); return {}; }
     var legacy=b.lotId==='legacy:'+p.id, l=legacy?null:warehouse.lots.find(function(x) {return x.id===b.lotId && x.pid===p.id;});
     if(!l && !legacy)whFail('Lot introuvable.',404);
+    if(action==='internalcode'){if(!l)whFail('Identifiez d’abord le lot fournisseur.');ktInternal(l);whMove('Lot Kingston genere',p.id,l.code,null,reason,user,{kingstonCode:l.kingstonCode});return {};}
     whCaptureCost(p.id);
     if(action==='allocate') {
       if(!legacy)whFail('Selectionnez le stock anterieur a ventiler.');
@@ -486,7 +503,7 @@ function whMutate(action,b,user) {
       if(qty>whLegacy(p.id))whFail('Quantite superieure au stock a ventiler.');
       if(!code || !supplier)whFail('Numero de lot et fournisseur requis.');
       if(whLots(p.id).some(function(x) {return x.code.toLowerCase()===code.toLowerCase();}))whFail('Ce numero de lot existe deja.');
-      warehouse.lots.push({id:whId(),pid:p.id,code:code,qty:qty,initial:qty,buy:buy,received:'',expiry:expiry,supplier:supplier,reference:'Reprise du stock existant'});
+      warehouse.lots.push({id:whId(),pid:p.id,code:code,qty:qty,initial:qty,buy:buy,received:'',expiry:expiry,supplier:supplier,reference:'Reprise du stock existant',kingstonCode:'KT-'+new Date().getUTCFullYear()+'-'+whId().slice(0,12).toUpperCase()});
       whMove('Ventilation du stock anterieur',p.id,code,0,reason,user,{allocated:qty}); whReprice(p.id); ids.push(p.id); return {};
     }
     if(action==='lotprice') {
@@ -504,9 +521,89 @@ function whMutate(action,b,user) {
   if(ids.length)schedulePushProStock(ids);
   return Object.assign({ok:true},result);
 }
+// KT_BASECAMP_V3: read-only overview, Paris calendar and existing accounting amounts.
+function bcOverview(period,bid,now){
+ var today=ktParisDay(now),month=today.slice(0,7),year=today.slice(0,4);
+ var prefix=period==='year'?year:period==='month'?month:today;
+ var n=period==='year'?12:period==='month'?new Date(Number(year),Number(month.slice(5)),0).getDate():24;
+ var points=Array.from({length:n},function(_,i){return {label:period==='day'?String(i).padStart(2,'0')+'h':period==='month'?String(i+1):['Jan','Fév','Mar','Avr','Mai','Juin','Juil','Août','Sep','Oct','Nov','Déc'][i],orders:0,royalties:0};});
+ function put(date,value,key){var dt=new Date(date);if(!Number.isFinite(dt.getTime()))return;var day=ktParisDay(dt);if(!day.startsWith(prefix))return;var index=period==='year'?Number(day.slice(5,7))-1:period==='month'?Number(day.slice(8,10))-1:Number(new Intl.DateTimeFormat('fr-FR',{timeZone:'Europe/Paris',hour:'2-digit',hourCycle:'h23'}).formatToParts(dt).find(function(p){return p.type==='hour';}).value);if(points[index])points[index][key]+=Number(value)||0;}
+ var paid=supplyOrders.filter(function(o){return (!bid||o.boutiqueId===bid)&&['envoyee','preparation','preparee','expediee','retrait','recue'].includes(o.status);});
+ paid.forEach(function(o){put(o.paidAt||o.ts,o.totalConfirme!=null?o.totalConfirme:o.total,'orders');});
+ royaltyInvoices.filter(function(r){return !bid||r.boutiqueId===bid;}).forEach(function(r){put(r.date,r.ht,'royalties');});
+ var settled=royaltyInvoices.filter(function(r){return (!bid||r.boutiqueId===bid)&&r.type==='facture'&&royPaid(r)&&ktParisDay(r.regleeAt).startsWith(month);});
+ return {period:period,points:points,orders:whRound(points.reduce(function(s,p){return s+p.orders;},0)),royalties:whRound(points.reduce(function(s,p){return s+p.royalties;},0)),completed:paid.filter(function(o){return o.status==='recue'&&ktParisDay(o.receivedAt||(o.stepAt||{}).recue||0)===today;}).length,paidRoyalties:settled.length,paidRoyaltyAmount:whRound(settled.reduce(function(s,r){return s+Number(r.ht||0);},0)),recent:paid.slice().sort(function(a,b){return (b.paidAt||b.ts)-(a.paidAt||a.ts);}).slice(0,5).map(function(o){return {id:o.id,numero:o.numero,label:(boutiques[o.boutiqueId]||{}).label||o.boutiqueId,status:o.status,total:o.totalConfirme!=null?o.totalConfirme:o.total,ts:o.paidAt||o.ts};})};
+}
+
+// KT_TRACE_V2 — immutable supplier/Kingston/franchise lineage.
+function ktInternal(l){if(!l.kingstonCode)l.kingstonCode='KT-'+new Date().getUTCFullYear()+'-'+whId().slice(0,12).toUpperCase();return l.kingstonCode;}
+function ktFranchiseLots(o){
+ o.items.forEach(function(it,ix){(it.warehouseLots||[]).forEach(function(part,j){
+  if(!part.franchiseCode)part.franchiseCode='FR-'+o.numero+'-'+(ix+1)+'-'+(j+1)+'-'+whId().slice(0,6).toUpperCase();
+  var parent=warehouse.lots.find(function(l){return l.id===part.id;});
+  if(parent){part.kingstonCode=ktInternal(parent);part.supplierCode=parent.code;part.supplier=parent.supplier;}
+  part.originKnown=!!parent;
+ });});
+}
+function ktTrace(user,q){
+ var rows=[];
+ supplyOrders.filter(function(o){return o.status!=='annulee'&&(user.role==='admin'||o.boutiqueId===user.boutiqueId);}).forEach(function(o){
+  o.items.forEach(function(it){(it.warehouseLots||[]).forEach(function(part){
+   var l=warehouse.lots.find(function(x){return x.id===part.id;});
+   rows.push({productId:it.productId,product:it.name,unit:it.unit,qty:part.qty,supplierCode:part.supplierCode||(l&&l.code)||'',supplier:part.supplier||(l&&l.supplier)||'',kingstonCode:part.kingstonCode||(l&&l.kingstonCode)||'',franchiseCode:part.franchiseCode||'',boutiqueId:o.boutiqueId,boutique:(boutiques[o.boutiqueId]||{}).label||o.boutiqueId,order:o.numero,status:o.status,receivedAt:o.receivedAt||null,originKnown:!!l});
+  });});
+ });
+ var term=String(q||'').trim().toLowerCase();return rows.filter(function(r){return !term||[r.product,r.supplierCode,r.kingstonCode,r.franchiseCode,r.boutique,r.order].join(' ').toLowerCase().includes(term);});
+}
+
+// KT_SHIPPING_V2 — public Colissimo online domestic rates, verified 2026-09-25.
+function ktShipConfig(){return warehouse.shipping||{version:1,enabled:false,label:'Colissimo domicile France métropolitaine 2026',source:'https://www.laposte.fr/colissimo-en-ligne/tarifs',validFrom:'2026-01-01',basis:'Tarifs publics nets',packingGrams:200,rates:[[250,5.49],[500,7.59],[750,9.29],[1000,9.59],[2000,11.19],[5000,17.39],[10000,25.29],[15000,31.99],[30000,39.59]],insurance:[[50,3.30],[200,5],[300,5.90],[400,6.90],[500,7.90],[600,8.90],[700,9.90],[800,10.90],[900,11.90],[1000,12.90]],weights:{}};}
+function ktShipSave(b,user){
+ var prev=ktShipConfig();if(b.revision!==crypto.createHash('sha256').update(JSON.stringify(prev)).digest('hex'))whFail('La grille a changé. Rechargez-la.',409);
+ function tiers(rows,max){if(!Array.isArray(rows)||!rows.length||rows.length>60)whFail('Grille invalide.');var last=0;return rows.map(function(r){if(!Array.isArray(r)||r.length!==2)whFail('Ligne invalide.');var limit=whNumber(r[0],null,true),price=whNumber(r[1]);if(limit<=last||limit>max)whFail('Seuils strictement croissants requis, plafond '+max+'.');last=limit;return [limit,price];});}
+ var cfg={version:prev.version+1,enabled:b.enabled===true,label:whText(b.label)||prev.label,source:prev.source,validFrom:whDay(b.validFrom),basis:'Tarifs publics nets',packingGrams:whNumber(b.packingGrams,null,true),rates:tiers(b.rates,30000),insurance:tiers(b.insurance,1000),weights:{},updatedAt:new Date().toISOString(),updatedBy:user.name||''};
+ if(cfg.packingGrams>=cfg.rates[cfg.rates.length-1][0])whFail('Emballage plus lourd que le colis maximal.');
+ Object.keys(b.weights||{}).forEach(function(id){var p=whProduct(id);var w=whNumber(b.weights[id],null,true);if(w>30000||(p.unit==='g'&&w<1))whFail('Poids unitaire invalide pour '+p.name);cfg.weights[id]=w;});
+ whCommit(function(){warehouse.shipping=cfg;});return cfg;
+}
+function ktShipQuote(b,user){
+ if(!['poste','retrait'].includes(b.mode))whFail('Choisissez la livraison ou le retrait.');
+ if(!Array.isArray(b.items)||!b.items.length||b.items.length>200)whFail('Panier invalide.');
+ var cfg=ktShipConfig(),seen={},goods=0,lines=b.items.map(function(it){var p=whProduct(whText(it.productId,80)),qty=whNumber(it.qty,'u',true);if(seen[p.id])whFail('Référence en double.');seen[p.id]=true;if(user.role!=='admin'&&proStock[p.id]==null)whFail('Produit indisponible.');var price=proUnitInfo(p).price;if(price==null||!Number.isFinite(price)||price<0)whFail('Prix manquant.');goods+=Math.round(price*100)*qty;return {productId:p.id,name:p.name,unit:p.unit,qty:qty,cents:Math.round(price*100),grams:cfg.weights[p.id]||(p.unit==='g'?1:null),service:whService(p)};});
+ var quote={mode:b.mode,configVersion:cfg.version,goods:goods/100,packages:[],shipping:0,insurance:0,fees:0,total:goods/100,basis:cfg.basis};
+ if(b.mode==='poste'){
+  if(!cfg.enabled)whFail('Le réseau doit valider les tarifs et le poids de l’emballage dans Tarifs Colissimo.',409);
+  if(cfg.validFrom>ktParisDay(new Date()))whFail('Cette grille n’est pas encore applicable.',409);
+  if((b.country||'FR')!=='FR'||!/^\d{5}$/.test(String(b.zip||''))||/^(97|98)/.test(b.zip))whFail('Grille configurée uniquement pour la France métropolitaine (Corse incluse).');
+  var maxG=cfg.rates[cfg.rates.length-1][0],maxV=Math.round(cfg.insurance[cfg.insurance.length-1][0]*100),current=null;
+  function newPack(){if(quote.packages.length>=100)whFail('Plus de 100 colis : contactez le réseau.');current={number:quote.packages.length+1,grams:cfg.packingGrams,valueCents:0,items:[]};quote.packages.push(current);}
+  lines.filter(function(l){return !l.service;}).forEach(function(l){if(!l.grams)whFail('Poids à renseigner pour '+l.name,409);if(l.grams>maxG-cfg.packingGrams||l.cents>maxV)whFail('Unité trop lourde ou valeur supérieure au plafond assuré : '+l.name,409);var left=l.qty;while(left>0){if(!current)newPack();var q=Math.min(left,Math.floor((maxG-current.grams+1e-8)/l.grams),l.cents?Math.floor((maxV-current.valueCents)/l.cents):left);if(q<1){newPack();continue;}current.items.push({productId:l.productId,name:l.name,qty:q,unit:l.unit});current.grams+=q*l.grams;current.valueCents+=q*l.cents;left-=q;}});
+  quote.packages.forEach(function(p){p.grams=Math.ceil(p.grams);p.value=p.valueCents/100;delete p.valueCents;var rate=cfg.rates.find(function(r){return r[0]>=p.grams;});if(!rate)whFail('Poids hors grille.');p.shipping=rate[1];var included=Math.max(5.75,p.grams/1000*23);var cover=cfg.insurance.find(function(r){return r[0]>=p.value;});if(!cover)whFail('Valeur hors grille assurance.');var needCover=included<p.value+p.shipping;p.insurance=needCover?cover[1]:0;p.covered=needCover?cover[0]:whRound(included);p.option=needCover?(cover[0]===50?'R1':cover[0]===200?'R2':'Ad Valorem'):'Indemnisation incluse';p.signature=needCover||p.grams>5000;quote.shipping=whRound(quote.shipping+p.shipping);quote.insurance=whRound(quote.insurance+p.insurance);});
+  quote.fees=whRound(quote.shipping+quote.insurance);quote.total=whRound(quote.goods+quote.fees);
+ }
+ quote.fingerprint=crypto.createHash('sha256').update(JSON.stringify([quote,lines,cfg,b.zip||'',b.country||'FR'])).digest('hex');return quote;
+}
+// Update the actual pending Woo order before exposing its payment URL.
+async function ktWooShipping(o,candidate){
+ if(!o.shippingQuote||o.shippingReady)return;
+ if(!proPushConfigured())throw new Error('Clés WooCommerce requises pour appliquer les frais.');
+ var old=await royWc('GET','/orders/'+o.wooOrderId);
+ if(!['pending','on-hold'].includes(old.status))throw new Error('Commande Woo déjà payée ou fermée : frais non modifiés.');
+ var q=o.shippingQuote,shipping;
+ // Woo REST deletes shipping/fee items when method_id/name is null.
+ shipping=(old.shipping_lines||[]).map(function(l){return {id:l.id,method_id:null};});
+ shipping.push({method_id:q.mode==='retrait'?'local_pickup':'kingtools_colissimo',method_title:q.mode==='retrait'?'Retrait Basecamp':'Colissimo · '+q.packages.length+' colis',total:q.shipping.toFixed(2),taxes:[],meta_data:[{key:'_kt_packages',value:JSON.stringify(q.packages)}]});
+ var fees=(old.fee_lines||[]).filter(function(l){return l.name==='Assurance Colissimo (Kingtools)';}).map(function(l){return {id:l.id,name:null};});
+ if(q.insurance)fees.push({name:'Assurance Colissimo (Kingtools)',tax_status:'none',total:q.insurance.toFixed(2)});
+ var updated=await royWc('PUT','/orders/'+o.wooOrderId,{shipping_lines:shipping,fee_lines:fees,meta_data:[{key:'_kt_shipping_quote',value:JSON.stringify(q)},{key:'_kt_shipping_verified',value:'yes'}]});
+ var shippingAmount=Number(updated.shipping_total),insuranceAmount=(updated.fee_lines||[]).filter(function(l){return l.name==='Assurance Colissimo (Kingtools)';}).reduce(function(sum,l){return sum+Number(l.total);},0);
+ if(![shippingAmount,insuranceAmount,Number(updated.total)].every(Number.isFinite)||Math.abs(shippingAmount-q.shipping)>.005||Math.abs(insuranceAmount-q.insurance)>.005||Math.abs(Number(updated.total)-q.total)>.015)throw new Error('Total Woo différent du récapitulatif Kingtools : paiement suspendu, vérifier taxes et frais sur Kingbase.');
+ var pay=updated.payment_url||candidate||'';var target;try{target=new URL(pay);}catch(e){throw new Error('Lien de paiement Woo indisponible.');}if(target.origin!==new URL(PRO_WP_URL).origin||!target.pathname.includes('/order-pay/'))throw new Error('Un lien de paiement direct Woo est requis.');o.shippingReady=true;o.shippingError='';o.payUrl=pay;
+}
+
 // ===== FIN KT_WAREHOUSE_V1 =====
 
-function allProProducts() { return proExtras.length ? proProducts.concat(proExtras) : proProducts; }
+function allProProducts(includeArchived) { var list=proProducts.concat(proExtras); return includeArchived ? list : list.filter(function(p){return !warehouse.archived[p.id];}); }
 // Nom normalise pour rapprocher un inventaire dicte des fiches existantes ("KING4" == "King 4").
 function proNorm(s) {
   return String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]/g, '');
@@ -596,8 +693,8 @@ async function refreshWooOrders(user) {
       if (s) {
         if (s.status) o.wooStatus = s.status;
         if (s.paid) { o.wooPaid = true; if (o.status === 'attente') { o.status = 'envoyee'; o.paidAt = Date.now(); } }
-        if (s.pay_url) o.payUrl = s.pay_url;
-        if (typeof s.pickup === 'boolean' || s.shipping_title) { o.shipChoice = s.pickup ? 'retrait' : 'poste'; o.shipTitle = String(s.shipping_title || ''); }
+        if(s.pay_url&&!o.shippingQuote)o.payUrl=s.pay_url;
+        if (!o.shippingQuote && (typeof s.pickup === 'boolean' || s.shipping_title)) { o.shipChoice = s.pickup ? 'retrait' : 'poste'; o.shipTitle = String(s.shipping_title || ''); }
         if (s.customer_note) o.customerNote = String(s.customer_note).slice(0, 500);
       }
     } catch (e) { o.wooStatusAt = Date.now(); }
@@ -3934,12 +4031,12 @@ const server = http.createServer(async (req, res) => {
     // Chaque boutique voit en direct où elle se situe vs les autres. #1 = plus gros CA.
     if (req.method === 'GET' && path === '/api/challenge') {
       const now = new Date();
-      const today = now.toISOString().slice(0, 10);
+      const today = ktParisDay(now);
       // Historique : ?date=YYYY-MM-DD permet de revoir le classement d'un jour passe (7 jours max).
       // Rien n'est stocke : les classements sont recalcules depuis les factures, donc le resultat
       // d'une journee terminee est fige par construction.
-      const HIST_DAYS = 7;
-      const minDate = new Date(now.getTime() - (HIST_DAYS - 1) * 86400000).toISOString().slice(0, 10);
+      const HIST_DAYS = 8;
+      const minDate = new Date(Date.parse(today+'T12:00:00Z') - (HIST_DAYS - 1)*86400000).toISOString().slice(0,10);
       const asked = String(u.searchParams.get('date') || '').slice(0, 10);
       let day = today;
       if (/^\d{4}-\d{2}-\d{2}$/.test(asked)) day = asked < minDate ? minDate : (asked > today ? today : asked);
@@ -3948,7 +4045,7 @@ const server = http.createServer(async (req, res) => {
       function board(pred) {
         const rows = boutiqueIds().map((id) => {
           const b = boutiques[id];
-          const inv = invoices.filter((i) => i.boutiqueId === id && pred(i.date || ''));
+          const inv = invoices.filter((i) => i.boutiqueId === id && pred(ktParisDay(i.date)));
           const ca = inv.reduce((a, i) => a + i.total, 0);
           const tickets = inv.filter((i) => i.total >= 0).length;
           return { boutique: id, label: (b && b.label) || id, ca: r2(ca), tickets: tickets };
@@ -4123,6 +4220,23 @@ const server = http.createServer(async (req, res) => {
     }
 
     // ---------------- RÉASSORT PRO (B2B) : les franchisés commandent leur stock au réseau ----------------
+    if(path==='/api/pro/shipping/config'||path==='/api/pro/shipping/quote'){
+      if(user.role!=='admin'&&user.role!=='manager')return send(res,403,{error:'Acces refuse'});
+      try {
+        if(path.endsWith('/quote')&&req.method==='POST'){if(proBlockedFor(user))return send(res,403,{error:proBlockMessage(user)});return send(res,200,ktShipQuote(await readJson(req),user));}
+        if(user.role!=='admin')return send(res,403,{error:'Reserve a l administrateur'});
+        var cfg;if(req.method==='GET')cfg=ktShipConfig();else if(req.method==='POST')cfg=ktShipSave(await readJson(req),user);else return send(res,405,{error:'Methode invalide'});
+        return send(res,200,{config:cfg,revision:crypto.createHash('sha256').update(JSON.stringify(cfg)).digest('hex'),products:allProProducts().filter(function(p){return !whService(p);}).map(function(p){return {id:p.id,name:p.name,unit:p.unit};})});
+      }catch(e){return send(res,e.status||400,{error:e.message});}
+    }
+    const ktRetry=path.match(/^\/api\/pro\/orders\/(\d+)\/shipping-retry$/);
+    if(req.method==='POST'&&ktRetry){
+      if(user.role!=='admin')return send(res,403,{error:'Reserve a l administrateur'});
+      var so=supplyOrders.find(function(o){return o.id===Number(ktRetry[1]);});if(!so||!so.shippingQuote||!so.wooOrderId)return send(res,404,{error:'Commande Woo introuvable'});
+      if(so.status!=='attente')return send(res,409,{error:'Commande deja validee'});
+      try{await ktWooShipping(so);persist();return send(res,200,{ok:true,order:so});}catch(e){so.shippingError=e.message;persist();return send(res,409,{error:e.message});}
+    }
+    if(req.method==='GET'&&path==='/api/pro/trace'){if(user.role!=='admin'&&user.role!=='manager')return send(res,403,{error:'Acces refuse'});return send(res,200,{rows:ktTrace(user,u.searchParams.get('q'))});}
     if (path === '/api/pro/inventory' || path.indexOf('/api/pro/inventory/') === 0) {
       if (user.role !== 'admin') return send(res, 403, { error: 'Reserve a l administrateur reseau.' });
       try {
@@ -4130,7 +4244,7 @@ const server = http.createServer(async (req, res) => {
         if (req.method === 'GET' && path === '/api/pro/inventory') return send(res, 200, whSnapshot());
         if (req.method !== 'POST') return send(res, 405, { error: 'Methode non autorisee.' });
         var wb = await readJson(req), wa = path.slice('/api/pro/inventory/'.length);
-        if (['receipt','product','settings','price','lotprice','adjust','out','allocate'].indexOf(wa) < 0) return send(res,404,{error:'Operation inconnue.'});
+        if (['receipt','product','settings','price','lotprice','adjust','out','allocate','archive','restore','internalcode'].indexOf(wa) < 0) return send(res,404,{error:'Operation inconnue.'});
         var wr = wa === 'receipt' ? whReceipt(wb,user) : whMutate(wa,wb,user);
         return send(res, 200, Object.assign(wr, { inventory: whSnapshot() }));
       } catch (e) { return send(res,e.status || 400,{error:e.message}); }
@@ -4315,6 +4429,7 @@ const server = http.createServer(async (req, res) => {
       const i = proExtras.findIndex((p) => p.id === id);
       if (i < 0) return send(res, 404, { error: 'Produit manuel introuvable.' });
       if (whLots(id).length || warehouse.moves.some(function(m){return m.pid===id;})) return send(res,409,{error:'Ce produit possede un historique de stock et ne peut pas etre supprime.'});
+      return send(res,409,{error:'Utilisez Retirer du catalogue dans la fiche produit pour conserver son historique.'});
       const gone = proExtras.splice(i, 1)[0];
       delete proStock[id]; delete proBuyPrice[id]; delete proSellPrice[id]; delete proLots[id];
       persist();
@@ -4330,10 +4445,12 @@ const server = http.createServer(async (req, res) => {
       if (proBlockedFor(user)) return send(res, 403, Object.assign({ error: proBlockMessage(user) }, proBlockPayload(user)));   // blocage admin ou redevance impayee
       const b = await readJson(req);
       const bId = user.role === 'admin' ? (b.boutiqueId || 'aix') : user.boutiqueId;
+      const requestId=String(b.requestId||'');const requestHash=crypto.createHash('sha256').update(JSON.stringify([bId,b.items,b.ship,b.shippingMode,b.shippingFingerprint])).digest('hex');
+      if(requestId){if(!/^[a-zA-Z0-9_-]{12,100}$/.test(requestId))return send(res,400,{error:'Identifiant de commande invalide'});const replay=supplyOrders.find(o=>o.requestId===requestId);if(replay){if(replay.requestHash!==requestHash)return send(res,409,{error:'Identifiant deja utilise avec un autre panier'});return send(res,201,{ok:true,order:replay,replayed:true});}}
       const items = []; let total = 0;
       const usePro = (proProducts.length + proExtras.length) > 0;
       for (const it of (Array.isArray(b.items) ? b.items : [])) {
-        const p = findProProduct(it.productId); if (!p) continue;
+        const p = findProProduct(it.productId); if (!p) continue; if(warehouse.archived[p.id])return send(res,409,{error:'Produit retire du catalogue : '+p.name});
         // Produit kingbase NON suivi en stock : retire du catalogue des franchises -> non commandable par eux.
         if (usePro && user.role !== 'admin' && allProProducts().some((x) => x.id === p.id) && proStock[p.id] == null) continue;
         const pi = proUnitInfo(p); if (!pi) continue;
@@ -4343,12 +4460,14 @@ const server = http.createServer(async (req, res) => {
         items.push({ productId: p.id, name: p.name, unit: pi.unit, qty: qty, unitPrice: pi.price, lineTotal: lineTotal, lot: proLots[p.id] || '' });
       }
       if (!items.length) return send(res, 400, { error: 'Commande de réassort vide' });
+      var shippingQuote;
+      try{shippingQuote=ktShipQuote({items:items.map(function(it){return {productId:it.productId,qty:it.qty};}),mode:b.shippingMode,zip:(b.ship||{}).zip,country:(b.ship||{}).country||'FR'},user);if(b.shippingFingerprint!==shippingQuote.fingerprint)whFail('Les tarifs ou le panier ont change. Recalculez les frais avant de valider.',409);}catch(e){return send(res,e.status||400,{error:e.message});}
       // STOCK GROSSISTE : refuse la commande si les quantites depassent le disponible (produits suivis).
       const manque = []; const requested = {};
       for (const it of items) requested[it.productId] = (requested[it.productId] || 0) + it.qty;
       for (const it of items) { const dispo = whAvailable(it.productId); if (dispo != null && requested[it.productId] > dispo) manque.push(it.name + ' (' + dispo + ' ' + it.unit + ' dispo)'); }
       if (manque.length) return send(res, 409, { error: 'Stock grossiste insuffisant — ' + manque.join(' · ') });
-      total = Math.round(total * 100) / 100;
+      total = shippingQuote.total;
       // Adresse de LIVRAISON saisie par le franchise (obligatoire cote app). Le grossiste (kingbase) en a besoin
       // pour expedier ; elle alimente l'adresse d'expedition de la commande WooCommerce.
       const ship = (b.ship && typeof b.ship === 'object') ? {
@@ -4360,7 +4479,7 @@ const server = http.createServer(async (req, res) => {
       } : null;
       // Statut 'attente' : la commande N'EST PAS validee/transmise au reseau tant que le franchise n'a pas paye.
       // Elle bascule en 'envoyee' (validee) automatiquement quand le paiement Woo est detecte (voir GET ci-dessous).
-      const o = { id: supplySeq, numero: 'PRO-' + String(supplySeq).padStart(4, '0'), boutiqueId: bId, items: items, total: total, status: 'attente', ts: Date.now(), by: user.name || null, ship: ship };
+      const o = { id: supplySeq, numero: 'PRO-' + String(supplySeq).padStart(4, '0'), boutiqueId: bId, items: items, total: total, status: 'attente', ts: Date.now(), by: user.name || null, ship: ship, shippingQuote:shippingQuote,shipChoice:shippingQuote.mode,shippingReady:false,requestId:requestId,requestHash:requestHash };
       supplySeq++; supplyOrders.push(o);
       // RESERVATION : decremente immediatement le stock grossiste (restaure si la commande est annulee).
       const touchedIds = [];
@@ -4381,7 +4500,7 @@ const server = http.createServer(async (req, res) => {
           const sl = sellerFor(bId);
           const shipAddr = o.ship ? { name: o.ship.name || sl.name, address: o.ship.address, zip: o.ship.zip, city: o.ship.city, country: 'FR', phone: o.ship.phone || '' } : null;
           const wr = await proConnector.createSupplyOrder({ items: o.items, boutique: (boutiques[bId] && (boutiques[bId].label || bId)) || bId, numero: o.numero, by: o.by, email: (boutiques[bId] && boutiques[bId].email) || '', billing: { name: sl.name, address: sl.address, zip: sl.zip, city: sl.city, country: sl.country || 'FR' }, shipping: shipAddr });
-          if (wr && wr.order_id) { o.wooOrderId = wr.order_id; o.wooUrl = wr.admin_url || null; o.payUrl = wr.pay_url || null; o.wooStatus = wr.status || null; persist(); }
+          if (wr && wr.order_id) { o.wooOrderId = wr.order_id; o.wooUrl = wr.admin_url || null; o.payUrl=null; o.wooStatus=wr.status||null;persist();try{await ktWooShipping(o,wr.pay_url);}catch(e){o.shippingError=e.message;}persist(); }
         }
       } catch (e) { o.wooError = String((e && e.message) || e); }
       return send(res, 201, { ok: true, order: o });
@@ -4396,9 +4515,9 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && path === '/api/basecamp') {
       if (user.role !== 'admin') return send(res, 403, { error: 'Réservé à l\'administrateur réseau' });
       await refreshWooOrders(user);
-      const now = Date.now();
+      const now = Date.now();const scope=String(u.searchParams.get('boutique')||'');if(scope&&!boutiques[scope])return send(res,400,{error:'Boutique inconnue'});const period=['day','month','year'].includes(u.searchParams.get('period'))?u.searchParams.get('period'):'day';
       const OPEN = ['envoyee', 'preparation', 'preparee', 'expediee', 'retrait'];
-      const orders = supplyOrders.filter((o) => OPEN.indexOf(o.status) >= 0).map((o) => {
+      const orders = supplyOrders.filter((o) => OPEN.indexOf(o.status) >= 0 && (!scope||o.boutiqueId===scope)).map((o) => {
         const since = o.paidAt || o.ts || now;
         const nItems = (o.items || []).reduce((a, it) => a + (it.qtyConfirmed != null ? it.qtyConfirmed : it.qty), 0);
         return { id: o.id, numero: o.numero, boutiqueId: o.boutiqueId, label: (boutiques[o.boutiqueId] && boutiques[o.boutiqueId].label) || o.boutiqueId,
@@ -4412,7 +4531,7 @@ const server = http.createServer(async (req, res) => {
       const dn = new Date(); const curYM = dn.getFullYear() + '-' + ('0' + (dn.getMonth() + 1)).slice(-2);
       const months = []; for (let k = 1; k <= 12; k++) { const d = new Date(dn.getFullYear(), dn.getMonth() - k, 1); months.push(d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2)); }
       const missing = []; let totalMissing = 0, nLate = 0;
-      for (const id of boutiqueIds()) {
+      for (const id of boutiqueIds().filter(id=>!scope||id===scope)) {
         for (const ym of months) {
           const am = royaltiesAmount(ym, id);
           if (!(am.ht > 0)) continue;
@@ -4434,7 +4553,7 @@ const server = http.createServer(async (req, res) => {
       }
       missing.sort((a, b) => (a.ym < b.ym ? -1 : (a.ym > b.ym ? 1 : (a.label < b.label ? -1 : 1))));
       return send(res, 200, {
-        now: now, curYM: curYM,
+        now: now, curYM: curYM, overview:bcOverview(period,scope,now),boutiques:boutiqueIds().map(id=>({id:id,label: boutiques[id].label||id})),
         kpis: { aPreparer: orders.filter((o) => o.status === 'envoyee' || o.status === 'preparation').length, enRetard: orders.filter((o) => o.late).length, aLivrer: orders.filter((o) => o.status === 'preparee').length, enTransit: orders.filter((o) => o.status === 'expediee' || o.status === 'retrait').length, royaltiesManquantes: Math.round(totalMissing * 100) / 100, facturesEnRetard: nLate, moisManquants: missing.length },
         orders: orders, royalties: missing, pluginShipping: supplyOrders.some((o) => o.shipChoice),
       });
@@ -4526,8 +4645,9 @@ const server = http.createServer(async (req, res) => {
           if (typeof adj.note === 'string') it.note = adj.note;
         }
         schedulePushProStock(o.items.map(function(it){return it.productId;}));
-        o.totalConfirme = Math.round(o.items.reduce((a, x) => a + ((x.unitPrice != null ? x.unitPrice : 0) * (x.qtyConfirmed != null ? x.qtyConfirmed : x.qty)), 0) * 100) / 100;
+        o.totalConfirme = (o.shippingQuote?o.shippingQuote.fees:0)+Math.round(o.items.reduce((a, x) => a + ((x.unitPrice != null ? x.unitPrice : 0) * (x.qtyConfirmed != null ? x.qtyConfirmed : x.qty)), 0) * 100) / 100;
       }
+      if(['preparee','expediee','retrait','recue'].indexOf(b.status)>=0)ktFranchiseLots(o);
       if (b.status === 'recue' && !o.restocked) {
         if (!stock[o.boutiqueId]) stock[o.boutiqueId] = {};
         const sk = stock[o.boutiqueId];
@@ -4541,7 +4661,7 @@ const server = http.createServer(async (req, res) => {
             if (!sk[it.productId] || !Array.isArray(sk[it.productId].lots)) sk[it.productId] = { lots: [] };
             if (Array.isArray(it.warehouseLots)) {
               var left = qty;
-              it.warehouseLots.forEach(function(part) { var q = Math.min(left,part.qty); if(q <= 0)return; sk[it.productId].lots.push({lot:part.code || lot,g:q,exp:part.expiry ? part.expiry.slice(0,7) : '',ref:ref,warehouseLotId:part.id || null}); left -= q; });
+              it.warehouseLots.forEach(function(part) { var q = Math.min(left,part.qty); if(q <= 0)return; sk[it.productId].lots.push({lot:part.franchiseCode||lot,g:q,exp:part.expiry ? part.expiry.slice(0,7) : '',ref:ref,warehouseLotId:part.id||null,supplierLot:part.supplierCode||'',kingstonLot:part.kingstonCode||'',supplier:part.supplier||'',supplyOrder:o.numero,originKnown:part.originKnown===true}); left -= q; });
               if(left > 0)sk[it.productId].lots.push({lot:lot,g:left,exp:'',ref:ref});
             } else sk[it.productId].lots.push({ lot: lot, g: qty, exp: exp, ref: ref });
           }
