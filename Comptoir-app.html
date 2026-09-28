@@ -2199,7 +2199,8 @@ var ktNoticeCss=document.createElement('style');ktNoticeCss.textContent='#kt-ord
   function proShipOk(){ var s=proShipGet(); return !!((s.name||'').trim()&&(s.address||'').trim()&&(s.zip||'').trim()&&(s.city||'').trim()); }
 // KT_SHIPPING_CART_V2
 var ktCartQuote=null,ktQuoteSequence=0,ktOrderRequest='',ktShippingMode='poste';
-function ktParcelHtml(q){if(!q)return '';if(q.mode==='retrait')return '<section style="padding:12px;border:1px solid var(--line);border-radius:10px;margin:12px 0"><strong>Retrait Basecamp · gratuit</strong><p>Produits : '+eur2(q.goods)+'<br>Aucun frais de livraison ni assurance.<br><b>Total à payer : '+eur2(q.total)+'</b></p></section>';return '<section style="padding:12px;border:1px solid var(--line);border-radius:10px;margin:12px 0"><strong>'+ (q.mode==='retrait'?'Retrait Basecamp':'Colissimo · '+q.packages.length+' colis')+'</strong><p>Produits : '+eur2(q.goods)+' · Port : '+eur2(q.shipping)+' · Assurance à souscrire : '+eur2(q.insurance)+'<br><b>Total à payer : '+eur2(q.total)+'</b></p>'+(q.packages.length>1?'<p><strong>À préparer : '+q.packages.length+' colis distincts.</strong> La valeur de la commande est répartie entre ces colis. Le port et les options d’assurance ci-dessus sont les totaux pour l’ensemble des colis. Ne regroupez pas leur contenu dans un seul colis : la couverture se vérifie séparément pour chacun.</p>':'')+q.packages.map(function(p){return '<details><summary>Colis '+p.number+' · '+p.grams+' g emballé · Valeur '+eur2(p.value)+' · '+esc(p.option)+' · Couverture prévue '+eur2(p.covered)+'</summary><p>'+p.items.map(function(it){return esc(it.name)+' : '+it.qty+' '+it.unit;}).join('<br>')+'</p><p>Port '+eur2(p.shipping)+' · Assurance '+eur2(p.insurance)+(p.signature?' · Contre signature':'')+'</p></details>';}).join('')+(q.packages.length?'<p class="muted">Tarifs publics nets. Le plan de colisage doit être respecté ; les étiquettes et les options d’assurance sont à acheter auprès du transporteur.</p>':'')+'</section>';}
+function ktQuoteTaxHtml(q){return q.tax!=null?'TVA'+(q.taxEstimated?' estimée':'')+' : '+eur2(q.tax)+'<br>': '<span class="muted">TVA à vérifier sur Kingbase avant paiement.</span><br>';}
+function ktParcelHtml(q){if(!q)return '';if(q.mode==='retrait')return '<section style="padding:12px;border:1px solid var(--line);border-radius:10px;margin:12px 0"><strong>Retrait Basecamp · gratuit</strong><p>Produits HT : '+eur2(q.goods)+'<br>Aucun frais de livraison ni assurance.<br>'+ktQuoteTaxHtml(q)+'<b>'+(q.tax!=null?'Total à payer TTC : ':'Montant avant TVA : ')+eur2(q.total)+'</b></p></section>';return '<section style="padding:12px;border:1px solid var(--line);border-radius:10px;margin:12px 0"><strong>'+ (q.mode==='retrait'?'Retrait Basecamp':'Colissimo · '+q.packages.length+' colis')+'</strong><p>Produits HT : '+eur2(q.goods)+' · Port : '+eur2(q.shipping)+' · Assurance à souscrire : '+eur2(q.insurance)+'<br>'+ktQuoteTaxHtml(q)+'<b>'+(q.tax!=null?'Total à payer TTC : ':'Montant avant TVA : ')+eur2(q.total)+'</b></p>'+(q.packages.length>1?'<p><strong>À préparer : '+q.packages.length+' colis distincts.</strong> La valeur de la commande est répartie entre ces colis. Le port et les options d’assurance ci-dessus sont les totaux pour l’ensemble des colis. Ne regroupez pas leur contenu dans un seul colis : la couverture se vérifie séparément pour chacun.</p>':'')+q.packages.map(function(p){return '<details><summary>Colis '+p.number+' · '+p.grams+' g emballé · Valeur '+eur2(p.value)+' · '+esc(p.option)+' · Couverture prévue '+eur2(p.covered)+'</summary><p>'+p.items.map(function(it){return esc(it.name)+' : '+it.qty+' '+it.unit;}).join('<br>')+'</p><p>Port '+eur2(p.shipping)+' · Assurance '+eur2(p.insurance)+(p.signature?' · Contre signature':'')+'</p></details>';}).join('')+(q.packages.length?'<p class="muted">Tarifs publics nets. Le plan de colisage doit être respecté ; les étiquettes et les options d’assurance sont à acheter auprès du transporteur.</p>':'')+'</section>';}
 function ktBindShipping(){
  var mode=document.getElementById('kt-shipping-mode'),calc=document.getElementById('kt-shipping-calc'),out=document.getElementById('kt-shipping-result'),btn=document.querySelector('[data-act="pro-order-confirm"]'),address=document.getElementById('kt-shipping-address');if(!mode||!calc)return;
  mode.value=ktShippingMode;
@@ -2236,7 +2237,7 @@ function ktSaveFranchiseLot(el){
     var rows=items.map(function(x){
       var u=(x.p.proUnit==='g'?'g':'u'), step=(x.p.proUnit==='g'?50:1);
       return '<tr>'+
-        '<td><b>'+esc(x.p.name)+'</b><div class="muted" style="font-size:11px">'+esc(x.p.cat||'')+' · '+(x.p.pro!=null?eur2(x.p.pro)+'/'+u:'prix à définir')+'</div></td>'+
+        '<td><b>'+esc(x.p.name)+'</b><div class="muted" style="font-size:11px">'+esc(x.p.cat||'')+' · '+(x.p.pro!=null?eur2(x.p.pro)+' HT/'+u:'prix à définir')+'</div></td>'+
         '<td style="white-space:nowrap;text-align:center">'+
           '<button class="btn" data-act="pro-cart-dec" data-id="'+esc(x.p.id)+'" data-step="'+step+'" style="padding:5px 11px;font-weight:800">−</button>'+
           '<b style="display:inline-block;min-width:66px">'+x.qty+' '+u+'</b>'+
@@ -2250,10 +2251,10 @@ function ktSaveFranchiseLot(el){
     var si='width:100%;padding:9px 10px;border:1px solid var(--line);border-radius:9px;margin-bottom:7px;font-size:14px;box-sizing:border-box';
     var sib='padding:9px 10px;border:1px solid var(--line);border-radius:9px;font-size:14px;box-sizing:border-box';
     openModal('<div class="kt-cart-body"><h3 style="margin:0 0 4px;font-family:var(--serif)">Ton panier de réassort</h3>'+
-      '<div class="muted" style="font-size:12.5px;margin-bottom:12px">Vérifie ton panier, choisis la livraison ou le retrait, puis valide le paiement. Prix de gros kingbase.fr.</div>'+
+      '<div class="muted" style="font-size:12.5px;margin-bottom:12px">Vérifie ton panier, choisis la livraison ou le retrait, puis valide le paiement. Prix produits HT · TVA détaillée ci-dessous.</div>'+
       '<table class="tbl"><thead><tr><th>Produit</th><th style="text-align:center">Quantité</th><th style="text-align:right">Total</th><th></th></tr></thead>'+
       '<tbody>'+rows+'</tbody>'+
-      '<tfoot><tr><td colspan="2" style="text-align:right;font-weight:800;padding-top:10px">Sous-total produits</td><td style="text-align:right;font-weight:800;font-size:17px;padding-top:10px">'+eur2(tot)+'</td><td></td></tr></tfoot></table>'+
+      '<tfoot><tr><td colspan="2" style="text-align:right;font-weight:800;padding-top:10px">Sous-total produits HT</td><td style="text-align:right;font-weight:800;font-size:17px;padding-top:10px">'+eur2(tot)+'</td><td></td></tr></tfoot></table>'+
       '<section id="kt-shipping-cart"><fieldset class="kt-delivery"><legend>Comment souhaites-tu recevoir ta commande ?</legend><div class="kt-delivery-options">'+
       '<label><input type="radio" name="kt-delivery" value="retrait"><span><strong>Retrait Basecamp</strong><b>Gratuit</b><small>À récupérer sur place quand la commande est prête.</small></span></label>'+
       '<label><input type="radio" name="kt-delivery" value="poste"><span><strong>Livraison Colissimo</strong><b>Port + assurance calculés</b><small>À ton adresse en France métropolitaine.</small></span></label></div></fieldset>'+
@@ -2348,7 +2349,7 @@ function ktOrderStage(el){
       var ownerCanRecv = ownerOwn && o.status!=='recue' && o.status!=='attente';
       var items=proItemsSummary(o);
       var totv=(o.totalConfirme!=null?o.totalConfirme:o.total);
-      var tot = totv>0?eur2(totv):'<span class="muted">à définir</span>';
+      var tot = totv>0?eur2(totv)+(o.shippingQuote?(o.shippingQuote.priceBasis==='HT'?' TTC':' · TVA à vérifier'):''):'<span class="muted">à définir</span>';
       var resv=orderHasReserves(o)?' <span class="tag tag-low" style="font-size:10px;vertical-align:middle">réserves</span>':'';
       var tagcl = o.status==='recue'?'tag-ok':(o.status==='envoyee'?'tag-low':'');
       var statusCell = isAttente

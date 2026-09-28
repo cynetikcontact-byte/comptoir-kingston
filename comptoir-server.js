@@ -608,7 +608,7 @@ function ktShipSave(b,user){
 function ktShipQuote(b,user){
  if(!['poste','retrait'].includes(b.mode))whFail('Choisissez la livraison ou le retrait.');
  if(!Array.isArray(b.items)||!b.items.length||b.items.length>200)whFail('Panier invalide.');
- var cfg=ktShipConfig(),seen={},goods=0,lines=b.items.map(function(it){var p=whProduct(whText(it.productId,80)),qty=whNumber(it.qty,'u',true);if(seen[p.id])whFail('Référence en double.');seen[p.id]=true;if(user.role!=='admin'&&proStock[p.id]==null)whFail('Produit indisponible.');var price=proUnitInfo(p).price;if(price==null||!Number.isFinite(price)||price<0)whFail('Prix manquant.');goods+=Math.round(price*100)*qty;return {productId:p.id,name:p.name,unit:p.unit,qty:qty,cents:Math.round(price*100),grams:cfg.weights[p.id]||(p.unit==='g'?1:null),service:whService(p)};});
+ var cfg=ktShipConfig(),seen={},goods=0,lines=b.items.map(function(it){var p=whProduct(whText(it.productId,80)),qty=whNumber(it.qty,'u',true);if(seen[p.id])whFail('Référence en double.');seen[p.id]=true;if(user.role!=='admin'&&proStock[p.id]==null)whFail('Produit indisponible.');var price=proUnitInfo(p).price;if(price==null||!Number.isFinite(price)||price<0)whFail('Prix manquant.');goods+=Math.round(price*100)*qty;return {productId:p.id,name:p.name,unit:p.unit,qty:qty,cents:Math.round(price*100),grams:cfg.weights[p.id]||(p.unit==='g'?1:null),service:whService(p),vat:vatRate(p)};});
  var quote={mode:b.mode,configVersion:cfg.version,goods:goods/100,packages:[],shipping:0,insurance:0,fees:0,total:goods/100,basis:cfg.basis};
  if(b.mode==='poste'){
   if(!cfg.enabled)whFail('Le réseau doit valider les tarifs et le poids de l’emballage dans Tarifs Colissimo.',409);
@@ -620,6 +620,7 @@ function ktShipQuote(b,user){
   quote.packages.forEach(function(p){p.grams=Math.ceil(p.grams);p.value=p.valueCents/100;delete p.valueCents;var rate=cfg.rates.find(function(r){return r[0]>=p.grams;});if(!rate)whFail('Poids hors grille.');p.shipping=rate[1];var included=Math.max(5.75,p.grams/1000*23);var cover=cfg.insurance.find(function(r){return r[0]>=p.value;});if(!cover)whFail('Valeur hors grille assurance.');var needCover=included<p.value+p.shipping;p.insurance=needCover?cover[1]:0;p.covered=needCover?cover[0]:whRound(included);p.option=needCover?(cover[0]===50?'R1':cover[0]===200?'R2':'Ad Valorem'):'Indemnisation incluse';p.signature=needCover||p.grams>5000;quote.shipping=whRound(quote.shipping+p.shipping);quote.insurance=whRound(quote.insurance+p.insurance);});
   quote.fees=whRound(quote.shipping+quote.insurance);quote.total=whRound(quote.goods+quote.fees);
  }
+ quote.priceBasis='HT';quote.tax=whRound(lines.reduce(function(sum,l){return sum+whRound(l.cents/100*l.qty*l.vat);},0));quote.taxEstimated=true;quote.totalHT=whRound(quote.goods+quote.fees);quote.total=whRound(quote.totalHT+quote.tax);
  quote.fingerprint=crypto.createHash('sha256').update(JSON.stringify([quote,lines,cfg,b.zip||'',b.country||'FR'])).digest('hex');return quote;
 }
 // Update the actual pending Woo order before exposing its payment URL.
@@ -636,7 +637,13 @@ async function ktWooShipping(o,candidate){
  if(q.insurance)fees.push({name:'Assurance Colissimo (Kingtools)',tax_status:'none',total:q.insurance.toFixed(2)});
  var updated=await royWc('PUT','/orders/'+o.wooOrderId,{shipping_lines:shipping,fee_lines:fees,meta_data:[{key:'_kt_shipping_quote',value:JSON.stringify(q)},{key:'_kt_shipping_verified',value:'yes'}]});
  var shippingAmount=Number(updated.shipping_total),insuranceAmount=(updated.fee_lines||[]).filter(function(l){return l.name==='Assurance Colissimo (Kingtools)';}).reduce(function(sum,l){return sum+Number(l.total);},0);
- if(![shippingAmount,insuranceAmount,Number(updated.total)].every(Number.isFinite)||Math.abs(shippingAmount-q.shipping)>.005||Math.abs(insuranceAmount-q.insurance)>.005||Math.abs(Number(updated.total)-q.total)>.015)throw new Error('Total Woo différent du récapitulatif Kingtools : paiement suspendu, vérifier taxes et frais sur Kingbase.');
+ // Les prix produits sont HT. WooCommerce reste la source de la TVA réellement facturée.
+ var goodsHT=(updated.line_items||[]).reduce(function(sum,l){return sum+Number(l.total);},0),tax=Number(updated.total_tax),wooTotal=Number(updated.total);
+ var otherFees=(updated.fee_lines||[]).filter(function(l){return l.name!=='Assurance Colissimo (Kingtools)';}).reduce(function(sum,l){return sum+Math.abs(Number(l.total));},0);
+ var expectedHT=whRound(q.goods+q.shipping+q.insurance);
+ if(!Array.isArray(updated.line_items)||!updated.line_items.length||updated.total_tax==null||![goodsHT,tax,wooTotal,shippingAmount,insuranceAmount,otherFees].every(Number.isFinite)||tax<0||otherFees>.005||Math.abs(goodsHT-q.goods)>.015||Math.abs(shippingAmount-q.shipping)>.005||Math.abs(insuranceAmount-q.insurance)>.005||Math.abs(wooTotal-whRound(expectedHT+tax))>.015)throw new Error('Montants HT ou frais différents sur Kingbase : paiement suspendu. Vérifiez les articles, remises et frais.');
+ q.priceBasis='HT';q.totalHT=expectedHT;q.tax=tax;q.taxEstimated=false;q.total=wooTotal;o.total=wooTotal;
+
  var pay=updated.payment_url||candidate||old.payment_url||'';if(!pay&&proConnector&&typeof proConnector.getOrderStatus==='function'){var paymentState=await proConnector.getOrderStatus(o.wooOrderId);if(paymentState&&paymentState.paid)throw new Error('Paiement déjà enregistré sur Kingbase. Actualisez les commandes.');pay=paymentState&&paymentState.pay_url||'';}var target;try{target=new URL(pay);}catch(e){throw new Error('Lien de paiement Woo indisponible.');}if(target.origin!==new URL(PRO_WP_URL).origin||!target.pathname.includes('/order-pay/'))throw new Error('Un lien de paiement direct Woo est requis.');o.shippingReady=true;o.shippingError='';o.payUrl=pay;
 }
 
