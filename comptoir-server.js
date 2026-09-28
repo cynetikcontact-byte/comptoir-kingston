@@ -624,7 +624,7 @@ function ktShipQuote(b,user){
 }
 // Update the actual pending Woo order before exposing its payment URL.
 async function ktWooShipping(o,candidate){
- if(!o.shippingQuote||o.shippingReady)return;
+ if(!o.shippingQuote||(o.shippingReady&&o.payUrl))return;
  if(!proPushConfigured())throw new Error('Clés WooCommerce requises pour appliquer les frais.');
  var old=await royWc('GET','/orders/'+o.wooOrderId);
  if(!['pending','on-hold'].includes(old.status))throw new Error('Commande Woo déjà payée ou fermée : frais non modifiés.');
@@ -637,7 +637,29 @@ async function ktWooShipping(o,candidate){
  var updated=await royWc('PUT','/orders/'+o.wooOrderId,{shipping_lines:shipping,fee_lines:fees,meta_data:[{key:'_kt_shipping_quote',value:JSON.stringify(q)},{key:'_kt_shipping_verified',value:'yes'}]});
  var shippingAmount=Number(updated.shipping_total),insuranceAmount=(updated.fee_lines||[]).filter(function(l){return l.name==='Assurance Colissimo (Kingtools)';}).reduce(function(sum,l){return sum+Number(l.total);},0);
  if(![shippingAmount,insuranceAmount,Number(updated.total)].every(Number.isFinite)||Math.abs(shippingAmount-q.shipping)>.005||Math.abs(insuranceAmount-q.insurance)>.005||Math.abs(Number(updated.total)-q.total)>.015)throw new Error('Total Woo différent du récapitulatif Kingtools : paiement suspendu, vérifier taxes et frais sur Kingbase.');
- var pay=updated.payment_url||candidate||'';var target;try{target=new URL(pay);}catch(e){throw new Error('Lien de paiement Woo indisponible.');}if(target.origin!==new URL(PRO_WP_URL).origin||!target.pathname.includes('/order-pay/'))throw new Error('Un lien de paiement direct Woo est requis.');o.shippingReady=true;o.shippingError='';o.payUrl=pay;
+ var pay=updated.payment_url||candidate||old.payment_url||'';if(!pay&&proConnector&&typeof proConnector.getOrderStatus==='function'){var paymentState=await proConnector.getOrderStatus(o.wooOrderId);if(paymentState&&paymentState.paid)throw new Error('Paiement déjà enregistré sur Kingbase. Actualisez les commandes.');pay=paymentState&&paymentState.pay_url||'';}var target;try{target=new URL(pay);}catch(e){throw new Error('Lien de paiement Woo indisponible.');}if(target.origin!==new URL(PRO_WP_URL).origin||!target.pathname.includes('/order-pay/'))throw new Error('Un lien de paiement direct Woo est requis.');o.shippingReady=true;o.shippingError='';o.payUrl=pay;
+}
+
+// Une reprise réutilise la commande Woo existante, sans réserver de stock ni créer de doublon.
+const ktPaymentRecoveryBusy=new Set();
+async function ktRecoverPayment(o,user){
+ if(user.role!=='admin'&&o.boutiqueId!==user.boutiqueId)whFail('Commande introuvable',404);
+ if(user.role!=='admin'&&proBlockedFor(user))whFail(proBlockMessage(user),403);
+ if(o.status!=='attente')whFail('Cette commande ne nécessite plus de paiement. Actualisez la liste.',409);
+ if(ktPaymentRecoveryBusy.has(o.id))whFail('Vérification déjà en cours. Réessayez dans quelques secondes.',409);
+ if(!o.wooOrderId)whFail('La commande n’a pas été reliée à Kingbase. Contactez Kingston avec le numéro '+o.numero+' ; ne recréez pas la commande.',409);
+ if(!proConnector)whFail('Connexion à Kingbase indisponible. Contactez Kingston.',503);
+ ktPaymentRecoveryBusy.add(o.id);
+ try{
+  const state=await proConnector.getOrderStatus(o.wooOrderId,{timeoutMs:8000});
+  if(!state)whFail('Kingbase ne répond pas. Réessayez dans quelques instants.',503);
+  if(state.paid){o.wooPaid=true;o.wooStatus=state.status;o.status='envoyee';o.paidAt=Date.now();o.payUrl=null;o.shippingError='';persist();return o;}
+  if(!['pending','on-hold'].includes(state.status))whFail('Cette commande est fermée sur Kingbase. Contactez Kingston avant de la recréer.',409);
+  o.payUrl=null;o.shippingReady=false;
+  if(o.shippingQuote){await ktWooShipping(o,state.pay_url);}
+  else {var link;try{link=new URL(state.pay_url);}catch(e){whFail('Lien indisponible sur Kingbase. Contactez Kingston.',409);}if(link.origin!==new URL(PRO_WP_URL).origin||!link.pathname.includes('/order-pay/'))whFail('Lien direct de paiement indisponible. Contactez Kingston.',409);o.payUrl=link.href;}
+  o.shippingError='';persist();return o;
+ }catch(e){o.shippingError=e.message;persist();throw e;}finally{ktPaymentRecoveryBusy.delete(o.id);}
 }
 
 // ===== FIN KT_WAREHOUSE_V1 =====
@@ -4272,12 +4294,10 @@ const server = http.createServer(async (req, res) => {
         return send(res,200,{config:cfg,revision:crypto.createHash('sha256').update(JSON.stringify(cfg)).digest('hex'),products:allProProducts().filter(function(p){return !whService(p);}).map(function(p){return {id:p.id,name:p.name,unit:p.unit};})});
       }catch(e){return send(res,e.status||400,{error:e.message});}
     }
-    const ktRetry=path.match(/^\/api\/pro\/orders\/(\d+)\/shipping-retry$/);
+    const ktRetry=path.match(/^\/api\/pro\/orders\/(\d+)\/(?:shipping-retry|payment-retry)$/);
     if(req.method==='POST'&&ktRetry){
-      if(user.role!=='admin')return send(res,403,{error:'Reserve a l administrateur'});
-      var so=supplyOrders.find(function(o){return o.id===Number(ktRetry[1]);});if(!so||!so.shippingQuote||!so.wooOrderId)return send(res,404,{error:'Commande Woo introuvable'});
-      if(so.status!=='attente')return send(res,409,{error:'Commande deja validee'});
-      try{await ktWooShipping(so);persist();return send(res,200,{ok:true,order:so});}catch(e){so.shippingError=e.message;persist();return send(res,409,{error:e.message});}
+      const so=supplyOrders.find(o=>o.id===Number(ktRetry[1]));if(!so)return send(res,404,{error:'Commande introuvable'});
+      try{const order=await ktRecoverPayment(so,user);return send(res,200,{ok:true,order});}catch(e){return send(res,e.status||409,{error:e.message});}
     }
     const ktLotEditRoute=path.match(/^\/api\/pro\/orders\/(\d+)\/franchise-lot$/);
     if(req.method==='POST'&&ktLotEditRoute){

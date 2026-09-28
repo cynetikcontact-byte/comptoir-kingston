@@ -2217,7 +2217,8 @@ function ktBindShipping(){
  }
  calc.addEventListener('click',calculate);paint();calculate();
 }
-function ktOrderShipping(o){return ktParcelHtml(o.shippingQuote)+(o.shippingError?'<p role="alert" style="color:#9c352c">Paiement indisponible : '+esc(o.shippingError)+'</p>'+((st.user||{}).role==='admin'?'<button class="btn" data-act="kt-shipping-retry" data-id="'+o.id+'">Revérifier les frais sur Kingbase</button>':''):'');}
+function ktPaymentButton(o){return o&&o.status==='attente'?'<button class="btn btn-gold" data-act="kt-payment-retry" data-id="'+o.id+'">Vérifier / récupérer le paiement</button>':'';}
+function ktOrderShipping(o){return ktPaymentButton(o)+ktParcelHtml(o.shippingQuote)+(o.shippingError?'<p role="alert" style="color:#9c352c">Paiement indisponible : '+esc(o.shippingError)+'</p>':'')+((st.user||{}).role==='admin'&&o.wooError?'<p role="alert">Connexion Kingbase : '+esc(o.wooError)+'</p>':'');}
 function ktOrderLineage(o){
  var editable=(st.user||{}).role==='admin'&&['attente','envoyee','preparation','preparee'].includes(o.status)&&!o.restocked&&!(o.stepAt&&(o.stepAt.expediee||o.stepAt.retrait||o.stepAt.recue));
  return '<section><h3>Lots attribués à la franchise</h3><p class="muted">'+(editable?'Renseignez ou modifiez le numéro qui figurera sur chaque lot envoyé. Enregistrez chaque numéro avant d’expédier.':'Les numéros sont conservés après expédition ou mise à disposition.')+'</p>'+(o.items||[]).map(function(it){return (it.warehouseLots||[]).map(function(p,j){return '<div class="kt-franchise-lot" style="border:1px solid var(--line);border-radius:10px;padding:12px;margin:10px 0"><strong>'+esc(it.name)+' · '+p.qty+' '+esc(it.unit)+'</strong><p>Lot Kingston : '+esc(p.kingstonCode||'Origine historique non identifiée')+'<br>DDM fournisseur : '+esc(p.ddm?p.ddm.split('-').reverse().join('/'):(p.expiry||'Non renseignée'))+'</p>'+(editable?'<label>N° de lot franchise<input class="kt-fr-code" maxlength="80" value="'+esc(p.franchiseCode||'')+'" placeholder="Ex. AIX-260925-001" style="display:block;width:100%;padding:8px"></label><label>Motif<input class="kt-fr-reason" maxlength="300" placeholder="Ex. numéro imprimé sur les étiquettes" style="display:block;width:100%;padding:8px"></label><button type="button" class="btn btn-gold" data-act="kt-fr-save" data-order="'+o.id+'" data-pid="'+esc(it.productId)+'" data-part="'+j+'">Enregistrer le n° de lot franchise</button><p class="kt-fr-result" role="status"></p>':'<p><b>N° de lot franchise : '+esc(p.franchiseCode||'Attribué à la préparation')+'</b></p>')+'<details><summary>Origine et historique du numéro</summary><p>Fournisseur : '+esc(p.supplier||'Non renseigné')+'<br>Lot fournisseur : '+esc(p.supplierCode||p.code||'Non renseigné')+'<br>Réception Kingston : '+esc(p.receiptDate||'Non renseignée')+' · '+esc(p.receiptId||'')+'</p>'+(p.franchiseCodeHistory||[]).map(function(h){return '<p>'+esc(h.date)+' · '+esc(h.by)+' : '+esc(h.before||'Non attribué')+' → '+esc(h.after)+' · '+esc(h.reason)+'</p>';}).join('')+'</details></div>';}).join('');}).join('')+'</section>';
@@ -2339,7 +2340,7 @@ function ktOrderStage(el){
     var isAdmin=st.user.role==='admin';
     var rows=(proData.orders||[]).filter(function(o){
         if(o.status==='annulee')return false;             // commandes annulées : masquées partout
-        if(isAdmin && o.status==='attente')return false;  // l'admin ne voit que les commandes payées
+        // Les commandes en attente restent visibles pour résoudre les paiements bloqués.
         return true;
       }).map(function(o){
       var isAttente=(o.status==='attente');
@@ -2355,7 +2356,7 @@ function ktOrderStage(el){
         : '<span class="tag '+tagcl+'">'+proStatusLabel(o.status)+'</span>'+(o.wooPaid?' <span class="tag tag-ok" style="font-size:10px">payé ✓</span>':'');
       var act;
       if(isAdmin){ var wooLink=o.wooUrl?'<a class="btn" href="'+esc(o.wooUrl)+'" target="_blank" rel="noopener" onclick="event.stopPropagation()" title="Ouvrir cette commande dans WooCommerce" style="text-decoration:none;margin-right:6px">🛒</a>':''; act=wooLink+'<button class="btn'+(o.status==='envoyee'?' btn-gold':'')+'" data-act="pro-open" data-id="'+o.id+'">'+(o.status==='recue'?'Voir ›':'Détails / lots ›')+'</button><div style="margin-top:8px">'+ktOrderActions(o,false)+'</div>'; }
-      else if(isAttente && ownerOwn){ var payB=o.payUrl?'<a class="btn btn-gold" href="'+esc(o.payUrl)+'" target="_blank" rel="noopener" onclick="event.stopPropagation()" title="Payer pour valider la commande" style="text-decoration:none;margin-right:6px">💳 Payer pour valider</a>':'<span class="muted" style="font-size:12px;margin-right:6px">lien indisponible</span>'; act=payB+'<button class="btn" data-act="pro-cancel" data-id="'+o.id+'" style="color:#b4452f">Annuler</button>'; }
+      else if(isAttente && ownerOwn){ var payB=o.payUrl?'<a class="btn btn-gold" href="'+esc(o.payUrl)+'" target="_blank" rel="noopener" onclick="event.stopPropagation()" title="Payer pour valider la commande" style="text-decoration:none;margin-right:6px">💳 Payer pour valider</a>':'<button class="btn btn-gold" data-act="kt-payment-retry" data-id="'+o.id+'">Récupérer le lien de paiement</button>'; act=payB+'<button class="btn" data-act="pro-cancel" data-id="'+o.id+'" style="color:#b4452f">Annuler</button>'; }
       else if(ownerCanRecv){ act='<input id="prolot-'+o.id+'" placeholder="n° de lot (opt.)" style="width:118px;margin-right:6px;padding:6px 8px;border:1px solid var(--line);border-radius:8px;font-size:12px"/><button class="btn btn-gold" data-act="pro-recue" data-id="'+o.id+'">Commande reçue</button>'; }
       else { act='<span class="muted" style="font-size:12px">'+(o.status==='recue'?'stock ajouté ✓':proStatusLabel(o.status))+'</span>'; }
       var when=isAttente?'':'<br><span class="muted" style="font-size:11px">commandée '+esc(agoFr(o.paidAt||o.ts))+'</span>';
@@ -2372,7 +2373,7 @@ function ktOrderStage(el){
   function openProOrder(id){
     var o=(proData.orders||[]).filter(function(x){return String(x.id)===String(id);})[0]; if(!o){toast('Commande introuvable');return;} proData.cur=o;
     var bl=(netData.boutiques||[]).filter(function(b){return b.id===o.boutiqueId;})[0]; var blabel=bl?bl.label:o.boutiqueId;
-    var locked=['recue','expediee','retrait'].includes(o.status);
+    var locked=['attente','recue','expediee','retrait'].includes(o.status);
     var rows=(o.items||[]).map(function(it){
       var conf=(it.qtyConfirmed!=null?it.qtyConfirmed:it.qty); var u=proUnitSym(it.unit); var dis=locked?' disabled':'';
       return '<tr><td><b>'+esc(it.name)+'</b><div class="muted" style="font-size:11px">'+esc(it.productId)+(it.unitPrice!=null?' · '+eur2(it.unitPrice)+'/'+u:'')+'</div></td>'+
@@ -3343,7 +3344,10 @@ function ktOrderStage(el){
     }
     if(a==='pro-clear'){ var pid2=el.getAttribute('data-id'); if(st.proCart)delete st.proCart[pid2]; renderProCat(); return; }
     if(a==='woo-sync'){ if(!API.on){toast('Connecte-toi au serveur');return;} el.disabled=true; var wss=document.getElementById('woo-sync'); if(wss)wss.textContent='Synchronisation…'; var isKb=(proData.source==='kingbase'); var p=isKb?apiPost('/api/pro/sync',{}):apiPost('/api/products/import-site',{boutiqueId:(st.user&&st.user.boutiqueId)||'aix'}); p.then(function(d){ toast(isKb?('Catalogue kingbase synchronisé : '+(d.count||0)+' produits'):('Catalogue WooCommerce synchronisé : '+(d.created||0)+' ajouté(s), '+(d.updated||0)+' mis à jour')); proData.loaded=false;proData.loading=false; if(!isKb)reloadProducts(); loadPro(); el.disabled=false; }).catch(function(e){ if(wss)wss.textContent='Échec de synchro'; toast('Échec : '+(e.message||e)); el.disabled=false; }); return; }
-    if(a==='kt-shipping-retry'){apiPost('/api/pro/orders/'+el.getAttribute('data-id')+'/shipping-retry',{}).then(function(){toast('Frais vérifiés');closeModal();proData.loaded=false;loadPro();}).catch(function(e){toast(e.message);});return;}if(a==='pro-order'){ if(!API.on)return; if(!proCartCount()){toast('Choisis des quantités à commander');return;} openProCartModal(); return; }
+    if(a==='kt-shipping-retry'||a==='kt-payment-retry'){
+      var retryId=el.getAttribute('data-id'),retryText=el.textContent;el.disabled=true;el.textContent='Vérification sur Kingbase…';
+      apiPost('/api/pro/orders/'+retryId+'/payment-retry',{}).then(function(r){var found=(proData.orders||[]).find(function(o){return String(o.id)===String(retryId);});if(found)Object.assign(found,r.order);renderProOrders();if(r.order.status!=='attente'){closeModal();toast('Paiement déjà confirmé : commande transmise au réseau.');}else openProPayModal(r.order);}).catch(function(e){el.disabled=false;el.textContent=retryText;toast(e.message);});return;
+    }if(a==='pro-order'){ if(!API.on)return; if(!proCartCount()){toast('Choisis des quantités à commander');return;} openProCartModal(); return; }
     if(a==='pro-cart-inc'){ var iid=el.getAttribute('data-id'); var ist=+el.getAttribute('data-step')||1; st.proCart=st.proCart||{}; st.proCart[iid]=proCapQty(iid,(st.proCart[iid]||0)+ist); if(!st.proCart[iid])delete st.proCart[iid]; openProCartModal(); renderProCat(); return; }
     if(a==='pro-cart-dec'){ var did=el.getAttribute('data-id'); var dst=+el.getAttribute('data-step')||1; st.proCart=st.proCart||{}; var nv=(st.proCart[did]||0)-dst; if(nv>0)st.proCart[did]=nv; else delete st.proCart[did]; if(proCartCount())openProCartModal();else closeModal(); renderProCat(); return; }
     if(a==='pro-cart-del'){ var ddid=el.getAttribute('data-id'); if(st.proCart)delete st.proCart[ddid]; if(proCartCount())openProCartModal();else closeModal(); renderProCat(); return; }
