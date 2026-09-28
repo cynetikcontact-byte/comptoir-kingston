@@ -535,6 +535,24 @@ table.tbl tr:hover td{background:#faf9f5;}
 #kt-bc-view .bc-content{padding:0;margin:0;max-width:none}#kt-bc-view .bc-heading{flex-wrap:wrap}#kt-bc-view .bc-heading h1{font-size:30px;letter-spacing:-.6px}#kt-bc-view .bc-heading p{font-size:14px}#kt-bc-view .bc-toolbar{flex-wrap:wrap}#kt-bc-view .bc-filter{display:flex;align-items:center;gap:8px;margin-right:auto;color:var(--muted,#788397)}#kt-bc-view .bc-filter select{border:1px solid var(--line,#e2dfd6);border-radius:9px;padding:8px 10px;background:var(--card,#fff);color:var(--text,#111628);max-width:260px}#kt-bc-view .bc-loading{padding:12px 0}
 @container(max-width:1050px){#kt-bc-view .bc-kpis{grid-template-columns:1fr 1fr}#kt-bc-view .bc-controls{flex-wrap:wrap}#kt-bc-view .bc-heading{gap:14px}#kt-bc-view .bc-tile{padding:12px}#kt-bc-view .bc-row{gap:8px}#kt-bc-view .bc-list{padding:12px}}
 @container(max-width:720px){#kt-bc-view .bc-charts,#kt-bc-view .bc-columns{grid-template-columns:1fr}#kt-bc-view .bc-heading h1{font-size:27px}#kt-bc-view .bc-filter{width:100%;margin-bottom:5px}#kt-bc-view .bc-filter select{max-width:100%;min-width:0}#kt-bc-view .bc-date{white-space:normal}#kt-bc-view .bc-kpi strong{white-space:normal}}
+</style><style>
+/* Réassort : un corps défilant et une validation toujours accessible. */
+.modal.kt-cart-modal{width:100%;max-width:780px;max-height:calc(100dvh - 40px);overflow:hidden;display:flex;flex-direction:column;border-radius:16px;}
+.kt-cart-modal .kt-cart-body{padding:22px;min-height:0;overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;flex:1 1 auto;}
+.kt-cart-modal .kt-cart-footer{flex:0 0 auto;display:flex;gap:12px;justify-content:space-between;align-items:center;padding:16px 22px;border-top:1px solid var(--line);background:#fff;}
+.kt-cart-modal [hidden]{display:none!important;}
+.kt-cart-modal .kt-delivery{border:0;padding:0;margin:22px 0 14px;min-width:0;}
+.kt-delivery legend{font-size:17px;font-weight:800;margin-bottom:12px;}
+.kt-delivery-options{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+.kt-delivery-options label{display:flex;align-items:flex-start;gap:10px;border:2px solid var(--line);border-radius:12px;padding:16px;cursor:pointer;}
+.kt-delivery-options label:has(input:checked){border-color:var(--gold);background:#faf5e7;}
+.kt-delivery-options label:focus-within{outline:2px solid var(--ink);outline-offset:2px;}
+.kt-delivery-options input{margin-top:4px;accent-color:var(--gold);width:18px;height:18px;flex-shrink:0;}
+.kt-delivery-options strong,.kt-delivery-options b,.kt-delivery-options small{display:block;}
+.kt-delivery-options b{font-size:13px;color:#795c15;margin:5px 0;}
+.kt-delivery-options small{font-size:12px;line-height:1.5;color:var(--muted);}
+.kt-cart-modal input{min-width:0;}
+@media(max-width:600px){.modal.kt-cart-modal{max-height:100dvh;border-radius:0;}.kt-cart-modal .kt-cart-body{padding:14px;}.kt-cart-modal .kt-cart-footer{padding:12px;padding-bottom:max(12px,env(safe-area-inset-bottom));flex-wrap:wrap;}.kt-cart-footer .btn{flex:1;font-size:13px!important;padding:10px!important;}.kt-delivery-options{grid-template-columns:1fr;}.kt-cart-modal .tbl th,.kt-cart-modal .tbl td{padding:10px 4px;font-size:12px;}.kt-cart-modal .tbl .btn{padding:5px 8px!important;}.kt-cart-modal .tbl b{min-width:0!important;}}
 </style></head>
 <body>
 <div id="app">
@@ -2180,13 +2198,24 @@ var ktNoticeCss=document.createElement('style');ktNoticeCss.textContent='#kt-ord
   function proShipGet(){ if(!st.proShip){ try{ st.proShip=JSON.parse(localStorage.getItem('kt_ship')||'{}')||{}; }catch(e){ st.proShip={}; } } return st.proShip; }
   function proShipOk(){ var s=proShipGet(); return !!((s.name||'').trim()&&(s.address||'').trim()&&(s.zip||'').trim()&&(s.city||'').trim()); }
 // KT_SHIPPING_CART_V2
-var ktCartQuote=null,ktQuoteSequence=0,ktOrderRequest='';
-function ktParcelHtml(q){if(!q)return '';return '<section style="padding:12px;border:1px solid var(--line);border-radius:10px;margin:12px 0"><strong>'+ (q.mode==='retrait'?'Retrait Basecamp':'Colissimo · '+q.packages.length+' colis')+'</strong><p>Produits : '+eur2(q.goods)+' · Port : '+eur2(q.shipping)+' · Assurance à souscrire : '+eur2(q.insurance)+'<br><b>Total à payer : '+eur2(q.total)+'</b></p>'+(q.packages.length>1?'<p><strong>À préparer : '+q.packages.length+' colis distincts.</strong> La valeur de la commande est répartie entre ces colis. Le port et les options d’assurance ci-dessus sont les totaux pour l’ensemble des colis. Ne regroupez pas leur contenu dans un seul colis : la couverture se vérifie séparément pour chacun.</p>':'')+q.packages.map(function(p){return '<details><summary>Colis '+p.number+' · '+p.grams+' g emballé · Valeur '+eur2(p.value)+' · '+esc(p.option)+' · Couverture prévue '+eur2(p.covered)+'</summary><p>'+p.items.map(function(it){return esc(it.name)+' : '+it.qty+' '+it.unit;}).join('<br>')+'</p><p>Port '+eur2(p.shipping)+' · Assurance '+eur2(p.insurance)+(p.signature?' · Contre signature':'')+'</p></details>';}).join('')+(q.packages.length?'<p class="muted">Tarifs publics nets. Le plan de colisage doit être respecté ; les étiquettes et les options d’assurance sont à acheter auprès du transporteur.</p>':'')+'</section>';}
+var ktCartQuote=null,ktQuoteSequence=0,ktOrderRequest='',ktShippingMode='poste';
+function ktParcelHtml(q){if(!q)return '';if(q.mode==='retrait')return '<section style="padding:12px;border:1px solid var(--line);border-radius:10px;margin:12px 0"><strong>Retrait Basecamp · gratuit</strong><p>Produits : '+eur2(q.goods)+'<br>Aucun frais de livraison ni assurance.<br><b>Total à payer : '+eur2(q.total)+'</b></p></section>';return '<section style="padding:12px;border:1px solid var(--line);border-radius:10px;margin:12px 0"><strong>'+ (q.mode==='retrait'?'Retrait Basecamp':'Colissimo · '+q.packages.length+' colis')+'</strong><p>Produits : '+eur2(q.goods)+' · Port : '+eur2(q.shipping)+' · Assurance à souscrire : '+eur2(q.insurance)+'<br><b>Total à payer : '+eur2(q.total)+'</b></p>'+(q.packages.length>1?'<p><strong>À préparer : '+q.packages.length+' colis distincts.</strong> La valeur de la commande est répartie entre ces colis. Le port et les options d’assurance ci-dessus sont les totaux pour l’ensemble des colis. Ne regroupez pas leur contenu dans un seul colis : la couverture se vérifie séparément pour chacun.</p>':'')+q.packages.map(function(p){return '<details><summary>Colis '+p.number+' · '+p.grams+' g emballé · Valeur '+eur2(p.value)+' · '+esc(p.option)+' · Couverture prévue '+eur2(p.covered)+'</summary><p>'+p.items.map(function(it){return esc(it.name)+' : '+it.qty+' '+it.unit;}).join('<br>')+'</p><p>Port '+eur2(p.shipping)+' · Assurance '+eur2(p.insurance)+(p.signature?' · Contre signature':'')+'</p></details>';}).join('')+(q.packages.length?'<p class="muted">Tarifs publics nets. Le plan de colisage doit être respecté ; les étiquettes et les options d’assurance sont à acheter auprès du transporteur.</p>':'')+'</section>';}
 function ktBindShipping(){
- var mode=document.getElementById('kt-shipping-mode'),calc=document.getElementById('kt-shipping-calc'),out=document.getElementById('kt-shipping-result'),btn=document.querySelector('[data-act="pro-order-confirm"]');if(!mode||!calc)return;
+ var mode=document.getElementById('kt-shipping-mode'),calc=document.getElementById('kt-shipping-calc'),out=document.getElementById('kt-shipping-result'),btn=document.querySelector('[data-act="pro-order-confirm"]'),address=document.getElementById('kt-shipping-address');if(!mode||!calc)return;
+ mode.value=ktShippingMode;
+ function paint(){
+  var pickup=mode.value==='retrait';address.hidden=pickup;calc.hidden=pickup;
+  document.querySelectorAll('[name="kt-delivery"]').forEach(function(r){r.checked=r.value===mode.value;});
+ }
  var timer; function invalidate(){ktCartQuote=null;++ktQuoteSequence;btn.disabled=true;clearTimeout(timer);out.textContent='Mise à jour des frais…';timer=setTimeout(calculate,350);}
- mode.addEventListener('change',invalidate);document.querySelectorAll('.ship-f').forEach(function(i){i.addEventListener('input',invalidate);});
- function calculate(){var seq=++ktQuoteSequence;ktCartQuote=null;btn.disabled=true;out.textContent='Calcul…';var sh=proShipGet();apiPost('/api/pro/shipping/quote',{mode:mode.value,zip:sh.zip,country:'FR',items:proCartItems().map(function(x){return {productId:x.p.id,qty:x.qty};})}).then(function(q){if(seq!==ktQuoteSequence||!out.isConnected)return;ktCartQuote=q;out.innerHTML=ktParcelHtml(q);btn.disabled=false;btn.textContent='Valider et payer ›';}).catch(function(e){if(seq!==ktQuoteSequence)return;out.textContent=e.message;});} calc.addEventListener('click',calculate);calculate();
+ document.querySelectorAll('[name="kt-delivery"]').forEach(function(r){r.addEventListener('change',function(){if(!r.checked)return;mode.value=r.value;ktShippingMode=r.value;paint();invalidate();});});
+ document.querySelectorAll('.ship-f').forEach(function(i){i.addEventListener('input',function(){proShipGet()[i.getAttribute('data-k')]=i.value;invalidate();});});
+ function calculate(){
+  clearTimeout(timer);if(!out.isConnected)return;
+  var seq=++ktQuoteSequence;ktCartQuote=null;btn.disabled=true;out.textContent='Calcul…';var sh=proShipGet();
+  apiPost('/api/pro/shipping/quote',{mode:mode.value,zip:sh.zip,country:'FR',items:proCartItems().map(function(x){return {productId:x.p.id,qty:x.qty};})}).then(function(q){if(seq!==ktQuoteSequence||!out.isConnected)return;ktCartQuote=q;out.innerHTML=ktParcelHtml(q);btn.disabled=false;btn.textContent='Valider et payer ›';}).catch(function(e){if(seq!==ktQuoteSequence||!out.isConnected)return;out.textContent=e.message;});
+ }
+ calc.addEventListener('click',calculate);paint();calculate();
 }
 function ktOrderShipping(o){return ktParcelHtml(o.shippingQuote)+(o.shippingError?'<p role="alert" style="color:#9c352c">Paiement indisponible : '+esc(o.shippingError)+'</p>'+((st.user||{}).role==='admin'?'<button class="btn" data-act="kt-shipping-retry" data-id="'+o.id+'">Revérifier les frais sur Kingbase</button>':''):'');}
 function ktOrderLineage(o){
@@ -2219,13 +2248,16 @@ function ktSaveFranchiseLot(el){
     var tot=proCartTotal(); var sh=proShipGet();
     var si='width:100%;padding:9px 10px;border:1px solid var(--line);border-radius:9px;margin-bottom:7px;font-size:14px;box-sizing:border-box';
     var sib='padding:9px 10px;border:1px solid var(--line);border-radius:9px;font-size:14px;box-sizing:border-box';
-    openModal('<h3 style="margin:0 0 4px;font-family:var(--serif)">Ton panier de réassort</h3>'+
-      '<div class="muted" style="font-size:12.5px;margin-bottom:12px">Vérifie ta commande, indique ton adresse de livraison, puis paie pour valider. Prix de gros kingbase.fr.</div>'+
+    openModal('<div class="kt-cart-body"><h3 style="margin:0 0 4px;font-family:var(--serif)">Ton panier de réassort</h3>'+
+      '<div class="muted" style="font-size:12.5px;margin-bottom:12px">Vérifie ton panier, choisis la livraison ou le retrait, puis valide le paiement. Prix de gros kingbase.fr.</div>'+
       '<table class="tbl"><thead><tr><th>Produit</th><th style="text-align:center">Quantité</th><th style="text-align:right">Total</th><th></th></tr></thead>'+
       '<tbody>'+rows+'</tbody>'+
       '<tfoot><tr><td colspan="2" style="text-align:right;font-weight:800;padding-top:10px">Sous-total produits</td><td style="text-align:right;font-weight:800;font-size:17px;padding-top:10px">'+eur2(tot)+'</td><td></td></tr></tfoot></table>'+
-      '<section id="kt-shipping-cart" style="padding:14px 0"><label>Mode de livraison <select id="kt-shipping-mode"><option value="poste">Colissimo domicile · France métropolitaine</option><option value="retrait">Retrait Basecamp · gratuit</option></select></label><button class="btn" type="button" id="kt-shipping-calc">Calculer port + assurance</button><div id="kt-shipping-result" aria-live="polite">Renseignez votre adresse puis calculez les frais.</div></section>'+
-      '<div style="margin-top:14px;border-top:1px solid var(--line);padding-top:12px">'+
+      '<section id="kt-shipping-cart"><fieldset class="kt-delivery"><legend>Comment souhaites-tu recevoir ta commande ?</legend><div class="kt-delivery-options">'+
+      '<label><input type="radio" name="kt-delivery" value="retrait"><span><strong>Retrait Basecamp</strong><b>Gratuit</b><small>À récupérer sur place quand la commande est prête.</small></span></label>'+
+      '<label><input type="radio" name="kt-delivery" value="poste"><span><strong>Livraison Colissimo</strong><b>Port + assurance calculés</b><small>À ton adresse en France métropolitaine.</small></span></label></div></fieldset>'+
+      '<select id="kt-shipping-mode" hidden aria-hidden="true"><option value="poste">Colissimo</option><option value="retrait">Retrait</option></select><button class="btn" type="button" id="kt-shipping-calc">Recalculer port + assurance</button><div id="kt-shipping-result" aria-live="polite"></div></section>'+
+      '<div id="kt-shipping-address" style="margin-top:14px;border-top:1px solid var(--line);padding-top:12px">'+
         '<div style="font-weight:800;margin-bottom:8px">📦 Adresse de livraison <span style="color:#b4452f">*</span></div>'+
         '<input class="ship-f" data-k="name" value="'+esc(sh.name||'')+'" placeholder="Nom / boutique" style="'+si+'"/>'+
         '<input class="ship-f" data-k="address" value="'+esc(sh.address||'')+'" placeholder="Adresse (n° et rue)" style="'+si+'"/>'+
@@ -2235,10 +2267,11 @@ function ktSaveFranchiseLot(el){
         '</div>'+
         '<input class="ship-f" data-k="phone" value="'+esc(sh.phone||'')+'" placeholder="Téléphone (optionnel)" style="'+si+';margin-top:7px"/>'+
       '</div>'+
-      '<div style="display:flex;gap:10px;justify-content:space-between;align-items:center;margin-top:14px">'+
+      '</div><div class="kt-cart-footer">'+
         '<button class="btn" data-act="closemodal">‹ Continuer mes achats</button>'+
         '<button class="btn btn-gold" data-act="pro-order-confirm" disabled style="font-size:15px;padding:11px 20px">Valider et payer ›</button>'+
       '</div>');
+    modalRoot.querySelector('.modal').classList.add('kt-cart-modal');
     ktBindShipping();
   }
   function openProPayModal(o){
