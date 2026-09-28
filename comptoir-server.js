@@ -634,7 +634,7 @@ async function ktWooShipping(o,candidate){
  if(!['pending','on-hold'].includes(old.status))throw new Error('Commande Woo déjà payée ou fermée : frais non modifiés.');
  var q=o.shippingQuote,shipping;
  // Mettre à jour les lignes existantes : ne pas les supprimer puis réutiliser leurs identifiants.
- var desired={method_id:q.mode==='retrait'?'local_pickup':'kingtools_colissimo',method_title:q.mode==='retrait'?'Retrait Basecamp':'Colissimo · '+q.packages.length+' colis',total:q.shipping.toFixed(2),taxes:[],meta_data:[{key:'_kt_packages',value:JSON.stringify(q.packages)}]};
+ var desired={method_id:q.mode==='retrait'?'local_pickup':'lpc_sign',method_title:q.mode==='retrait'?'Retrait Basecamp':'Colissimo · '+q.packages.length+' colis',total:q.shipping.toFixed(2),taxes:[],meta_data:[{key:'_kt_packages',value:JSON.stringify(q.packages)}]};
  var existingShipping=old.shipping_lines||[];
  shipping=existingShipping.length?existingShipping.map(function(l,i){return i===0?Object.assign({id:l.id},desired):{id:l.id,total:'0.00',taxes:[]};}):[desired];
  var existingInsurance=(old.fee_lines||[]).filter(function(l){return l.name==='Assurance Colissimo (Kingtools)';});
