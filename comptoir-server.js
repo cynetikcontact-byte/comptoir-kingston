@@ -596,6 +596,9 @@ function ktTrace(user,q){
 }
 
 // KT_SHIPPING_V2 — public Colissimo online domestic rates, verified 2026-09-25.
+function ktOrderSteps(){return warehouse.orderSteps||{version:0,grams:100,pouches:200,units:1,products:{}};}
+function ktOrderStep(p){var c=ktOrderSteps();return c.products[p.id]||(proUnitInfo(p).unit==='g'?c.grams:/pochon/i.test(p.name)?c.pouches:c.units);}
+function ktCheckOrderQty(p,qty){var step=ktOrderStep(p);if(!Number.isSafeInteger(qty)||qty<=0||qty%step!==0)whFail(p.name+' : choisissez un multiple de '+step+' '+proUnitInfo(p).unit+'.');}
 function ktShipConfig(){return warehouse.shipping||{version:1,enabled:false,label:'Colissimo domicile France métropolitaine 2026',source:'https://www.laposte.fr/colissimo-en-ligne/tarifs',validFrom:'2026-01-01',basis:'Tarifs publics nets',packingGrams:200,rates:[[250,5.49],[500,7.59],[750,9.29],[1000,9.59],[2000,11.19],[5000,17.39],[10000,25.29],[15000,31.99],[30000,39.59]],insurance:[[50,3.30],[200,5],[300,5.90],[400,6.90],[500,7.90],[600,8.90],[700,9.90],[800,10.90],[900,11.90],[1000,12.90]],weights:{}};}
 function ktShipSave(b,user){
  var prev=ktShipConfig();if(b.revision!==crypto.createHash('sha256').update(JSON.stringify(prev)).digest('hex'))whFail('La grille a changé. Rechargez-la.',409);
@@ -608,7 +611,7 @@ function ktShipSave(b,user){
 function ktShipQuote(b,user){
  if(!['poste','retrait'].includes(b.mode))whFail('Choisissez la livraison ou le retrait.');
  if(!Array.isArray(b.items)||!b.items.length||b.items.length>200)whFail('Panier invalide.');
- var cfg=ktShipConfig(),seen={},goods=0,lines=b.items.map(function(it){var p=whProduct(whText(it.productId,80)),qty=whNumber(it.qty,'u',true);if(seen[p.id])whFail('Référence en double.');seen[p.id]=true;if(user.role!=='admin'&&proStock[p.id]==null)whFail('Produit indisponible.');var price=proUnitInfo(p).price;if(price==null||!Number.isFinite(price)||price<0)whFail('Prix manquant.');goods+=Math.round(price*100)*qty;return {productId:p.id,name:p.name,unit:p.unit,qty:qty,cents:Math.round(price*100),grams:cfg.weights[p.id]||(p.unit==='g'?1:null),service:whService(p),vat:vatRate(p)};});
+ var cfg=ktShipConfig(),seen={},goods=0,lines=b.items.map(function(it){var p=whProduct(whText(it.productId,80)),qty=whNumber(it.qty,'u',true);ktCheckOrderQty(p,qty);if(seen[p.id])whFail('Référence en double.');seen[p.id]=true;if(user.role!=='admin'&&proStock[p.id]==null)whFail('Produit indisponible.');var price=proUnitInfo(p).price;if(price==null||!Number.isFinite(price)||price<0)whFail('Prix manquant.');goods+=Math.round(price*100)*qty;return {productId:p.id,name:p.name,unit:p.unit,qty:qty,cents:Math.round(price*100),grams:cfg.weights[p.id]||(p.unit==='g'?1:null),service:whService(p),vat:vatRate(p)};});
  var quote={mode:b.mode,configVersion:cfg.version,goods:goods/100,packages:[],shipping:0,insurance:0,fees:0,total:goods/100,basis:cfg.basis};
  if(b.mode==='poste'){
   if(!cfg.enabled)whFail('Le réseau doit valider les tarifs et le poids de l’emballage dans Tarifs Colissimo.',409);
@@ -630,11 +633,13 @@ async function ktWooShipping(o,candidate){
  var old=await royWc('GET','/orders/'+o.wooOrderId);
  if(!['pending','on-hold'].includes(old.status))throw new Error('Commande Woo déjà payée ou fermée : frais non modifiés.');
  var q=o.shippingQuote,shipping;
- // Woo REST deletes shipping/fee items when method_id/name is null.
- shipping=(old.shipping_lines||[]).map(function(l){return {id:l.id,method_id:null};});
- shipping.push({method_id:q.mode==='retrait'?'local_pickup':'kingtools_colissimo',method_title:q.mode==='retrait'?'Retrait Basecamp':'Colissimo · '+q.packages.length+' colis',total:q.shipping.toFixed(2),taxes:[],meta_data:[{key:'_kt_packages',value:JSON.stringify(q.packages)}]});
- var fees=(old.fee_lines||[]).filter(function(l){return l.name==='Assurance Colissimo (Kingtools)';}).map(function(l){return {id:l.id,name:null};});
- if(q.insurance)fees.push({name:'Assurance Colissimo (Kingtools)',tax_status:'none',total:q.insurance.toFixed(2)});
+ // Mettre à jour les lignes existantes : ne pas les supprimer puis réutiliser leurs identifiants.
+ var desired={method_id:q.mode==='retrait'?'local_pickup':'kingtools_colissimo',method_title:q.mode==='retrait'?'Retrait Basecamp':'Colissimo · '+q.packages.length+' colis',total:q.shipping.toFixed(2),taxes:[],meta_data:[{key:'_kt_packages',value:JSON.stringify(q.packages)}]};
+ var existingShipping=old.shipping_lines||[];
+ shipping=existingShipping.length?existingShipping.map(function(l,i){return i===0?Object.assign({id:l.id},desired):{id:l.id,total:'0.00',taxes:[]};}):[desired];
+ var existingInsurance=(old.fee_lines||[]).filter(function(l){return l.name==='Assurance Colissimo (Kingtools)';});
+ var fees=existingInsurance.map(function(l,i){return {id:l.id,name:'Assurance Colissimo (Kingtools)',tax_status:'none',total:(i===0?q.insurance:0).toFixed(2)};});
+ if(q.insurance&&!existingInsurance.length)fees.push({name:'Assurance Colissimo (Kingtools)',tax_status:'none',total:q.insurance.toFixed(2)});
  var updated=await royWc('PUT','/orders/'+o.wooOrderId,{shipping_lines:shipping,fee_lines:fees,meta_data:[{key:'_kt_shipping_quote',value:JSON.stringify(q)},{key:'_kt_shipping_verified',value:'yes'}]});
  var shippingAmount=Number(updated.shipping_total),insuranceAmount=(updated.fee_lines||[]).filter(function(l){return l.name==='Assurance Colissimo (Kingtools)';}).reduce(function(sum,l){return sum+Number(l.total);},0);
  // Les prix produits sont HT. WooCommerce reste la source de la TVA réellement facturée.
@@ -4327,6 +4332,20 @@ const server = http.createServer(async (req, res) => {
         return send(res, 200, Object.assign(wr, { inventory: whSnapshot() }));
       } catch (e) { return send(res,e.status || 400,{error:e.message}); }
     }
+    if(path==='/api/pro/order-settings'){
+      if(user.role!=='admin')return send(res,403,{error:'Réservé à l’administrateur réseau.'});
+      try{
+        if(PG)whFail('Réglages indisponibles avec ce mode de stockage.',503);
+        if(req.method==='GET')return send(res,200,{config:ktOrderSteps(),products:allProProducts().map(p=>({id:p.id,name:p.name,unit:proUnitInfo(p).unit,step:ktOrderStep(p)}))});
+        if(req.method!=='POST')return send(res,405,{error:'Méthode non autorisée.'});
+        var b=await readJson(req),prev=ktOrderSteps();if(b.version!==prev.version)whFail('Les réglages ont changé. Rechargez cet onglet.',409);
+        function validStep(v){if(typeof v!=='number'||!Number.isSafeInteger(v)||v<1||v>100000)whFail('Chaque palier doit être un entier entre 1 et 100 000.');return v;}
+        var next={version:prev.version+1,grams:validStep(b.grams),pouches:validStep(b.pouches),units:validStep(b.units),products:{}};
+        if(!b.products||typeof b.products!=='object'||Array.isArray(b.products))whFail('Réglages produits invalides.');
+        Object.keys(b.products).forEach(function(id){whProduct(id);next.products[id]=validStep(b.products[id]);});
+        whCommit(function(){warehouse.orderSteps=next;});return send(res,200,{ok:true,config:next});
+      }catch(e){return send(res,e.status||400,{error:e.message});}
+    }
     if (req.method === 'GET' && path === '/api/pro/catalog') {
       // Boutique bloquee par l'admin : pas de catalogue, seulement le message (200 pour un affichage propre cote app).
       if (user.role === 'manager' && royOverdue(user.boutiqueId)) await royWithin(royRefreshBoutique(user.boutiqueId, 5000), 4000);   // paiement tout juste fait ? on relit kingbase
@@ -4341,7 +4360,7 @@ const server = http.createServer(async (req, res) => {
       const list = src.map((p) => {
         const pi = proUnitInfo(p);
         const retail = p.unit === 'g' ? ((p.tiers && p.tiers[0]) ? p.tiers[0][1] : 0) : (p.price || 0);
-        const row = { id: p.id, name: p.name, cat: p.cat, img: p.img || '', unit: p.unit, pro: pi ? pi.price : null, proUnit: pi ? pi.unit : 'u', step: pi ? pi.step : 1, retail: usePro ? null : retail, lot: proLots[p.id] || '', stock: whAvailable(p.id) };
+        const row = { id: p.id, name: p.name, cat: p.cat, img: p.img || '', unit: p.unit, pro: pi ? pi.price : null, proUnit: pi ? pi.unit : 'u', step: ktOrderStep(p), retail: usePro ? null : retail, lot: proLots[p.id] || '', stock: whAvailable(p.id) };
         if (user.role === 'admin' && proBuyPrice[p.id] != null) row.buyPrice = proBuyPrice[p.id];   // prix d'achat : ADMIN uniquement
         return row;
       });
@@ -4532,7 +4551,8 @@ const server = http.createServer(async (req, res) => {
         // Produit kingbase NON suivi en stock : retire du catalogue des franchises -> non commandable par eux.
         if (usePro && user.role !== 'admin' && allProProducts().some((x) => x.id === p.id) && proStock[p.id] == null) continue;
         const pi = proUnitInfo(p); if (!pi) continue;
-        const qty = Math.max(0, Math.floor(Number(it.qty) || 0)); if (qty <= 0) continue;
+        const qty = Number(it.qty);
+        try{ktCheckOrderQty(p,qty);}catch(e){return send(res,e.status||400,{error:e.message});}
         const up = (pi.price != null ? pi.price : 0);
         const lineTotal = Math.round(up * qty * 100) / 100; total += lineTotal;
         items.push({ productId: p.id, name: p.name, unit: pi.unit, qty: qty, unitPrice: pi.price, lineTotal: lineTotal, lot: proLots[p.id] || '' });
