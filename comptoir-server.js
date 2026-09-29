@@ -1837,6 +1837,23 @@ async function royWc(method, p, body){
   if (!r.ok) { var err = new Error('kingbase HTTP ' + r.status + ' — ' + String((j && j.message) || t).replace(/\s+/g, ' ').slice(0, 160)); err.status = r.status; throw err; }
   return j;
 }
+// Existing Kingbase invoice, served only to the owning franchise or network admin.
+async function ktProInvoice(order,user){
+ if(!user||!(user.role==='admin'||(user.role==='manager'&&user.boutiqueId&&user.boutiqueId===order.boutiqueId)))whFail('Cette facture appartient à une autre boutique.',403);
+ if(!Number.isSafeInteger(Number(order.wooOrderId))||Number(order.wooOrderId)<=0)whFail('Facture Kingbase pas encore disponible.',409);
+ if(order.status==='attente'||order.status==='annulee')whFail('La facture sera disponible après confirmation du paiement.',409);
+ if(!PRO_WC_KEY||!PRO_WC_SECRET)whFail('Connexion aux factures Kingbase indisponible. Contactez Kingston.',503);
+ const remote=await royWc('GET','/orders/'+Number(order.wooOrderId));
+ if(Number(remote.id)!==Number(order.wooOrderId))whFail('La facture ne correspond pas à cette commande.',502);
+ if(!remote.date_paid&&!remote.date_paid_gmt&&!['processing','completed'].includes(remote.status))whFail('Le paiement doit être confirmé sur Kingbase avant de télécharger la facture.',409);
+ const response=await wooFetch(PRO_WP_URL+'/wp-json/wc-kingston/v1/orders/'+Number(order.wooOrderId)+'/invoice',{method:'GET',headers:{Authorization:royWcAuth(),Accept:'application/json'},redirect:'error'},30000);
+ if(!response.ok)whFail('Facture indisponible sur Kingbase. Réessaie ou contacte Kingston.',502);
+ const data=await response.json();
+ if(Number(data.order)!==Number(order.wooOrderId)||typeof data.base64!=='string'||data.base64.length>28000000)whFail('Réponse de facture invalide.',502);
+ const pdf=Buffer.from(data.base64,'base64');
+ if(pdf.length<5||pdf.subarray(0,5).toString()!=='%PDF-')whFail('Kingbase n’a pas fourni un PDF valide.',502);
+ return {pdf,filename:'Facture-'+String(order.numero||('PRO-'+order.id)).replace(/[^a-zA-Z0-9_-]/g,'')+'.pdf'};
+}
 const royPayBusy = {};
 // Adresse de facturation d'une redevance, telle qu'elle DOIT partir sur kingbase.fr : fiche boutique a jour d'abord,
 // instantane de la facture ensuite. Sert a detecter qu'une commande ouverte est devenue obsolete.
@@ -4305,6 +4322,13 @@ const server = http.createServer(async (req, res) => {
         var cfg;if(req.method==='GET')cfg=ktShipConfig();else if(req.method==='POST')cfg=ktShipSave(await readJson(req),user);else return send(res,405,{error:'Methode invalide'});
         return send(res,200,{config:cfg,revision:crypto.createHash('sha256').update(JSON.stringify(cfg)).digest('hex'),products:allProProducts().filter(function(p){return !whService(p);}).map(function(p){return {id:p.id,name:p.name,unit:p.unit};})});
       }catch(e){return send(res,e.status||400,{error:e.message});}
+    }
+    const ktInvoiceRoute=path.match(/^\/api\/pro\/orders\/(\d+)\/invoice$/);
+    if(req.method==='GET'&&ktInvoiceRoute){
+      const invoiceOrder=supplyOrders.find(o=>o.id===Number(ktInvoiceRoute[1]));
+      if(!invoiceOrder)return send(res,404,{error:'Commande introuvable'});
+      try{const doc=await ktProInvoice(invoiceOrder,user);res.writeHead(200,{'Content-Type':'application/pdf','Content-Disposition':'attachment; filename="'+doc.filename+'"','Content-Length':doc.pdf.length,'Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff'});return res.end(doc.pdf);}
+      catch(e){return send(res,e.status||502,{error:e.status?e.message:'Téléchargement de la facture impossible. Réessaie ou contacte Kingston.'});}
     }
     const ktRetry=path.match(/^\/api\/pro\/orders\/(\d+)\/(?:shipping-retry|payment-retry)$/);
     if(req.method==='POST'&&ktRetry){
