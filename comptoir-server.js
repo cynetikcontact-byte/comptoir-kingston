@@ -720,6 +720,25 @@ function krReceive(o,b,user){
   return krView(o,it,p);
  });
 }
+function krReceiveOrder(o,b,user){
+ krAccess(user,o);
+ if(o.restocked)return {added:0,alreadyReceived:true};
+ if(!krReady(o))whFail('La commande doit être expédiée ou prête à récupérer.',409);
+ if(b.received!==true||b.productOk!==true||b.quantityOk!==true||b.conditionOk!==true)whFail('Confirmez la réception et le contrôle de toute la commande.');
+ if(['qty','items','lot','ddm'].some(k=>k in b))whFail('Les quantités et lots proviennent exclusivement de Basecamp.');
+ const pending=krEntries(o).filter(({p})=>!p.reception?.validatedAt);
+ if(!pending.length)whFail('Aucun lot à réceptionner pour cette commande.',409);
+ for(const {it,p} of pending){
+  if(!p.franchiseCode||krEntries(o).filter(x=>x.p.franchiseCode===p.franchiseCode).length!==1)whFail('Lot manquant ou ambigu : contactez Basecamp.',409);
+  if(p.reception?.issue)whFail(it.name+' : anomalie à résoudre avec Basecamp.',409);
+  if(p.expiry&&p.expiry<ktParisDay(Date.now()))whFail(it.name+' : DDM dépassée.',409);
+  if(!ktRetailTarget(it,o.boutiqueId).matched)whFail(it.name+' : Basecamp doit associer ce produit à la caisse.',409);
+ }
+ return krAtomic(o,()=>{
+  for(const {it,p} of pending){p.reception=p.reception||{};p.reception.arrivedAt=p.reception.arrivedAt||Date.now();p.reception.checks={product:true,quantity:true,condition:true};krAddPart(o,it,p,user);}
+  return {added:pending.length,alreadyReceived:false};
+ });
+}
 function krPackage(o,b,user){
  krAccess(user,o);const {it,p}=krFind(o,b.code),l=krStored(o,it,p);
  if(!(p.reception?.validatedAt||o.restocked)||!l)whFail('Réception et contrôle requis avant le conditionnement.',409);
@@ -4465,10 +4484,11 @@ const server = http.createServer(async (req, res) => {
       if(!['admin','manager'].includes(user.role))return send(res,403,{error:'Réservé au responsable boutique.'});
       return send(res,200,{lots:krList(user)});
     }
-    const krRoute=path.match(/^\/api\/pro\/orders\/(\d+)\/(receiving|package|package-labels|resolve-receiving)$/);
+    const krRoute=path.match(/^\/api\/pro\/orders\/(\d+)\/(receiving|receive-all|package|package-labels|resolve-receiving)$/);
     if(krRoute){try{
       if(PG)whFail('Parcours de réception indisponible avec ce mode de stockage.',503);
       const o=supplyOrders.find(o=>o.id===Number(krRoute[1]));if(!o)whFail('Commande introuvable.',404);krAccess(user,o);
+      if(req.method==='POST'&&krRoute[2]==='receive-all')return send(res,200,krReceiveOrder(o,await readJson(req),user));
       if(req.method==='POST'&&krRoute[2]==='receiving')return send(res,200,{lot:krReceive(o,await readJson(req),user)});
       if(req.method==='POST'&&krRoute[2]==='package')return send(res,200,krPackage(o,await readJson(req),user));
       if(req.method==='POST'&&krRoute[2]==='resolve-receiving'){
