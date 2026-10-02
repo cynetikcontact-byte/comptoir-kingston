@@ -611,7 +611,9 @@ function ktTakeRetail(s,qty,unit){
  const available=lots.filter(l=>!ktLotExpiry(l)||ktLotExpiry(l)>=today).reduce((a,l)=>a+l[key],pool);
  if((unit==='u'?Math.min(s.units,available):available)+1e-8<qty)throw new Error('Stock insuffisant ou lot périmé');
  let left=qty;const parts=[];
- lots.filter(l=>l[key]>0&&(!ktLotExpiry(l)||ktLotExpiry(l)>=today)).sort((a,b)=>(ktLotExpiry(a)||'9999').localeCompare(ktLotExpiry(b)||'9999')).forEach(l=>{if(left<=0)return;const q=Math.min(left,l[key]);l[key]=round(l[key]-q);left=round(left-q);parts.push(ktLotSnapshot(l,q));});
+ // A 2/5/10 g pouch sale uses an available prepared pouch of that size first, then FEFO.
+ const prepared=l=>unit==='g'&&(l.packages||[]).some(b=>b.size===qty&&b.remainingGrams>=qty);
+ lots.filter(l=>l[key]>0&&(!ktLotExpiry(l)||ktLotExpiry(l)>=today)).sort((a,b)=>Number(prepared(b))-Number(prepared(a))||(ktLotExpiry(a)||'9999').localeCompare(ktLotExpiry(b)||'9999')).forEach(l=>{if(left<=0)return;const q=Math.min(left,l[key]);l[key]=round(l[key]-q);if(unit==='g'){let used=q;for(const pack of (l.packages||[]).slice().sort((a,b)=>Number(b.size===qty)-Number(a.size===qty))){const take=Math.min(used,pack.remainingGrams);pack.remainingGrams=round(pack.remainingGrams-take);used=round(used-take);if(used<=0)break;}}left=round(left-q);parts.push(ktLotSnapshot(l,q));});
  if(left>0)parts.push(ktLotSnapshot({lot:'Stock historique · origine inconnue'},left));
  if(unit==='u')s.units=round(s.units-qty);
  // Keep depleted lots in inventory history; zero quantities never count as available.
@@ -646,7 +648,7 @@ function ktReceiveOrder(o){
 function ktSalesTrace(user,code){
  const out=[];
  for(const inv of invoices){if(user.role!=='admin'&&inv.boutiqueId!==user.boutiqueId)continue;
-  for(const line of inv.lines||[])for(const lot of line.lots||[]){if(code&&![lot.lot,lot.kingstonLot,lot.supplierLot,lot.warehouseLotId].includes(code))continue;
+  for(const line of inv.lines||[])for(const lot of line.lots||[]){if(code&&!(user.role==='admin'?[lot.lot,lot.kingstonLot,lot.supplierLot,lot.warehouseLotId]:[lot.lot,lot.kingstonLot]).includes(code))continue;
    out.push({ticket:inv.num,date:inv.date,boutiqueId:inv.boutiqueId,product:line.produit,productId:line.productId,unit:line.grams?'g':'u',qty:lot.qty,refunded:!!inv.refunded,...lot});
   }
  }return out;
@@ -666,11 +668,72 @@ function ktTrace(user,q){
  supplyOrders.filter(function(o){return (user.role==='admin'||o.boutiqueId===user.boutiqueId);}).forEach(function(o){
   o.items.forEach(function(it){(it.warehouseLots||[]).forEach(function(part){
    var l=warehouse.lots.find(function(x){return x.id===part.id;});
-   rows.push({lotId:part.id||null,ddm:part.ddm||(l&&l.ddm)||'',expiry:part.expiry||(l&&l.expiry)||'',receiptId:part.receiptId||(l&&l.receiptId)||'',receiptDate:part.receiptDate||(l&&l.received)||'',productId:it.productId,product:it.name,unit:it.unit,qty:part.qty,supplierCode:part.supplierCode||(l&&l.code)||'',supplier:part.supplier||(l&&l.supplier)||'',kingstonCode:part.kingstonCode||(l&&l.kingstonCode)||'',franchiseCode:part.franchiseCode||'',franchiseCodeHistory:part.franchiseCodeHistory||[],boutiqueId:o.boutiqueId,boutique:(boutiques[o.boutiqueId]||{}).label||o.boutiqueId,order:o.numero,status:o.status,receivedAt:o.receivedAt||null,originKnown:!!l});
+   rows.push({lotId:part.id||null,ddm:part.ddm||(l&&l.ddm)||'',expiry:part.expiry||(l&&l.expiry)||'',receiptId:part.receiptId||(l&&l.receiptId)||'',receiptDate:part.receiptDate||(l&&l.received)||'',productId:it.productId,product:it.name,unit:it.unit,qty:part.qty,supplierCode:part.supplierCode||(l&&l.code)||'',supplier:part.supplier||(l&&l.supplier)||'',kingstonCode:part.kingstonCode||(l&&l.kingstonCode)||'',franchiseCode:part.franchiseCode||'',franchiseCodeHistory:part.franchiseCodeHistory||[],boutiqueId:o.boutiqueId,boutique:(boutiques[o.boutiqueId]||{}).label||o.boutiqueId,order:o.numero,status:part.reception?.validatedAt?'recue':o.status,receivedAt:part.reception?.validatedAt||o.receivedAt||null,originKnown:!!l});
   });});
  });
- var term=String(q||'').trim().toLowerCase();return rows.filter(function(r){return !term||[r.product,r.supplier,r.supplierCode,r.kingstonCode,r.franchiseCode,r.boutique,r.order,r.ddm,r.receiptId,(r.franchiseCodeHistory||[]).map(function(h){return h.before+' '+h.after;}).join(' ')].join(' ').toLowerCase().includes(term);});
+ var term=String(q||'').trim().toLowerCase();return rows.filter(function(r){return !term||[r.product,user.role==='admin'?r.supplier:'',user.role==='admin'?r.supplierCode:'',r.kingstonCode,r.franchiseCode,r.boutique,r.order,r.ddm,r.receiptId,(r.franchiseCodeHistory||[]).map(function(h){return h.before+' '+h.after;}).join(' ')].join(' ').toLowerCase().includes(term);});
 }
+
+// Guided receiving: each allocated lot is acknowledged and checked independently.
+function krReady(o){return ['expediee','retrait','recue'].includes(o.status);}
+function krEntries(o){return (o.items||[]).flatMap(it=>(it.warehouseLots||[]).filter(p=>p.qty>0).map(p=>({it,p})));}
+function krAccess(user,o){if(!['admin','manager'].includes(user.role))whFail('Réservé au responsable boutique.',403);ktLabelAccess(user,o.boutiqueId);}
+function krFind(o,code){const matches=krEntries(o).filter(x=>x.p.franchiseCode===code);if(matches.length>1)whFail('Numéro historique ambigu : contactez Basecamp.',409);const entry=matches[0];if(!entry)whFail('Lot attribué introuvable.',404);return entry;}
+function krStored(o,it,p){const id=it.retailProductId||ktRetailTarget(it,o.boutiqueId).id;const s=(stock[o.boutiqueId]||{})[id];return s&&(it.unit==='g'?(s.lots||[]):(s.unitLots||[])).find(l=>l.lot===p.franchiseCode&&l.supplyOrder===o.numero);}
+function krPacked(l){return Math.round((l.packages||[]).reduce((s,p)=>s+p.remainingGrams,0)*1000)/1000;}
+function krView(o,it,p){
+ const received=!!p.reception?.validatedAt||!!o.restocked,l=received?krStored(o,it,p):null;
+ const target=ktRetailTarget(it,o.boutiqueId),qty=received&&l?(it.unit==='g'?l.g:l.qty):0;
+ return {orderId:o.id,order:o.numero,code:p.franchiseCode,product:it.name,unit:it.unit,qty:p.qty,ddm:p.ddm||'',expiry:p.expiry||'',originKnown:p.originKnown===true,kingstonCode:p.kingstonCode||'',boutique:(boutiques[o.boutiqueId]||{}).label||o.boutiqueId,ready:krReady(o),arrivedAt:p.reception?.arrivedAt||o.receivedAt||null,validatedAt:p.reception?.validatedAt||o.receivedAt||null,received,stockQty:qty,packedGrams:l&&it.unit==='g'?krPacked(l):0,looseGrams:l&&it.unit==='g'?Math.max(0,Math.round((l.g-krPacked(l))*1000)/1000):0,mapped:received?it.retailMapped!==false:target.matched,expired:!!p.expiry&&p.expiry<ktParisDay(Date.now()),packages:(l?.packages||[]).map(b=>({id:b.id,size:b.size,count:b.count,at:b.at,remainingGrams:b.remainingGrams})),issue:p.reception?.issue||'',stage:received?5:p.reception?.arrivedAt?3:krReady(o)?2:1};
+}
+function krList(user){return supplyOrders.filter(o=>(user.role==='admin'||o.boutiqueId===user.boutiqueId)&&!['attente','annulee'].includes(o.status)).flatMap(o=>krEntries(o).map(({it,p})=>krView(o,it,p))).sort((a,b)=>Number(a.received)-Number(b.received)||b.orderId-a.orderId);}
+function krAtomic(o,fn){const before={order:JSON.parse(JSON.stringify(o)),stock:JSON.parse(JSON.stringify(stock))};try{const result=fn();writeDataFileNow();return result;}catch(e){Object.keys(o).forEach(k=>delete o[k]);Object.assign(o,before.order);stock=before.stock;throw e;}}
+function krAddPart(o,it,p,user){
+ if(p.reception?.validatedAt||o.restocked)return;
+ const target=ktRetailTarget(it,o.boutiqueId);if(!target.matched)whFail('Basecamp doit associer ce produit à la caisse avant la réception.',409);
+ const sk=stock[o.boutiqueId]||(stock[o.boutiqueId]={});let s=sk[target.id];if(!s)s=sk[target.id]=it.unit==='g'?{lots:[]}:{units:0,unitLots:[]};
+ const list=it.unit==='g'?(s.lots||(s.lots=[])):(s.unitLots||(s.unitLots=[]));
+ if(list.some(l=>l.lot===p.franchiseCode&&l.supplyOrder===o.numero))whFail('Ce lot figure déjà dans le stock. Contactez Basecamp.',409);
+ const q=p.qty*(it.unit==='g'?1:target.factor);
+ list.push({lot:p.franchiseCode,...(it.unit==='g'?{g:q}:{qty:q}),exp:p.expiry?p.expiry.slice(0,7):'',warehouseLotId:p.id||null,supplierLot:p.supplierCode||'',kingstonLot:p.kingstonCode||'',supplier:p.supplier||'',ddm:p.ddm||'',supplierExpiry:p.expiry||'',receiptId:p.receiptId||'',receiptDate:p.receiptDate||'',supplyOrder:o.numero,originKnown:p.originKnown===true});
+ if(it.unit!=='g')s.units=(s.units||0)+q;
+ Object.assign(it,{retailProductId:target.id,retailFactor:target.factor,retailMapped:true});
+ p.reception.validatedAt=Date.now();p.reception.by=user.name||user.role;
+ if(krEntries(o).every(x=>x.p.reception?.validatedAt)){o.restocked=true;o.status='recue';o.receivedAt=Date.now();o.stepAt=o.stepAt||{};o.stepAt.recue=o.receivedAt;}
+}
+function krReceive(o,b,user){
+ krAccess(user,o);if(!krReady(o))whFail('Basecamp doit d’abord confirmer l’expédition ou la mise à disposition.',409);
+ const {it,p}=krFind(o,b.code);if('qty' in b||'ddm' in b||'lot' in b)whFail('Quantité, numéro de lot et DDM sont définis par Basecamp.');
+ if(!['arrive','validate','issue'].includes(b.action))whFail('Étape inconnue.');
+ if(o.restocked||p.reception?.validatedAt)return krView(o,it,p);
+ return krAtomic(o,()=>{
+  p.reception=p.reception||{};
+  if(b.action==='arrive'){p.reception.arrivedAt=p.reception.arrivedAt||Date.now();}
+  if(b.action==='issue'){if(!p.reception.arrivedAt)whFail('Confirmez d’abord la réception physique.',409);const msg=whText(b.message,500);if(msg.length<5)whFail('Précisez le problème constaté.');p.reception.issue=msg;p.reception.issueAt=Date.now();p.reception.issueBy=user.name||user.role;}
+  if(b.action==='validate'){
+   if(!p.reception.arrivedAt)whFail('Confirmez d’abord la réception physique du lot.',409);
+   if(p.reception.issue)whFail('Une anomalie est signalée. Basecamp doit la résoudre avant validation.',409);
+   if(b.productOk!==true||b.quantityOk!==true||b.conditionOk!==true)whFail('Vérifiez le produit, la quantité et l’état du lot avant validation.',409);
+   if(p.expiry&&p.expiry<ktParisDay(Date.now()))whFail('DDM dépassée : contactez Basecamp.',409);
+   p.reception.checks={product:true,quantity:true,condition:true};krAddPart(o,it,p,user);
+  }
+  return krView(o,it,p);
+ });
+}
+function krPackage(o,b,user){
+ krAccess(user,o);const {it,p}=krFind(o,b.code),l=krStored(o,it,p);
+ if(!(p.reception?.validatedAt||o.restocked)||!l)whFail('Réception et contrôle requis avant le conditionnement.',409);
+ if(it.unit!=='g')whFail('Le conditionnement 2 / 5 / 10 g concerne les produits au gramme.');
+ const size=Number(b.size),count=Number(b.count),key=String(b.requestId||'');
+ if(![2,5,10].includes(size)||!Number.isSafeInteger(count)||count<1||count>500)whFail('Choisissez 2, 5 ou 10 g et entre 1 et 500 pochons.');
+ if(!/^[a-zA-Z0-9_-]{12,100}$/.test(key))whFail('Identifiant de conditionnement requis.');
+ const existing=(l.packages||[]).find(x=>x.id===key);if(existing){if(existing.size!==size||existing.count!==count)whFail('Ce conditionnement a déjà été enregistré avec un autre contenu.',409);return krPackageLabels(o,it,p,existing);}
+ if(!p.originKnown||!(p.ddm||p.expiry))whFail('Origine ou DDM manquante : faites compléter le lot par Basecamp.',409);
+ if(ktLotExpiry(l)&&ktLotExpiry(l)<ktParisDay(Date.now()))whFail('DDM dépassée : conditionnement bloqué.',409);
+ if(size*count>l.g-krPacked(l)+1e-8)whFail('Quantité supérieure au vrac disponible de ce lot.',409);
+ return krAtomic(o,()=>{const batch={id:key,size,count,remainingGrams:size*count,at:Date.now(),by:user.name||user.role};(l.packages||(l.packages=[])).push(batch);return krPackageLabels(o,it,p,batch);});
+}
+function krPackageLabels(o,it,p,batch){return {title:o.numero+' · '+it.name,kind:'client',labels:Array.from({length:batch.count},()=>({product:it.name,qty:batch.size,unit:'g',lot:p.franchiseCode,ddm:p.ddm||'',expiry:p.expiry||'',originKnown:p.originKnown===true})),batchId:batch.id};}
 
 // KT_SHIPPING_V2 — public Colissimo online domestic rates, verified 2026-09-25.
 function ktOrderSteps(){return warehouse.orderSteps||{version:0,grams:100,pouches:200,units:1,products:{}};}
@@ -1579,7 +1642,7 @@ function corsFor(req) {
 }
 function send(res, status, obj) {
   res.writeHead(status, Object.assign({ 'content-type': 'application/json; charset=utf-8' }, res._cors || COMMON_CORS));
-  res.end(JSON.stringify(obj, null, 2));
+  res.end(JSON.stringify(obj, res._hideSupplier ? function(k,v){if(k==='lot'&&this&&Array.isArray(this.warehouseLots))return this.warehouseLots.map(p=>p.franchiseCode||p.kingstonCode||'En attribution').join(', ');if(k==='code'&&this&&Object.prototype.hasOwnProperty.call(this,'supplierCode'))return undefined;return ['supplier','supplierCode','supplierLot','receiptId','receiptDate','franchiseCodeHistory'].includes(k)?undefined:v;} : null, 2));
 }
 /* --------------------------- Securite HTTP ---------------------------- */
 // En-tetes de securite poses sur TOUTES les reponses.
@@ -2848,6 +2911,7 @@ const server = http.createServer(async (req, res) => {
   // Authentification (prototype : un jeton -> un utilisateur avec role + boutique)
   const user = PG ? await PG.contextFromToken(req.headers['x-comptoir-token']) : sessionUser(req.headers['x-comptoir-token']);
   if (!user) return send(res, 401, { error: 'Session expirée ou invalide — reconnecte-toi.' });
+  res._hideSupplier=user.role!=='admin';
 
   // ---- Comptes VENDEURS : les onglets non autorises sont bloques ICI aussi, pas seulement caches a l'ecran ----
   if (user.kind === 'vendeur') {
@@ -4396,11 +4460,33 @@ const server = http.createServer(async (req, res) => {
         return send(res,200,{config:cfg,revision:crypto.createHash('sha256').update(JSON.stringify(cfg)).digest('hex'),products:allProProducts().filter(function(p){return !whService(p);}).map(function(p){return {id:p.id,name:p.name,unit:p.unit};})});
       }catch(e){return send(res,e.status||400,{error:e.message});}
     }
+    if(req.method==='GET'&&path==='/api/pro/receiving'){
+      if(PG)return send(res,503,{error:'Parcours de réception indisponible avec ce mode de stockage.'});
+      if(!['admin','manager'].includes(user.role))return send(res,403,{error:'Réservé au responsable boutique.'});
+      return send(res,200,{lots:krList(user)});
+    }
+    const krRoute=path.match(/^\/api\/pro\/orders\/(\d+)\/(receiving|package|package-labels|resolve-receiving)$/);
+    if(krRoute){try{
+      if(PG)whFail('Parcours de réception indisponible avec ce mode de stockage.',503);
+      const o=supplyOrders.find(o=>o.id===Number(krRoute[1]));if(!o)whFail('Commande introuvable.',404);krAccess(user,o);
+      if(req.method==='POST'&&krRoute[2]==='receiving')return send(res,200,{lot:krReceive(o,await readJson(req),user)});
+      if(req.method==='POST'&&krRoute[2]==='package')return send(res,200,krPackage(o,await readJson(req),user));
+      if(req.method==='POST'&&krRoute[2]==='resolve-receiving'){
+        if(user.role!=='admin')whFail('Réservé à Basecamp.',403);const b=await readJson(req),{it,p}=krFind(o,b.code),note=whText(b.note,500);
+        if(!p.reception?.issue||note.length<5)whFail('Anomalie et résolution documentée requises.');
+        krAtomic(o,()=>{(p.reception.resolutions||(p.reception.resolutions=[])).push({issue:p.reception.issue,note,at:Date.now(),by:user.name});p.reception.issue='';});return send(res,200,{lot:krView(o,it,p)});
+      }
+      if(req.method==='GET'&&krRoute[2]==='package-labels'){
+        const {it,p}=krFind(o,u.searchParams.get('code')),l=krStored(o,it,p),batch=l?.packages?.find(x=>x.id===u.searchParams.get('batch'));
+        if(!batch)whFail('Conditionnement introuvable.',404);return send(res,200,krPackageLabels(o,it,p,batch));
+      }
+      return send(res,405,{error:'Méthode invalide.'});
+    }catch(e){return send(res,e.status||400,{error:e.message});}}
     if(req.method==='GET'&&path==='/api/trace/lot'){
       const code=String(u.searchParams.get('code')||'').trim();if(!code)return send(res,400,{error:'Numéro de lot requis.'});
-      const rows=ktTrace(user,'').filter(r=>[r.franchiseCode,r.kingstonCode,r.supplierCode,r.lotId].includes(code));
+      const rows=ktTrace(user,'').filter(r=>(user.role==='admin'?[r.franchiseCode,r.kingstonCode,r.supplierCode,r.lotId]:[r.franchiseCode,r.kingstonCode]).includes(code));
       const sales=ktSalesTrace(user,code);if(!rows.length&&!sales.length)return send(res,404,{error:'Lot introuvable dans votre boutique.'});
-      return send(res,200,{rows,sales});
+      return send(res,200,{rows,sales,receiving:krList(user).filter(r=>[r.code,r.kingstonCode].includes(code))});
     }
     const labelRoute=path.match(/^\/api\/pro\/orders\/(\d+)\/labels$/);
     if(req.method==='GET'&&labelRoute){try{const o=supplyOrders.find(o=>o.id===Number(labelRoute[1]));if(!o)whFail('Commande introuvable.',404);return send(res,200,ktOrderLabels(o,user));}catch(e){return send(res,e.status||400,{error:e.message});}}
@@ -4423,7 +4509,7 @@ const server = http.createServer(async (req, res) => {
       var targetOrder=supplyOrders.find(function(o){return o.id===Number(ktLotEditRoute[1]);});if(!targetOrder)return send(res,404,{error:'Commande introuvable'});
       return send(res,409,{error:'Les numéros de lot franchise sont attribués automatiquement et ne sont plus modifiables.'});
     }
-    if(req.method==='GET'&&path==='/api/pro/notifications'){if(user.role!=='manager'||!user.boutiqueId)return send(res,403,{error:'Réservé à la boutique connectée.'});return send(res,200,{notifications:ktOrderNotifications(user)});}
+    if(req.method==='GET'&&path==='/api/pro/notifications'){if(user.role!=='manager'||!user.boutiqueId)return send(res,403,{error:'Réservé à la boutique connectée.'});return send(res,200,{notifications:ktOrderNotifications(user),receivingCount:krList(user).filter(r=>r.ready&&!r.received).length});}
     if(req.method==='GET'&&path==='/api/pro/trace'){if(user.role!=='admin'&&user.role!=='manager')return send(res,403,{error:'Acces refuse'});return send(res,200,{rows:ktTrace(user,u.searchParams.get('q'))});}
     if (path === '/api/pro/inventory' || path.indexOf('/api/pro/inventory/') === 0) {
       if (user.role !== 'admin') return send(res, 403, { error: 'Reserve a l administrateur reseau.' });
@@ -4466,7 +4552,7 @@ const server = http.createServer(async (req, res) => {
       const list = src.map((p) => {
         const pi = proUnitInfo(p);
         const retail = p.unit === 'g' ? ((p.tiers && p.tiers[0]) ? p.tiers[0][1] : 0) : (p.price || 0);
-        const row = { id: p.id, name: p.name, cat: p.cat, img: p.img || '', unit: p.unit, pro: pi ? pi.price : null, proUnit: pi ? pi.unit : 'u', step: ktOrderStep(p), retail: usePro ? null : retail, lot: proLots[p.id] || '', stock: whAvailable(p.id) };
+        const row = { id: p.id, name: p.name, cat: p.cat, img: p.img || '', unit: p.unit, pro: pi ? pi.price : null, proUnit: pi ? pi.unit : 'u', step: ktOrderStep(p), retail: usePro ? null : retail, lot: user.role==='admin'?(proLots[p.id] || ''):'', stock: whAvailable(p.id) };
         if (user.role === 'admin' && proBuyPrice[p.id] != null) row.buyPrice = proBuyPrice[p.id];   // prix d'achat : ADMIN uniquement
         return row;
       });
@@ -4826,6 +4912,8 @@ const server = http.createServer(async (req, res) => {
       else if (user.role !== 'admin') return send(res, 403, { error: 'Réservé à l\'administrateur réseau' });
       if (o.status === 'annulee') return send(res,409,{error:'Commande annulee : creez un nouveau reassort.'});
       if(b.expectedStatus!=null&&b.expectedStatus!==o.status)return send(res,409,{error:'Le statut a changé. La liste va être actualisée.'});
+      if(b.status==='recue'&&!o.restocked)return send(res,409,{error:'Utilisez le parcours Réception des lots : réception physique puis contrôle.'});
+      if(krEntries(o).some(x=>x.p.reception?.arrivedAt)&&b.status!=='recue')return send(res,409,{error:'Réception boutique commencée : les lots et quantités sont verrouillés.'});
       if(o.restocked&&b.status!=='recue')return send(res,409,{error:'Commande déjà réceptionnée : son statut est définitif.'});
       // Verifier tous les ajustements avant de toucher au statut ou aux reservations.
       if(user.role!=='admin'&&Array.isArray(b.items))return send(res,403,{error:'Les quantités proviennent automatiquement de la commande.'});
