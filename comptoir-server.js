@@ -4484,10 +4484,17 @@ const server = http.createServer(async (req, res) => {
       if(!['admin','manager'].includes(user.role))return send(res,403,{error:'Réservé au responsable boutique.'});
       return send(res,200,{lots:krList(user)});
     }
-    const krRoute=path.match(/^\/api\/pro\/orders\/(\d+)\/(receiving|receive-all|package|package-labels|resolve-receiving)$/);
+    const krRoute=path.match(/^\/api\/pro\/orders\/(\d+)\/(receiving|receive-all|issue-order|package|package-labels|resolve-receiving)$/);
     if(krRoute){try{
       if(PG)whFail('Parcours de réception indisponible avec ce mode de stockage.',503);
       const o=supplyOrders.find(o=>o.id===Number(krRoute[1]));if(!o)whFail('Commande introuvable.',404);krAccess(user,o);
+      if(req.method==='POST'&&krRoute[2]==='issue-order'){
+        const b=await readJson(req),message=whText(b.message,500),pending=krEntries(o).filter(x=>!x.p.reception?.validatedAt);
+        if(!krReady(o)||o.restocked||!pending.length)whFail('Aucune réception en attente pour cette commande.',409);
+        if(message.length<5)whFail('Décrivez le problème constaté.');
+        krAtomic(o,()=>{for(const {p} of pending){p.reception=p.reception||{};p.reception.arrivedAt=p.reception.arrivedAt||Date.now();p.reception.issue=message;p.reception.issueAt=Date.now();p.reception.issueBy=user.name||user.role;}});
+        return send(res,200,{ok:true});
+      }
       if(req.method==='POST'&&krRoute[2]==='receive-all')return send(res,200,krReceiveOrder(o,await readJson(req),user));
       if(req.method==='POST'&&krRoute[2]==='receiving')return send(res,200,{lot:krReceive(o,await readJson(req),user)});
       if(req.method==='POST'&&krRoute[2]==='package')return send(res,200,krPackage(o,await readJson(req),user));
@@ -4529,7 +4536,7 @@ const server = http.createServer(async (req, res) => {
       var targetOrder=supplyOrders.find(function(o){return o.id===Number(ktLotEditRoute[1]);});if(!targetOrder)return send(res,404,{error:'Commande introuvable'});
       return send(res,409,{error:'Les numéros de lot franchise sont attribués automatiquement et ne sont plus modifiables.'});
     }
-    if(req.method==='GET'&&path==='/api/pro/notifications'){if(user.role!=='manager'||!user.boutiqueId)return send(res,403,{error:'Réservé à la boutique connectée.'});return send(res,200,{notifications:ktOrderNotifications(user),receivingCount:krList(user).filter(r=>r.ready&&!r.received).length});}
+    if(req.method==='GET'&&path==='/api/pro/notifications'){if(user.role!=='manager'||!user.boutiqueId)return send(res,403,{error:'Réservé à la boutique connectée.'});return send(res,200,{notifications:ktOrderNotifications(user),receivingCount:new Set(krList(user).filter(r=>r.ready&&!r.received).map(r=>r.orderId)).size});}
     if(req.method==='GET'&&path==='/api/pro/trace'){if(user.role!=='admin'&&user.role!=='manager')return send(res,403,{error:'Acces refuse'});return send(res,200,{rows:ktTrace(user,u.searchParams.get('q'))});}
     if (path === '/api/pro/inventory' || path.indexOf('/api/pro/inventory/') === 0) {
       if (user.role !== 'admin') return send(res, 403, { error: 'Reserve a l administrateur reseau.' });
