@@ -4822,17 +4822,44 @@ function ktOrderStage(el){
     });
     return {items:items, note:(document.getElementById('po-note')||{}).value||''};
   }
+// KT_NETWORK_LOTS_20261005 : consultation réseau, sans mutation des stocks.
+var ktNetworkLots={rows:[],loaded:false,busy:false,query:'',boutique:'',filter:'active'};
+function ktNetworkLotState(r){if(r.status==='annulee')return 'Annulé';if(r.status==='attente')return 'Paiement en attente';if(r.issue)return 'Anomalie réception';if(r.received)return r.stockQty===0?'Épuisé':'En stock boutique';return proStatusLabel(r.status);}
+function ktNetworkLotsLoad(){
+ if((st.user||{}).role!=='admin'||ktNetworkLots.busy)return;
+ var host=document.getElementById('kt-network-lots');if(!host)return;
+ ktNetworkLots.busy=true;host.innerHTML='<p role="status">Chargement des lots de toutes les boutiques…</p>';
+ apiGet('/api/pro/network-lots').then(function(d){if((st.user||{}).role!=='admin')return;ktNetworkLots.rows=d.rows||[];ktNetworkLots.loaded=true;ktNetworkLotsRender();}).catch(function(e){if(!host.isConnected)return;host.innerHTML='<p role="alert">'+esc(e.message)+'</p><button class="btn" data-act="kt-network-refresh">Réessayer</button>';}).finally(function(){ktNetworkLots.busy=false;});
+}
+function ktNetworkLotsRender(){
+ var host=document.getElementById('kt-network-lots');if(!host||(st.user||{}).role!=='admin')return;
+ var shops={};ktNetworkLots.rows.forEach(function(r){shops[r.boutiqueId]=r.boutique;});
+ host.innerHTML='<div class="kt-pro-intro"><div><h2 style="margin:0">Lots de toutes les boutiques</h2><p class="muted">Du lot boutique à son origine fournisseur. Les lots épuisés restent dans l’historique.</p></div><button class="btn" data-act="kt-network-refresh">Actualiser</button></div><div style="display:flex;flex-wrap:wrap;gap:12px;margin-bottom:18px"><label style="flex:2;min-width:200px">Rechercher<input id="kt-network-search" type="search" value="'+esc(ktNetworkLots.query)+'" placeholder="Produit, lot boutique, lot Basecamp, fournisseur, commande…" style="display:block;width:100%;padding:10px"></label><label>Boutique<select id="kt-network-shop" style="display:block;padding:10px"><option value="">Toutes les boutiques</option>'+Object.keys(shops).sort(function(a,b){return shops[a].localeCompare(shops[b]);}).map(function(id){return '<option value="'+esc(id)+'" '+(id===ktNetworkLots.boutique?'selected':'')+'>'+esc(shops[id])+'</option>';}).join('')+'</select></label><label>Afficher<select id="kt-network-filter" style="display:block;padding:10px">'+[['active','Lots en cours'],['stock','En stock boutique'],['pending','À préparer / à réceptionner'],['issue','Anomalies'],['all','Tous, y compris épuisés et annulés']].map(function(a){return '<option value="'+a[0]+'" '+(a[0]===ktNetworkLots.filter?'selected':'')+'>'+a[1]+'</option>';}).join('')+'</select></label></div><div id="kt-network-results"></div>';
+ ['search','shop','filter'].forEach(function(k){document.getElementById('kt-network-'+k).addEventListener(k==='search'?'input':'change',function(e){ktNetworkLots[k==='search'?'query':k==='shop'?'boutique':'filter']=e.target.value;ktNetworkLotsRows();});});ktNetworkLotsRows();
+}
+function ktNetworkLotsRows(){
+ var el=document.getElementById('kt-network-results');if(!el)return;var s=ktNetworkLots,q=s.query.trim().toLowerCase();
+ var rows=s.rows.filter(function(r){var live=!['attente','annulee'].includes(r.status),hasStock=r.received&&(r.stockQty===null||r.stockQty>0);return (!s.boutique||r.boutiqueId===s.boutique)&&(!q||[r.product,r.boutique,r.order,r.franchiseCode,r.kingstonCode,r.supplierCode,r.supplier].join(' ').toLowerCase().includes(q))&&(s.filter==='all'||s.filter==='issue'&&r.issue||s.filter==='stock'&&live&&hasStock||s.filter==='pending'&&live&&!r.received||s.filter==='active'&&live&&(!r.received||hasStock||r.issue));});
+ el.innerHTML='<p class="muted" role="status">'+rows.length+' lot(s) affiché(s)</p><div style="overflow-x:auto"><table class="tbl"><thead><tr><th>Boutique / produit</th><th>Lot boutique</th><th>État / quantités</th><th>Origine</th><th>DDM</th><th></th></tr></thead><tbody>'+rows.map(function(r){return '<tr><td><b>'+esc(r.boutique)+'</b><br>'+esc(r.product)+'<br><small>'+esc(r.order)+'</small></td><td style="overflow-wrap:anywhere"><b>'+esc(r.franchiseCode||'Généré après paiement')+'</b></td><td><span class="tag">'+esc(ktNetworkLotState(r))+'</span><br>Attribué : '+esc(r.qty)+' '+esc(r.unit)+(r.received?'<br>Restant : '+(r.stockQty===null?'Non identifié':esc(r.stockQty)+' '+esc(r.stockUnit)):'<br>Pas encore ajouté au stock')+(r.issue?'<p role="alert">'+esc(r.issue)+'</p>':'')+'</td><td style="overflow-wrap:anywhere">Basecamp : <b>'+esc(r.kingstonCode||'Origine historique inconnue')+'</b><br>Fournisseur : '+esc(r.supplier||'Non renseigné')+'<br>Lot : '+esc(r.supplierCode||'Non renseigné')+'</td><td>'+esc(ktDdmText(r))+'</td><td>'+(r.lotId?'<button class="btn" data-act="kt-network-origin" data-id="'+esc(r.lotId)+'">Lot d’origine</button>':'')+(r.franchiseCode?'<button class="btn" data-act="kt-trace" data-code="'+esc(r.franchiseCode)+'">Historique & ventes</button>':'')+'</td></tr>';}).join('')+'</tbody></table></div>'+(!rows.length?'<p>Aucun lot pour ces filtres. Choisissez « Tous » pour consulter également l’historique.</p>':'');
+}
+function ktNetworkOrigin(id){
+ if((st.user||{}).role!=='admin')return;
+ apiGet('/api/pro/inventory/lot?id='+encodeURIComponent(id)).then(function(d){var l=d.lot||{},p=d.product||{};
+ openModal('<div class="modal-h">Lot d’origine · '+esc(l.kingstonCode||l.code)+'</div><div class="modal-b"><h3>'+esc(p.name)+'</h3><p>Fournisseur : <b>'+esc(l.supplier||'Non renseigné')+'</b><br>Lot fournisseur : <b>'+esc(l.code||'Non renseigné')+'</b><br>Lot Basecamp : <b>'+esc(l.kingstonCode||'Non attribué')+'</b><br>Réception : '+esc(l.received||'Non renseignée')+'<br>DDM : '+esc(ktDdmText(l))+'<br>Quantité initiale : '+esc(l.initial)+' '+esc(p.unit)+' · Restant Basecamp : '+esc(l.qty)+' '+esc(p.unit)+'</p><h3>Toutes les boutiques liées à ce lot</h3>'+(d.distributions||[]).map(function(r){return '<section class="kr-card"><b>'+esc(r.boutique)+' · '+esc(r.product||p.name)+'</b><p>'+esc(r.order)+' · '+esc(proStatusLabel(r.status))+'<br>Lot boutique : '+esc(r.franchiseCode||'En attente')+' · '+esc(r.qty)+' '+esc(r.unit)+'</p>'+(r.franchiseCode?'<button class="btn" data-act="kt-trace" data-code="'+esc(r.franchiseCode)+'">Historique & ventes</button>':'')+'</section>';}).join('')+(!(d.distributions||[]).length?'<p>Aucune distribution enregistrée.</p>':'')+'<h3>Mouvements Basecamp</h3>'+(d.movements||[]).map(function(m){return '<p>'+esc(m.date)+' · '+esc(m.type)+' · '+esc(m.delta==null?'—':m.delta)+' '+esc(p.unit)+'<br><small>'+esc(m.reason||'')+'</small></p>';}).join('')+'<button class="btn" data-act="closemodal">Fermer</button></div>');
+ }).catch(function(e){toast(e.message);});
+}
+
 // KT_TWO_SPACES_20261005 — Parcours réassort : on conserve les composants métier et le menu global.
 var ktProPanel={scope:'',key:''};
 var ktProCss='<style id="kt-pro-workbench-css">.kt-pro-tabs{display:flex;gap:8px;flex-wrap:wrap;margin:14px 0 22px}.kt-pro-tabs button{min-height:44px}.kt-pro-tabs button[aria-selected="true"]{background:#29291f;color:#f3d583;border-color:#29291f}.kt-pro-panel[hidden]{display:none!important}.kt-order-rail{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:7px;margin:18px 0 22px}.kt-order-step{border-top:3px solid #ddd9ce;padding:11px 8px;color:#77766c;font-size:12px}.kt-order-step b{display:block;margin-bottom:4px;font:600 13px/1.45 system-ui,sans-serif}.kt-order-step.done{border-color:#316b48;color:#285438}.kt-order-step.current{border-color:#b38c30;color:#322c1c;background:#f7f3e8;border-radius:0 0 6px 6px}.kt-pro-intro{padding:18px 20px;border:1px solid var(--line);background:#fff;border-radius:12px;margin-bottom:18px;display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap}.kt-pro-intro p{margin:5px 0 0}.kt-pro-panel{min-width:0}.kt-pro-orders-wrap{overflow-x:auto}.kt-pro-panel h2{font-family:var(--serif)}.kt-order-next{background:#f5f6f0;border-radius:12px;padding:18px;margin:16px 0}.kt-order-next h3{margin:0 0 8px}.kt-order-next .btn{white-space:normal}.kt-order-rail+.kr-facts{margin-top:12px}@media(max-width:620px){.kt-order-rail{grid-template-columns:1fr;gap:3px}.kt-order-step{border-top:0;border-left:3px solid #ddd9ce;padding:7px 10px}.kt-order-step b{display:inline;margin-right:6px}.kt-pro-tabs{gap:6px}.kt-pro-tabs .btn{flex:1 1 130px;padding:9px}.kt-pro-intro{padding:15px}}</style>';
-function ktProPanelChoices(){return (st.user||{}).role==='admin'?[['stock','Stock & réceptions'],['orders','Commandes réseau'],['catalogue','Catalogue de réassort'],['network','Boutiques & accès']]:[['catalogue','Commander'],['orders','Mes commandes'],['receiving','Réceptions & étiquettes']];}
+function ktProPanelChoices(){return (st.user||{}).role==='admin'?[['stock','Stock & réceptions'],['orders','Commandes réseau'],['lots','Lots du réseau'],['catalogue','Catalogue de réassort'],['network','Boutiques & accès']]:[['catalogue','Commander'],['orders','Mes commandes'],['receiving','Réceptions & étiquettes']];}
 function ktProScope(){var u=st.user||{};return [u.role,u.boutiqueId||'',u.uname||u.name||''].join('|');}
 function ktProSelect(key){
  var choices=ktProPanelChoices();if(!choices.some(function(x){return x[0]===key;}))return;
  ktProPanel={scope:ktProScope(),key:key};
  document.querySelectorAll('[data-act="kt-pro-panel"]').forEach(function(b){b.setAttribute('aria-selected',String(b.dataset.panel===key));});
  document.querySelectorAll('[data-pro-panel]').forEach(function(p){p.hidden=p.dataset.proPanel!==key;});
- if(key==='receiving')krLoad();
+ if(key==='receiving')krLoad();if(key==='lots')ktNetworkLotsLoad();
 }
 function ktOrderRail(o){
  if(!o)return '';
@@ -4859,6 +4886,8 @@ function ktProWorkbench(){
  var result=ktProCss+'<div class="kt-pro-tabs" role="tablist" aria-label="Parcours de réassort">'+choices.map(function(c){return '<button type="button" class="btn" id="kt-pro-tab-'+c[0]+'" role="tab" data-act="kt-pro-panel" data-panel="'+c[0]+'" aria-controls="kt-pro-'+c[0]+'" aria-selected="'+(c[0]===ktProPanel.key)+'">'+c[1]+'</button>';}).join('')+(!admin?'<button class="btn" data-act="kr-stock">Voir mon stock boutique ↗</button>':'')+'</div>';
  if(admin)result+=panel('stock','<div class="kt-pro-intro"><div><h2 style="margin:0">Inventaire Basecamp</h2><p class="muted">Réception fournisseur → lot interne → stock disponible → commandes des franchises.</p></div></div><div id="pro-stockmgr">Chargement du stock…</div>');
  result+=panel('catalogue',catalogue)+panel('orders',orders);
+ if(admin)result+=panel('lots','<div id="kt-network-lots">Chargement des lots…</div>');
+ if(admin&&ktProPanel.key==='lots')setTimeout(ktNetworkLotsLoad,0);
  if(admin)result+=panel('network','<h2>Boutiques du réseau</h2><div id="pro-net" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:12px"></div><h2 style="margin-top:24px">Accès au réassort</h2><div id="pro-access" class="card" style="padding:14px"></div>');
  else result+=panel('receiving','<div id="kr-home">Chargement de vos réceptions…</div>');
  return result;
@@ -5779,6 +5808,8 @@ function ktProWorkbench(){
     if(a==='kt-fr-save'){ktSaveFranchiseLot(el);return;}
     if(a==='pro-open'){ openProOrder(el.getAttribute('data-id')); return; }
     if(a==='pro-rupture'){ var rpid=el.getAttribute('data-pid'); var rq=document.getElementById('poq-'+rpid), rn=document.getElementById('pon-'+rpid); if(rq)rq.value=0; if(rn&&!rn.value.trim())rn.value='Rupture de stock'; return; }
+    if(a==='kt-network-refresh'){ktNetworkLotsLoad();return;}
+    if(a==='kt-network-origin'){ktNetworkOrigin(el.dataset.id);return;}
     if(a==='kt-pro-panel'){ktProSelect(el.dataset.panel);return;}
     if(a==='kt-order-stage'){ktOrderStage(el);return;}
     if(a==='kt-pro-prepare'){var prep=proCollect();if(!prep||!proData.cur)return;prep.status='preparation';el.disabled=true;apiPost('/api/pro/orders/'+proData.cur.id+'/status',prep).then(function(){closeModal();toast('Commande en préparation · la franchise sera informée');proData.loaded=false;proData.loading=false;loadPro();}).catch(function(e){el.disabled=false;toast(e.message);});return;}
