@@ -4431,9 +4431,9 @@ const server = http.createServer(async (req, res) => {
       const p=products.find(p=>p.id===pid),l=p?.lots.find(l=>l.code===u.searchParams.get('code'));
       if(!p||!l)return send(res,409,{error:'Lot indisponible, périmé ou sans numéro. Actualisez la liste.'});
       const size=Number(u.searchParams.get('size')),count=Number(u.searchParams.get('count'));
-      if(!(p.unit==='g'?[2,5,10].includes(size):size===1)||!Number.isSafeInteger(count)||count<1||count>500)return send(res,400,{error:'Format ou nombre d’étiquettes invalide (1 à 500).'});
+      if(!(p.unit==='g'?(bc?[100,2,5,10]:[2,5,10]).includes(size):size===1)||!Number.isSafeInteger(count)||count<1||count>500)return send(res,400,{error:'Format ou nombre d’étiquettes invalide (1 à 500).'});
       if(size*count>l.qty+1e-8)return send(res,409,{error:'Le nombre demandé dépasse la quantité disponible de ce lot.'});
-      return send(res,200,{title:p.name,kind:'client',labels:Array.from({length:count},()=>({product:p.name,qty:size,unit:p.unit,lot:l.code,ddm:l.ddm,expiry:l.expiry,originKnown:l.originKnown})),printOnly:true});
+      return send(res,200,{title:p.name,kind:bc&&size===100?'franchise':'client',labels:Array.from({length:count},()=>({product:p.name,qty:size,unit:p.unit,lot:l.code,kingstonLot:l.code,prelabel:bc&&size===100,ddm:l.ddm,expiry:l.expiry,originKnown:l.originKnown})),printOnly:true});
     }
 
     if(path==='/api/stock/count'){
