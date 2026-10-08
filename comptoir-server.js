@@ -5255,6 +5255,41 @@ if (!PG) {
   if (SELLER.siren === '000000000') console.log('ATTENTION : SIREN/TVA non renseignes. Definir COMPTOIR_SELLER_SIREN / _VAT avant toute facture reelle.');
   if (sealed) console.log('Conformite : ' + sealed + ' facture(s) historique(s) scellee(s) en HMAC.');
 }
+
+// KT_HISTORICAL_LOTS_20261008 — one-time numbering, never a stock reset.
+function ktNumberHistoricalStock(){
+ if(PG||warehouse.migrations?.historicalLots20261008)return;
+ const before={stock:JSON.parse(JSON.stringify(stock)),warehouse:JSON.parse(JSON.stringify(warehouse))};
+ const at=new Date().toISOString(),day=ktParisDay(Date.now()).slice(2).replace(/-/g,''),used=new Set();let seq=0,count=0;
+ for(const sk of Object.values(stock))for(const s of Object.values(sk||{}))for(const l of [...(s.lots||[]),...(s.unitLots||[])])if(l.lot)used.add(l.lot);
+ for(const l of warehouse.lots)if(l.kingstonCode)used.add(l.kingstonCode);
+ function code(b){let c;do{c='HIST-'+String(b).normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]/gi,'').slice(0,12).toUpperCase()+'-'+day+'-'+String(++seq).padStart(4,'0');}while(used.has(c));used.add(c);return c;}
+ try{
+  for(const [bId,sk] of Object.entries(stock))for(const [pid,s] of Object.entries(sk||{})){
+   for(const l of [...(s.lots||[]),...(s.unitLots||[])])if((l.g>0||l.qty>0)&&!String(l.lot||'').trim()){
+    l.lot=code(bId);l.historicalNumberedAt=at;l.historicalOrigin='Stock existant — origine fournisseur non renseignée';count++;
+   }
+   if(typeof s.units==='number'){
+    const q=Math.round((s.units-(s.unitLots||[]).reduce((n,l)=>n+(Number(l.qty)||0),0))*1000)/1000;
+    if(q>0){if(!Array.isArray(s.unitLots))s.unitLots=[];s.unitLots.push({lot:code(bId),qty:q,exp:'',originKnown:false,historicalNumberedAt:at,historicalOrigin:'Stock existant — origine fournisseur non renseignée'});count++;}
+   }
+  }
+  for(const l of warehouse.lots)if(l.qty>0&&!l.kingstonCode){ktInternal(l);l.historicalNumberedAt=at;count++;}
+  for(const [pid,total] of Object.entries(proStock)){
+   const qty=whLegacy(pid);if(!(qty>0))continue;
+   const lot={id:whId(),pid,code:'',qty,initial:qty,buy:proBuyPrice[pid]==null?null:proBuyPrice[pid],received:'',expiry:'',ddm:'',supplier:'',reference:'Reprise du stock historique Basecamp',manual:true,historicalNumberedAt:at};
+   warehouse.lots.push(lot);ktInternal(lot);count++;
+  }
+  warehouse.migrations=warehouse.migrations||{};warehouse.migrations.historicalLots20261008={at,count,description:'Numérotation uniquement ; quantités, DDM et lots déjà numérotés conservés.'};
+  warehouse.revision++;
+  // Required backup, separate from the rotating daily backups.
+  if(fs.existsSync(DATA_FILE))fs.copyFileSync(DATA_FILE,DATA_FILE+'.before-historical-lots-'+Date.now()+'.bak',fs.constants.COPYFILE_EXCL);
+  writeDataFileNow();
+  console.log('Numérotation des stocks historiques enregistrée : '+count+' lot(s).');
+ }catch(e){stock=before.stock;warehouse=before.warehouse;throw e;}
+}
+
+if(!PG)ktNumberHistoricalStock();
 server.listen(PORT, () => {
   console.log('Comptoir API en ecoute sur http://localhost:' + PORT + '  | fidelite : ' + LOYALTY_MODE);
   console.log('Conformite caisse (NF525) : ' + fiscalEvents.length + ' evenement(s) scelle(s), Grand Total perpetuel = ' + gtPerpetuel.toFixed(2) + ' EUR.');
