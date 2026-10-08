@@ -3387,7 +3387,7 @@ document.addEventListener('click',function(e){var eye=e.target.closest('[data-da
   function posGrid(){
     var q=(st.posSearch||'').toLowerCase();
     var editing=posEditing();
-    var html=posSorted(products.filter(function(p){return (st.cat==='Tout'||p.cat===st.cat)&&(!q||p.name.toLowerCase().indexOf(q)>=0);})).map(function(p){
+    var html=posSorted(products.filter(function(p){return (p.unit==='g'?totalStockG(p):Number(p.stockU))>0&&(st.cat==='Tout'||p.cat===st.cat)&&(!q||p.name.toLowerCase().indexOf(q)>=0);})).map(function(p){
       var stock=p.unit==='g'?totalStockG(p)+' g':p.stockU+' u';
       var out=p.unit==='g'?totalStockG(p)<=0:p.stockU<=0;
       return '<div class="pcard '+(out?'dis':'')+'" data-act="'+(out?'rupture':'pick')+'" data-id="'+p.id+'">'+(editing?'<div class="pc-handle" title="Glisser pour déplacer">⠿</div>':'')+
@@ -3395,7 +3395,7 @@ document.addEventListener('click',function(e){var eye=e.target.closest('[data-da
         '<div class="pc-cat">'+p.cat+'</div><div class="pc-name">'+esc(p.name)+'</div><div class="pc-cbd">'+esc(p.cbd)+'</div>'+(out?'<div class="pc-rupture">Plus de stock — saisir du nouveau stock</div>':'')+
         ktPosLotSummary(p)+'<div class="pc-foot"><span class="pc-price">'+(p.unit==='g'?'dès ':'')+eur(entryPrice(p))+'</span><span class="pc-stock">'+(out?'⛔ Plus de stock':stock)+'</span></div></div>';
     }).join('');
-    return html||'<div class="tk-empty" style="grid-column:1/-1">Aucun produit pour cette recherche.</div>';
+    return html||'<div class="tk-empty" style="grid-column:1/-1">Aucun produit en stock pour cette sélection.</div>';
   }
   function viewPos(){
     var cats=['Tout','Fleurs','King','Accessoire','Collector'];
