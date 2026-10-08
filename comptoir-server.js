@@ -4409,6 +4409,33 @@ const server = http.createServer(async (req, res) => {
     // Entrée de stock avec un NUMÉRO DE LOT choisi (produit entrant / arrivage). Admin ou manager (sa boutique).
     // ---- Ajustement manuel du stock : motif OBLIGATOIRE, mouvement trace (persiste + JET) ----
 
+
+    // KT_QUICK_PRODUCT_LABELS_20261008 : printing only, no inventory mutation.
+    if(req.method==='GET'&&path==='/api/stock/product-labels'){
+      if(!['admin','manager'].includes(user.role))return send(res,403,{error:'Réservé au personnel.'});
+      const bc=u.searchParams.get('scope')==='basecamp';if(bc&&user.role!=='admin')return send(res,403,{error:'Réservé à Basecamp.'});
+      const bId=user.role==='admin'?(u.searchParams.get('boutiqueId')||'aix'):user.boutiqueId;
+      const catalog=bc?allProProducts():allCatalog().filter(p=>!p.boutiqueId||p.boutiqueId===bId);
+      const products=catalog.map(p=>{
+        const x=(stock[bId]||{})[p.id]||{};
+        const source=bc?whLots(p.id):(p.unit==='g'?x.lots||[]:x.unitLots||[]);
+        const groups={};for(const l of source){const qty=bc?l.qty:p.unit==='g'?l.g:l.qty,code=bc?l.kingstonCode:l.lot,expiry=bc?l.expiry:ktLotExpiry(l);
+          if(!(qty>0)||!code||(expiry&&expiry<ktParisDay(Date.now())))continue;
+          if(!groups[code])groups[code]={code,qty:0,ddm:l.ddm||'',expiry:expiry||'',originKnown:bc?!!l.receiptId:l.originKnown===true};
+          if(groups[code].expiry!==(expiry||''))groups[code].ambiguous=true;
+          groups[code].qty+=qty;
+        }
+        return {id:p.id,name:p.name,unit:p.unit,lots:Object.values(groups).filter(l=>!l.ambiguous)};
+      }).filter(p=>p.lots.length);
+      const pid=u.searchParams.get('productId');if(!pid)return send(res,200,{products});
+      const p=products.find(p=>p.id===pid),l=p?.lots.find(l=>l.code===u.searchParams.get('code'));
+      if(!p||!l)return send(res,409,{error:'Lot indisponible, périmé ou sans numéro. Actualisez la liste.'});
+      const size=Number(u.searchParams.get('size')),count=Number(u.searchParams.get('count'));
+      if(!(p.unit==='g'?[2,5,10].includes(size):size===1)||!Number.isSafeInteger(count)||count<1||count>500)return send(res,400,{error:'Format ou nombre d’étiquettes invalide (1 à 500).'});
+      if(size*count>l.qty+1e-8)return send(res,409,{error:'Le nombre demandé dépasse la quantité disponible de ce lot.'});
+      return send(res,200,{title:p.name,kind:'client',labels:Array.from({length:count},()=>({product:p.name,qty:size,unit:p.unit,lot:l.code,ddm:l.ddm,expiry:l.expiry,originKnown:l.originKnown})),printOnly:true});
+    }
+
     if(path==='/api/stock/count'){
       if(!['admin','manager'].includes(user.role))return send(res,403,{error:'Réservé au personnel autorisé.'});
       if(PG)return send(res,503,{error:'Comptage indisponible sur ce stockage.'});
