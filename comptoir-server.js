@@ -3585,23 +3585,9 @@ const server = http.createServer(async (req, res) => {
       return send(res, 200, Object.assign({ ok: true, hideBase: true, lastSync: lastWooSync }, r));
     }
 
-    // Réapprovisionner TOUT le catalogue avec un stock par défaut (boutique courante). Admin/manager.
+    // KT_NO_BULK_RESTOCK_20261008 : old clients must never overwrite real inventory.
     if (req.method === 'POST' && path === '/api/stock/restock-all') {
-      if (user.role !== 'admin' && user.role !== 'manager') return send(res, 403, { error: 'Réservé au personnel' });
-      const b = await readJson(req);
-      const bId = user.role === 'admin' ? (b.boutiqueId || 'aix') : user.boutiqueId;
-      const qty = Number(b.qty) > 0 ? Math.floor(Number(b.qty)) : 500;
-      if (!stock[bId]) stock[bId] = {};
-      let n = 0;
-      const lot = 'RESTOCK-' + new Date().toISOString().slice(0, 10);
-      for (const p of allCatalog()) {
-        if (p.boutiqueId && p.boutiqueId !== bId) continue;   // ne restocke pas les produits des autres boutiques
-        if (p.unit === 'g') stock[bId][p.id] = { lots: [{ lot: lot, g: qty, exp: '2099-01' }] };
-        else stock[bId][p.id] = { units: qty };
-        n++;
-      }
-      persist();
-      return send(res, 200, { ok: true, restocked: n, boutique: bId, qty: qty });
+      return send(res, 410, { error: 'Le réapprovisionnement global est désactivé. Ouvrez Stock, choisissez un produit et saisissez la quantité réellement restante. Pour une livraison Basecamp, validez la réception de la commande.' });
     }
 
     const mC = path.match(/^\/api\/customers\/(.+)$/);
