@@ -586,6 +586,7 @@ function ktEditFranchiseLot(order,b,user){
  var it=order.items.find(function(x){return x.productId===b.productId;}),index=Number(b.partIndex),part=it&&Number.isInteger(index)&&(it.warehouseLots||[])[index];
  if(!part||part.qty<=0||part.id!==(b.lotId||null))whFail('Attribution de lot introuvable. Rechargez la commande.',409);
  if(String(b.previousCode||'')!==String(part.franchiseCode||''))whFail('Le numéro a changé. Rechargez la commande.',409);
+ if(part.kingstonCode&&part.franchiseCode===part.kingstonCode)whFail('Le numéro Kingston est commun à Basecamp et aux boutiques et ne peut pas être modifié ici.',409);
  var code=String(b.code||'').trim(),reason=whText(b.reason,300);
  if(!/^[A-Za-z0-9][A-Za-z0-9._/-]{0,79}$/.test(code))whFail('Numéro requis : 1 à 80 caractères, lettres, chiffres, points, tirets, / ou _.');
  if(!reason)whFail('Indiquez le motif du changement.');
@@ -608,10 +609,10 @@ function ktNextFranchiseCode(o){
 }
 function ktFranchiseLots(o){
  (o.items||[]).forEach(it=>(it.warehouseLots||[]).forEach(part=>{
-  if(!part.franchiseCode)part.franchiseCode=ktNextFranchiseCode(o);
   const parent=warehouse.lots.find(l=>l.id===part.id);
   // Capture provenance once, retain it even after the source lot is exhausted.
   if(parent&&!part.originKnown){Object.assign(part,{kingstonCode:ktInternal(parent),supplierCode:parent.code,supplier:parent.supplier,ddm:parent.ddm||'',expiry:parent.expiry||'',receiptId:parent.receiptId||'',receiptDate:parent.received||'',originKnown:true});}
+  if(!part.franchiseCode)part.franchiseCode=part.kingstonCode||ktNextFranchiseCode(o);
   if(!parent&&!part.originKnown)part.originKnown=false;
  }));
 }
@@ -622,7 +623,7 @@ function ktTakeRetail(s,qty,unit,lotCode){
  const allLots=unit==='g'?(s.lots||[]):(s.unitLots||[]);
  const selected=lotCode!=null;
  if(selected&&(typeof lotCode!=='string'||!lotCode.trim()))throw new Error('Numéro de lot invalide');
- const lots=selected?allLots.filter(l=>(l.lot||'__KT_LEGACY__')===lotCode):allLots;
+ const lots=selected?allLots.filter(l=>(l.lot||'__KT_LEGACY__')===lotCode||(l.aliases||[]).includes(lotCode)):allLots;
  if(selected&&!lots.length&&!(unit==='u'&&lotCode==='__KT_LEGACY__'))throw new Error('Lot inconnu pour ce produit dans cette boutique');
  const pool=(selected&&lotCode!=='__KT_LEGACY__')||unit==='g'?0:Math.max(0,s.units-allLots.reduce((a,l)=>a+l.qty,0));
  const available=lots.filter(l=>!ktLotExpiry(l)||ktLotExpiry(l)>=today).reduce((a,l)=>a+l[key],pool);
@@ -644,6 +645,27 @@ function ktRetailTarget(it,bId){
  // An unmapped wholesale reference remains separate; never mix similarly named strains.
  return {id:p?p.id:it.productId,factor:p?(cfg.retailFactor||1):1,matched:!!p};
 }
+
+// KT_SHARED_KINGSTON_LOT_20261008
+function ktMergeDelivery(list,lot,o,it){
+ const key=it.unit==='g'?'g':'qty',q=lot[key];
+ const matches=lot.warehouseLotId&&lot.kingstonLot?list.filter(l=>l.warehouseLotId===lot.warehouseLotId):[];
+ if(matches.some(l=>(l.supplierExpiry||'')!==(lot.supplierExpiry||'')||(l.ddm||'')!==(lot.ddm||'')))whFail('DDM incohérente pour le même lot Kingston : contactez Basecamp.',409);
+ const deliveryKey=o.numero+'|'+it.productId+'|'+(lot.warehouseLotId||lot.lot);
+ if(matches.some(l=>(l.deliveries||[]).some(d=>d.key===deliveryKey)||l.supplyOrder===o.numero))whFail('Cette livraison figure déjà dans le stock.',409);
+ const delivery={key:deliveryKey,order:o.numero,orderId:o.id,productId:it.productId,qty:q,unit:it.unit,at:new Date().toISOString()};
+ if(!matches.length){lot.deliveries=[delivery];list.push(lot);return lot;}
+ const target=matches[0],aliases=new Set();
+ for(const l of matches){if(l.lot)aliases.add(l.lot);for(const a of l.aliases||[])aliases.add(a);}
+ aliases.add(lot.lot);
+ target[key]=Math.round((matches.reduce((n,l)=>n+(l[key]||0),0)+q)*1000)/1000;
+ target.packages=matches.flatMap(l=>l.packages||[]);
+ target.deliveries=matches.flatMap(l=>l.deliveries||[{order:l.supplyOrder,legacy:true}]);target.deliveries.push(delivery);
+ target.lot=lot.kingstonLot;target.aliases=[...aliases].filter(a=>a!==target.lot);
+ for(const other of matches.slice(1))list.splice(list.indexOf(other),1);
+ return target;
+}
+
 function ktReceiveOrder(o){
  if(o.restocked)return;
  ktFranchiseLots(o);const sk=stock[o.boutiqueId]||(stock[o.boutiqueId]={});
@@ -656,16 +678,17 @@ function ktReceiveOrder(o){
   let left=qty;
   for(const part of it.warehouseLots||[]){const q=Math.min(left,part.qty);if(q<=0)continue;
    const lot={lot:part.franchiseCode,g:it.unit==='g'?q:undefined,qty:it.unit==='g'?undefined:q*target.factor,exp:part.expiry?part.expiry.slice(0,7):'',warehouseLotId:part.id||null,supplierLot:part.supplierCode||'',kingstonLot:part.kingstonCode||'',supplier:part.supplier||'',ddm:part.ddm||'',supplierExpiry:part.expiry||'',receiptId:part.receiptId||'',receiptDate:part.receiptDate||'',supplyOrder:o.numero,originKnown:part.originKnown===true};
-   (it.unit==='g'?s.lots:s.unitLots).push(lot);left-=q;
+   ktMergeDelivery(it.unit==='g'?s.lots:s.unitLots,lot,o,it);left-=q;
   }
   if(left>0)(it.unit==='g'?s.lots:s.unitLots).push({lot:'Historique '+o.numero,g:it.unit==='g'?left:undefined,qty:it.unit==='g'?undefined:left*target.factor,originKnown:false,supplyOrder:o.numero});
  }
  o.restocked=true;o.receivedAt=Date.now();
 }
 function ktSalesTrace(user,code){
- const out=[];
+ const out=[],codes=new Set([code]);
+ for(const o of supplyOrders){if(user.role!=='admin'&&o.boutiqueId!==user.boutiqueId)continue;for(const it of o.items||[])for(const p of it.warehouseLots||[])if(p.franchiseCode===code&&p.kingstonCode)codes.add(p.kingstonCode);}
  for(const inv of invoices){if(user.role!=='admin'&&inv.boutiqueId!==user.boutiqueId)continue;
-  for(const line of inv.lines||[])for(const lot of line.lots||[]){if(code&&!(user.role==='admin'?[lot.lot,lot.kingstonLot,lot.supplierLot,lot.warehouseLotId]:[lot.lot,lot.kingstonLot]).includes(code))continue;
+  for(const line of inv.lines||[])for(const lot of line.lots||[]){if(code&&!(user.role==='admin'?[lot.lot,lot.kingstonLot,lot.supplierLot,lot.warehouseLotId]:[lot.lot,lot.kingstonLot]).some(c=>codes.has(c)))continue;
    out.push({ticket:inv.num,date:inv.date,boutiqueId:inv.boutiqueId,product:line.produit,productId:line.productId,unit:line.grams?'g':'u',qty:lot.qty,refunded:!!inv.refunded,...lot});
   }
  }return out;
@@ -696,7 +719,7 @@ function krReady(o){return ['expediee','retrait','recue'].includes(o.status);}
 function krEntries(o){return (o.items||[]).flatMap(it=>(it.warehouseLots||[]).filter(p=>p.qty>0).map(p=>({it,p})));}
 function krAccess(user,o){if(!['admin','manager'].includes(user.role))whFail('Réservé au responsable boutique.',403);ktLabelAccess(user,o.boutiqueId);}
 function krFind(o,code){const matches=krEntries(o).filter(x=>x.p.franchiseCode===code);if(matches.length>1)whFail('Numéro historique ambigu : contactez Basecamp.',409);const entry=matches[0];if(!entry)whFail('Lot attribué introuvable.',404);return entry;}
-function krStored(o,it,p){const id=it.retailProductId||ktRetailTarget(it,o.boutiqueId).id;const s=(stock[o.boutiqueId]||{})[id];return s&&(it.unit==='g'?(s.lots||[]):(s.unitLots||[])).find(l=>l.lot===p.franchiseCode&&l.supplyOrder===o.numero);}
+function krStored(o,it,p){const id=it.retailProductId||ktRetailTarget(it,o.boutiqueId).id;const s=(stock[o.boutiqueId]||{})[id];return s&&(it.unit==='g'?(s.lots||[]):(s.unitLots||[])).find(l=>(l.lot===p.franchiseCode||(l.aliases||[]).includes(p.franchiseCode))&&(l.supplyOrder===o.numero||(l.deliveries||[]).some(d=>d.order===o.numero)));}
 function krPacked(l){return Math.round((l.packages||[]).reduce((s,p)=>s+p.remainingGrams,0)*1000)/1000;}
 function krView(o,it,p){
  const received=!!p.reception?.validatedAt||!!o.restocked,l=received?krStored(o,it,p):null;
@@ -712,7 +735,7 @@ function krAddPart(o,it,p,user){
  const list=it.unit==='g'?(s.lots||(s.lots=[])):(s.unitLots||(s.unitLots=[]));
  if(list.some(l=>l.lot===p.franchiseCode&&l.supplyOrder===o.numero))whFail('Ce lot figure déjà dans le stock. Contactez Basecamp.',409);
  const q=p.qty*(it.unit==='g'?1:target.factor);
- list.push({lot:p.franchiseCode,...(it.unit==='g'?{g:q}:{qty:q}),exp:p.expiry?p.expiry.slice(0,7):'',warehouseLotId:p.id||null,supplierLot:p.supplierCode||'',kingstonLot:p.kingstonCode||'',supplier:p.supplier||'',ddm:p.ddm||'',supplierExpiry:p.expiry||'',receiptId:p.receiptId||'',receiptDate:p.receiptDate||'',supplyOrder:o.numero,originKnown:p.originKnown===true});
+ ktMergeDelivery(list,{lot:p.franchiseCode,...(it.unit==='g'?{g:q}:{qty:q}),exp:p.expiry?p.expiry.slice(0,7):'',warehouseLotId:p.id||null,supplierLot:p.supplierCode||'',kingstonLot:p.kingstonCode||'',supplier:p.supplier||'',ddm:p.ddm||'',supplierExpiry:p.expiry||'',receiptId:p.receiptId||'',receiptDate:p.receiptDate||'',supplyOrder:o.numero,originKnown:p.originKnown===true},o,it);
  if(it.unit!=='g')s.units=(s.units||0)+q;
  Object.assign(it,{retailProductId:target.id,retailFactor:target.factor,retailMapped:true});
  p.reception.validatedAt=Date.now();p.reception.by=user.name||user.role;
