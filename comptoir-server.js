@@ -466,8 +466,11 @@ function whMutate(action,b,user) {
       var name=whText(b.name,80),sku=whText(b.sku,80),unit=b.unit,cat=whText(b.family,40);
       if(!name || !sku || ['g','u'].indexOf(unit)<0 || !cat)whFail('Nom, reference, famille et unite requis.');
       if(allProProducts(true).some(function(p) {return (p.sku || p.id).toLowerCase()===sku.toLowerCase();}))whFail('Reference deja utilisee.');
+      var retail=b.retailProductId?allCatalog().find(x=>x.id===b.retailProductId&&!x.boutiqueId):null;
+      if(b.retailProductId&&(!retail||retail.unit!==unit))whFail('Produit KingTools introuvable ou unité incompatible.');
+      if(retail&&allProProducts(true).some(x=>(warehouse.settings[x.id]||{}).retailProductId===retail.id))whFail('Ce produit est déjà lié au catalogue Basecamp. Retrouvez sa fiche ou restaurez-la.',409);
       var p={id:'kx'+whId(),sku:sku,name:name,cat:cat,unit:unit,source:'manuel',custom:true,img:''};
-      var sell=whNumber(b.sell),threshold=whNumber(b.threshold,unit); proExtras.push(p); proStock[p.id]=0; proSellPrice[p.id]=sell; warehouse.settings[p.id]={threshold:threshold};
+      var sell=whNumber(b.sell),threshold=whNumber(b.threshold,unit); proExtras.push(p); proStock[p.id]=0; proSellPrice[p.id]=sell; warehouse.settings[p.id]={threshold:threshold};if(retail){warehouse.settings[p.id].retailProductId=retail.id;warehouse.settings[p.id].retailFactor=1;}
       whMove('Creation produit',p.id,'',0,'Fiche creee',user); return {productId:p.id};
     }
     var p=whProduct(whText(b.pid,80),action==='restore'),reason=whText(b.reason,500);
