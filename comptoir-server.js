@@ -464,7 +464,9 @@ function whMutate(action,b,user) {
   var result=whCommit(function() {
     if(action==='product') {
       var name=whText(b.name,80),sku=whText(b.sku,80),unit=b.unit,cat=whText(b.family,40);
-      if(!name || !sku || ['g','u'].indexOf(unit)<0 || !cat)whFail('Nom, reference, famille et unite requis.');
+      if(!name || ['g','u'].indexOf(unit)<0 || !cat)whFail('Nom, famille et unite requis.');
+      // KT_AUTO_PRODUCT_SKU_20261013: generated on the server, including archived references.
+      if(!sku){const used=new Set(allProProducts(true).concat(allCatalog()).map(p=>String(p.sku||p.id).toUpperCase()));let seq=1;do{sku='KT-P-'+String(seq++).padStart(6,'0');}while(used.has(sku));}
       if(allProProducts(true).some(function(p) {return (p.sku || p.id).toLowerCase()===sku.toLowerCase();}))whFail('Reference deja utilisee.');
       var retail=b.retailProductId?allCatalog().find(x=>x.id===b.retailProductId&&!x.boutiqueId):null;
       if(b.retailProductId&&(!retail||retail.unit!==unit))whFail('Produit KingTools introuvable ou unité incompatible.');
