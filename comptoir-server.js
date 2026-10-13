@@ -643,7 +643,7 @@ function ktTakeRetail(s,qty,unit,lotCode){
 function ktRetailTarget(it,bId){
  const cfg=warehouse.settings[it.productId]||{},cat=allCatalog().filter(p=>!p.boutiqueId||p.boutiqueId===bId);
  const norm=s=>String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]/g,'');
- let p=cat.find(p=>p.id===(cfg.retailProductId||it.productId));
+ let p=cat.find(p=>p.id===(cfg.retailProductId||it.productId)&&p.unit===it.unit);
  if(!p&&!cfg.retailProductId){const candidates=cat.filter(p=>p.unit===it.unit&&norm(p.name)===norm(it.name));if(candidates.length===1)p=candidates[0];}
  // An unmapped wholesale reference remains separate; never mix similarly named strains.
  return {id:p?p.id:it.productId,factor:p?(cfg.retailFactor||1):1,matched:!!p};
@@ -727,7 +727,7 @@ function krPacked(l){return Math.round((l.packages||[]).reduce((s,p)=>s+p.remain
 function krView(o,it,p){
  const received=!!p.reception?.validatedAt||!!o.restocked,l=received?krStored(o,it,p):null;
  const target=ktRetailTarget(it,o.boutiqueId),qty=received&&l?(it.unit==='g'?l.g:l.qty):0;
- return {orderId:o.id,order:o.numero,code:p.franchiseCode,product:it.name,unit:it.unit,qty:p.qty,ddm:p.ddm||'',expiry:p.expiry||'',originKnown:p.originKnown===true,kingstonCode:p.kingstonCode||'',boutique:(boutiques[o.boutiqueId]||{}).label||o.boutiqueId,ready:krReady(o),arrivedAt:p.reception?.arrivedAt||o.receivedAt||null,validatedAt:p.reception?.validatedAt||o.receivedAt||null,received,stockQty:qty,packedGrams:l&&it.unit==='g'?krPacked(l):0,looseGrams:l&&it.unit==='g'?Math.max(0,Math.round((l.g-krPacked(l))*1000)/1000):0,mapped:received?it.retailMapped!==false:target.matched,expired:!!p.expiry&&p.expiry<ktParisDay(Date.now()),packages:(l?.packages||[]).map(b=>({id:b.id,size:b.size,count:b.count,at:b.at,remainingGrams:b.remainingGrams})),issue:p.reception?.issue||'',stage:received?5:p.reception?.arrivedAt?3:krReady(o)?2:1};
+ return {productId:it.productId,orderId:o.id,order:o.numero,code:p.franchiseCode,product:it.name,unit:it.unit,qty:p.qty,ddm:p.ddm||'',expiry:p.expiry||'',originKnown:p.originKnown===true,kingstonCode:p.kingstonCode||'',boutique:(boutiques[o.boutiqueId]||{}).label||o.boutiqueId,ready:krReady(o),arrivedAt:p.reception?.arrivedAt||o.receivedAt||null,validatedAt:p.reception?.validatedAt||o.receivedAt||null,received,stockQty:qty,packedGrams:l&&it.unit==='g'?krPacked(l):0,looseGrams:l&&it.unit==='g'?Math.max(0,Math.round((l.g-krPacked(l))*1000)/1000):0,mapped:received?it.retailMapped!==false:target.matched,expired:!!p.expiry&&p.expiry<ktParisDay(Date.now()),packages:(l?.packages||[]).map(b=>({id:b.id,size:b.size,count:b.count,at:b.at,remainingGrams:b.remainingGrams})),issue:p.reception?.issue||'',stage:received?5:p.reception?.arrivedAt?3:krReady(o)?2:1};
 }
 function krList(user){return supplyOrders.filter(o=>(user.role==='admin'||o.boutiqueId===user.boutiqueId)&&!['attente','annulee'].includes(o.status)).flatMap(o=>krEntries(o).map(({it,p})=>krView(o,it,p))).sort((a,b)=>Number(a.received)-Number(b.received)||b.orderId-a.orderId);}
 function krAtomic(o,fn){const before={order:JSON.parse(JSON.stringify(o)),stock:JSON.parse(JSON.stringify(stock))};try{const result=fn();writeDataFileNow();return result;}catch(e){Object.keys(o).forEach(k=>delete o[k]);Object.assign(o,before.order);stock=before.stock;throw e;}}
