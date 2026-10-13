@@ -4622,8 +4622,11 @@ const server = http.createServer(async (req, res) => {
     if(req.method==='GET'&&path==='/api/trace/lot'){
       const code=String(u.searchParams.get('code')||'').trim();if(!code)return send(res,400,{error:'Numéro de lot requis.'});
       const rows=ktTrace(user,'').filter(r=>(user.role==='admin'?[r.franchiseCode,r.kingstonCode,r.supplierCode,r.lotId]:[r.franchiseCode,r.kingstonCode]).includes(code));
-      const sales=ktSalesTrace(user,code);if(!rows.length&&!sales.length)return send(res,404,{error:'Lot introuvable dans votre boutique.'});
-      return send(res,200,{rows,sales,receiving:krList(user).filter(r=>[r.code,r.kingstonCode].includes(code))});
+      // KT_QR_BASECAMP_LOT_20261013: warehouse lots exist before franchise distribution.
+      const warehouseLots=user.role==='admin'?warehouse.lots.filter(l=>l.kingstonCode===code||l.id===code).map(l=>({code:l.kingstonCode,product:(allProProducts(true).find(p=>p.id===l.pid)||{}).name||l.pid,qty:l.qty,supplier:l.supplier||'',supplierCode:l.code||'',ddm:l.ddm||'',expiry:l.expiry||'',received:l.received||''})):[];
+      if(user.role!=='admin')rows.forEach(r=>{delete r.supplier;delete r.supplierCode;delete r.receiptId;delete r.receiptDate;delete r.franchiseCodeHistory;});
+      const sales=ktSalesTrace(user,code);if(!rows.length&&!sales.length&&!warehouseLots.length)return send(res,404,{error:'Lot introuvable dans votre boutique. Connectez-vous à Basecamp pour un lot non encore attribué.'});
+      return send(res,200,{rows,sales,warehouseLots,receiving:krList(user).filter(r=>[r.code,r.kingstonCode].includes(code))});
     }
     const labelRoute=path.match(/^\/api\/pro\/orders\/(\d+)\/labels$/);
     if(req.method==='GET'&&labelRoute){try{const o=supplyOrders.find(o=>o.id===Number(labelRoute[1]));if(!o)whFail('Commande introuvable.',404);return send(res,200,ktOrderLabels(o,user));}catch(e){return send(res,e.status||400,{error:e.message});}}
