@@ -368,7 +368,7 @@ function whRevision() {
 function whSnapshot() {
   return { retailProducts:allCatalog().filter(p=>!p.boutiqueId).map(p=>({id:p.id,name:p.name,unit:p.unit})), version: 'KT_WAREHOUSE_V1', revision: whRevision(), products: allProProducts().filter(function(p) { return !whService(p); }).map(function(p) {
     var setting = warehouse.settings[p.id] || {}, lots = whLots(p.id).map(function(l) { return Object.assign({}, l); }), pool = whLegacy(p.id);
-    if (pool > 0) lots.unshift({ id: 'legacy:' + p.id, pid: p.id, code: 'Stock anterieur a ventiler', legacy: true, qty: pool, initial: pool, buy: Object.prototype.hasOwnProperty.call(warehouse.legacyCosts,p.id) ? warehouse.legacyCosts[p.id] : (proBuyPrice[p.id] == null ? null : proBuyPrice[p.id]), received: '', expiry: '', supplier: '', reference: '' });
+    if (pool > 0) lots.unshift({ id: 'legacy:' + p.id, pid: p.id, code: 'Origine historique à compléter', legacy: true, qty: pool, initial: pool, buy: Object.prototype.hasOwnProperty.call(warehouse.legacyCosts,p.id) ? warehouse.legacyCosts[p.id] : (proBuyPrice[p.id] == null ? null : proBuyPrice[p.id]), received: '', expiry: '', supplier: '', reference: '' });
     return { retailProductId:setting.retailProductId||'',retailFactor:setting.retailFactor||1,id:p.id, name:p.name, sku:p.sku || p.id, family:p.cat || 'Gros', unit:p.unit === 'g' ? 'g' : 'u', sell:proUnitInfo(p).price, sitePrice:p.proPrice == null ? null : p.proPrice, tracked:proStock[p.id] != null, stock:proStock[p.id] == null ? null : proStock[p.id], available:whAvailable(p.id), threshold:setting.threshold == null ? null : setting.threshold, lots:lots, average:whAverage(p.id), linked:!!p.wooId && p.unit !== 'g', manual:p.source === 'manuel' };
   }), archivedProducts:allProProducts(true).filter(function(p){return warehouse.archived[p.id];}).map(function(p){return {id:p.id,name:p.name,sku:p.sku||p.id,unit:p.unit,archive:warehouse.archived[p.id]};}), receipts:warehouse.receipts.slice().reverse(), movements:warehouse.moves.slice(-2000).reverse(), push:{configured:proPushConfigured(),state:proStockPush}, site:PRO_WP_URL, historyTruncated:warehouse.moves.length > 2000 };
 }
@@ -388,7 +388,7 @@ function whTake(pid, qty, user, reason, type, before) {
   });
   if (left > 0) parts.push({id:null,code:'',qty:left,expiry:''});
   var remaining = before == null ? (proStock[pid] || 0) : before;
-  parts.forEach(function(l) { remaining = whRound(remaining-l.qty); whMove(type || 'Reservation reassort',pid,l.code || 'Stock anterieur non ventile',-l.qty,reason,user,{stockAfter:remaining,lotId:l.id||null,kingstonCode:l.kingstonCode||'',ddm:l.ddm||'',expiry:l.expiry||''}); });
+  parts.forEach(function(l) { remaining = whRound(remaining-l.qty); whMove(type || 'Reservation reassort',pid,l.kingstonCode || l.code || 'Origine historique à compléter',-l.qty,reason,user,{stockAfter:remaining,lotId:l.id||null,kingstonCode:l.kingstonCode||'',ddm:l.ddm||'',expiry:l.expiry||''}); });
   return parts;
 }
 function whRestore(pid, parts, qty, user, reason) {
@@ -413,7 +413,7 @@ function whResizeReservation(it, quantity, order, user) {
     parts.forEach(function(part){var existing=it.warehouseLots.find(function(l){return l.id===part.id;});if(existing)existing.qty=whRound(existing.qty+part.qty);else it.warehouseLots.push(part);});
     proStock[it.productId]=whRound(proStock[it.productId]-extra);
   }
-  it.lot=it.warehouseLots.map(function(l){return (l.code||'Stock anterieur non ventile')+' ('+l.qty+' '+it.unit+')';}).join(', ');
+  it.lot=ktCustomerLotText(it);
   whReprice(it.productId);
 }
 function whLegacyStock(pid, before, user, reason) {
@@ -716,6 +716,7 @@ function ktTrace(user,q){
    rows.push({orderId:o.id,lotId:part.id||null,ddm:part.ddm||(l&&l.ddm)||'',expiry:part.expiry||(l&&l.expiry)||'',receiptId:part.receiptId||(l&&l.receiptId)||'',receiptDate:part.receiptDate||(l&&l.received)||'',productId:it.productId,product:it.name,unit:it.unit,qty:part.qty,supplierCode:part.supplierCode||(l&&l.code)||'',supplier:part.supplier||(l&&l.supplier)||'',kingstonCode:part.kingstonCode||(l&&l.kingstonCode)||'',franchiseCode:part.franchiseCode||'',franchiseCodeHistory:part.franchiseCodeHistory||[],boutiqueId:o.boutiqueId,boutique:(boutiques[o.boutiqueId]||{}).label||o.boutiqueId,order:o.numero,status:part.reception?.validatedAt?'recue':o.status,receivedAt:part.reception?.validatedAt||o.receivedAt||null,originKnown:!!l});
   });});
  });
+ if(user.role!=='admin')rows.forEach(r=>{delete r.supplier;delete r.supplierCode;delete r.receiptId;delete r.receiptDate;delete r.franchiseCodeHistory;});
  var term=String(q||'').trim().toLowerCase();return rows.filter(function(r){return !term||[r.product,user.role==='admin'?r.supplier:'',user.role==='admin'?r.supplierCode:'',r.kingstonCode,r.franchiseCode,r.boutique,r.order,r.ddm,r.receiptId,(r.franchiseCodeHistory||[]).map(function(h){return h.before+' '+h.after;}).join(' ')].join(' ').toLowerCase().includes(term);});
 }
 
@@ -2041,12 +2042,21 @@ async function royWc(method, p, body){
   return j;
 }
 // Existing Kingbase invoice, served only to the owning franchise or network admin.
+// KT_INVOICE_LOT_PRIVACY_20261016
+function ktCustomerLotText(it){return (it.warehouseLots||[]).map(p=>(p.kingstonCode||p.franchiseCode||'En attribution')+' ('+p.qty+' '+it.unit+')').join(', ');}
+function ktSupplyPublicItems(items){return (items||[]).map(it=>({productId:it.productId,name:it.name,unit:it.unit,qty:it.qty,unitPrice:it.unitPrice,lineTotal:it.lineTotal,lot:ktCustomerLotText(it)}));}
+function ktInvoiceHasSupplierOrigin(remote,order){
+ const text=JSON.stringify({line_items:remote.line_items||[],meta_data:remote.meta_data||[],customer_note:remote.customer_note||''}).toLowerCase();
+ const secrets=(order.items||[]).flatMap(it=>(it.warehouseLots||[]).flatMap(p=>[p.supplierCode,p.code,p.supplier])).filter(x=>typeof x==='string'&&x.trim()&&!((order.items||[]).some(it=>(it.warehouseLots||[]).some(p=>p.kingstonCode===x||p.franchiseCode===x))));
+ return secrets.some(x=>text.includes(x.toLowerCase()));
+}
 async function ktProInvoice(order,user){
  if(!user||!(user.role==='admin'||(user.role==='manager'&&user.boutiqueId&&user.boutiqueId===order.boutiqueId)))whFail('Cette facture appartient à une autre boutique.',403);
  if(!Number.isSafeInteger(Number(order.wooOrderId))||Number(order.wooOrderId)<=0)whFail('Facture Kingbase pas encore disponible.',409);
  if(order.status==='attente'||order.status==='annulee')whFail('La facture sera disponible après confirmation du paiement.',409);
  if(!PRO_WC_KEY||!PRO_WC_SECRET)whFail('Connexion aux factures Kingbase indisponible. Contactez Kingston.',503);
  const remote=await royWc('GET','/orders/'+Number(order.wooOrderId));
+ if(ktInvoiceHasSupplierOrigin(remote,order))whFail('Cette facture Kingbase contient encore une référence fournisseur interne. Basecamp doit corriger les lots sur Kingbase et régénérer le PDF avant sa diffusion.',409);
  if(Number(remote.id)!==Number(order.wooOrderId))whFail('La facture ne correspond pas à cette commande.',502);
  if(!remote.date_paid&&!remote.date_paid_gmt&&!['processing','completed'].includes(remote.status))whFail('Le paiement doit être confirmé sur Kingbase avant de télécharger la facture.',409);
  const response=await wooFetch(PRO_WP_URL+'/wp-json/wc-kingston/v1/orders/'+Number(order.wooOrderId)+'/invoice',{method:'GET',headers:{Authorization:royWcAuth(),Accept:'application/json'},redirect:'error'},30000);
@@ -4619,14 +4629,25 @@ const server = http.createServer(async (req, res) => {
       }
       return send(res,405,{error:'Méthode invalide.'});
     }catch(e){return send(res,e.status||400,{error:e.message});}}
+    // KT_BASECAMP_ANALYSIS_20261013: only admin-approved franchise documents.
+    if(req.method==='POST'&&path==='/api/pro/lot-analysis'){
+      if(user.role!=='admin')return send(res,403,{error:'Réservé à Basecamp.'});
+      try{const b=await readJson(req),l=warehouse.lots.find(l=>l.id===b.lotId);if(!l)whFail('Lot introuvable.',404);
+        if((l.analysis?.updatedAt||'')!==(b.previous||''))whFail('Analyse modifiée entre-temps. Actualisez la fiche.',409);
+        const value=String(b.url||'').trim();let url='';if(value){let parsed;try{parsed=new URL(value);}catch(e){whFail('Lien HTTPS du PDF requis.');}if(parsed.protocol!=='https:'||parsed.username||parsed.password||value.length>2000)whFail('Lien HTTPS du PDF requis.');if(b.reviewed!==true)whFail('Confirmez que le PDF destiné aux franchisés ne contient aucune information du fournisseur initial.');url=parsed.href;}
+        whCommit(()=>{l.analysis={url,updatedAt:new Date().toISOString(),reviewed:!!url};whMove('Analyse Basecamp',l.pid,l.kingstonCode,0,url?'Rapport franchisé associé au lot':'Rapport retiré',user,{lotId:l.id});});
+        return send(res,200,{ok:true});
+      }catch(e){return send(res,e.status||400,{error:e.message});}
+    }
     if(req.method==='GET'&&path==='/api/trace/lot'){
       const code=String(u.searchParams.get('code')||'').trim();if(!code)return send(res,400,{error:'Numéro de lot requis.'});
       const rows=ktTrace(user,'').filter(r=>(user.role==='admin'?[r.franchiseCode,r.kingstonCode,r.supplierCode,r.lotId]:[r.franchiseCode,r.kingstonCode]).includes(code));
       // KT_QR_BASECAMP_LOT_20261013: warehouse lots exist before franchise distribution.
-      const warehouseLots=user.role==='admin'?warehouse.lots.filter(l=>l.kingstonCode===code||l.id===code).map(l=>({code:l.kingstonCode,product:(allProProducts(true).find(p=>p.id===l.pid)||{}).name||l.pid,qty:l.qty,supplier:l.supplier||'',supplierCode:l.code||'',ddm:l.ddm||'',expiry:l.expiry||'',received:l.received||''})):[];
+      const warehouseLots=user.role==='admin'?warehouse.lots.filter(l=>l.kingstonCode===code||l.id===code).map(l=>({id:l.id,analysisUpdatedAt:l.analysis?.updatedAt||'',code:l.kingstonCode,product:(allProProducts(true).find(p=>p.id===l.pid)||{}).name||l.pid,qty:l.qty,supplier:l.supplier||'',supplierCode:l.code||'',ddm:l.ddm||'',expiry:l.expiry||'',received:l.received||''})):[];
       if(user.role!=='admin')rows.forEach(r=>{delete r.supplier;delete r.supplierCode;delete r.receiptId;delete r.receiptDate;delete r.franchiseCodeHistory;});
       const sales=ktSalesTrace(user,code);if(!rows.length&&!sales.length&&!warehouseLots.length)return send(res,404,{error:'Lot introuvable dans votre boutique. Connectez-vous à Basecamp pour un lot non encore attribué.'});
-      return send(res,200,{rows,sales,warehouseLots,receiving:krList(user).filter(r=>[r.code,r.kingstonCode].includes(code))});
+      const allowed=new Set(rows.map(r=>r.lotId));const analyses=warehouse.lots.filter(l=>user.role==='admin'?(l.kingstonCode===code||l.id===code):allowed.has(l.id)).map(l=>({code:l.kingstonCode,ddm:l.ddm||'',expiry:l.expiry||'',supplier:'Basecamp',url:l.analysis?.reviewed?l.analysis.url:''}));
+      return send(res,200,{analyses,rows,sales,warehouseLots,receiving:krList(user).filter(r=>[r.code,r.kingstonCode].includes(code))});
     }
     const labelRoute=path.match(/^\/api\/pro\/orders\/(\d+)\/labels$/);
     if(req.method==='GET'&&labelRoute){try{const o=supplyOrders.find(o=>o.id===Number(labelRoute[1]));if(!o)whFail('Commande introuvable.',404);return send(res,200,ktOrderLabels(o,user));}catch(e){return send(res,e.status||400,{error:e.message});}}
@@ -4927,7 +4948,7 @@ const server = http.createServer(async (req, res) => {
       const touchedIds = [];
       for (const it of items) { if (proStock[it.productId] != null) {
         it.warehouseLots = whTake(it.productId,it.qty,user,o.numero+' · '+bId);
-        if(it.warehouseLots.some(function(l){return !!l.id;})) it.lot = it.warehouseLots.map(function(l){return (l.code || 'Stock anterieur non ventile')+' ('+l.qty+' '+it.unit+')';}).join(', ');
+        it.lot = ktCustomerLotText(it);
         proStock[it.productId] = whRound(Math.max(0, proStock[it.productId] - it.qty));
         whReprice(it.productId); touchedIds.push(it.productId);
       } }
@@ -4941,7 +4962,7 @@ const server = http.createServer(async (req, res) => {
         if (proConnector && typeof proConnector.createSupplyOrder === 'function') {
           const sl = sellerFor(bId);
           const shipAddr = o.ship ? { name: o.ship.name || sl.name, address: o.ship.address, zip: o.ship.zip, city: o.ship.city, country: 'FR', phone: o.ship.phone || '' } : null;
-          const wr = await proConnector.createSupplyOrder({ items: o.items, boutique: (boutiques[bId] && (boutiques[bId].label || bId)) || bId, numero: o.numero, by: o.by, email: (boutiques[bId] && boutiques[bId].email) || '', billing: { name: sl.name, address: sl.address, zip: sl.zip, city: sl.city, country: sl.country || 'FR' }, shipping: shipAddr });
+          const wr = await proConnector.createSupplyOrder({ items: ktSupplyPublicItems(o.items), boutique: (boutiques[bId] && (boutiques[bId].label || bId)) || bId, numero: o.numero, by: o.by, email: (boutiques[bId] && boutiques[bId].email) || '', billing: { name: sl.name, address: sl.address, zip: sl.zip, city: sl.city, country: sl.country || 'FR' }, shipping: shipAddr });
           if (wr && wr.order_id) { o.wooOrderId = wr.order_id; o.wooUrl = wr.admin_url || null; o.payUrl=null; o.wooStatus=wr.status||null;persist();try{await ktWooShipping(o,wr.pay_url);}catch(e){o.shippingError=e.message;}persist(); }
         }
       } catch (e) { o.wooError = String((e && e.message) || e); }
