@@ -137,6 +137,7 @@ function pruneRecentSales(){ const now = Date.now(); for (const k in recentSales
 // Les comptes boutique historiques (1 login = 1 boutique) restent inchanges ; ces comptes s'ajoutent par-dessus.
 let franchisees = {};   // { id: { id, name, email, boutiques:[bId], cred:{salt,hash}, mustChangePw, createdAt } }
 let sellers = {};       // { id: { id, name, email, boutiques:[bId], tabs:[onglet], cred, mustChangePw, createdBy, createdAt } }
+let posCategories = {}; // Classification de caisse propre à chaque boutique.
 let posOrder = {};      // { boutiqueId: { categorie: [productId, ...] } } : ordre d'affichage de la caisse, PROPRE a chaque boutique
 const SELLER_TABS = ['dash','activite','pos','borne','commandes','challenge','produits','stock','fidelite','journal','factu','conformite','royalties','pro','ponts'];
 function cleanBoutiqueList(arr){ const out = []; (Array.isArray(arr) ? arr : []).forEach(function (x) { const id = String(x || '').trim().toLowerCase(); if (boutiques[id] && out.indexOf(id) < 0) out.push(id); }); return out; }
@@ -258,6 +259,22 @@ let stock = {
 let customProducts = [];
 // Quand true : on masque le catalogue de demonstration et on n'expose QUE les produits importes/ajoutes.
 let hideBaseCatalog = false;
+// KT_POS_CATEGORIES_20261021: presentation only; never changes stock or historic sales.
+function ktCategoryKey(v) { return String(v || '').trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase(); }
+function ktCategoryView(bId, rows) {
+  const cfg = posCategories[bId] || { names: [], removed: [], assignments: {} };
+  const names = new Map();
+  const add = v => { const name = String(v || '').trim() || 'Sans catégorie', key = ktCategoryKey(name); if (key !== 'tout' && !names.has(key)) names.set(key, name); };
+  (cfg.names || []).forEach(add);
+  const products = rows.map(p => {
+    let cat = (cfg.assignments || {})[p.id] || p.cat || 'Sans catégorie';
+    if ((cfg.removed || []).includes(ktCategoryKey(cat)) || ktCategoryKey(cat) === 'tout') cat = 'Sans catégorie';
+    add(cat);
+    return Object.assign({}, p, { cat: names.get(ktCategoryKey(cat)) });
+  });
+  return { products, categories: Array.from(names.values()) };
+}
+
 function allCatalog() { return hideBaseCatalog ? customProducts.slice() : catalog.concat(customProducts); }
 function findProduct(id) { return allCatalog().find((p) => p.id === id); }
 function ensureStock(p) {
@@ -1301,7 +1318,7 @@ function writeDataFileNow() {
   // Écriture ATOMIQUE : fichier temporaire puis renommage -> jamais de fichier tronqué en cas de coupure.
   // NB : fiscalKey n'est PLUS écrite ici (stockée à part, fichier protégé).
   const tmp = DATA_FILE + '.tmp';
-  fs.writeFileSync(tmp, JSON.stringify({ v: 1, savedAt: new Date().toISOString(), pointsPerEuro: POINTS_PER_EURO, hideBaseCatalog, customProducts, stock, boutiques, invoiceSeq, lastHash, invoices, orderSeq, orders, fiscalEvents, fiscalSeq, lastFiscalSig, clotureSeq, gtPerpetuel, gtPerpetuelAvoirs, seqByB, gtByB, gtAvoirsByB, royaltiesRates, royaltiesStatus, clotureSeqByB, supplyOrders, supplySeq, stockMoves, proRate, pontDevices, sessions, proProducts, lastProSync, proLots, proStock, proBuyPrice, proSellPrice, proStockPush, proBlock, proExtras, proRename, warehouse, entreprise, adminCred, adminEmail, backupState, franchisees, sellers, royaltyInvoices, roySeq, royLastHash, posOrder, royAuto, royAutoLog }), 'utf8');
+  fs.writeFileSync(tmp, JSON.stringify({ v: 1, savedAt: new Date().toISOString(), pointsPerEuro: POINTS_PER_EURO, hideBaseCatalog, customProducts, stock, boutiques, invoiceSeq, lastHash, invoices, orderSeq, orders, fiscalEvents, fiscalSeq, lastFiscalSig, clotureSeq, gtPerpetuel, gtPerpetuelAvoirs, seqByB, gtByB, gtAvoirsByB, royaltiesRates, royaltiesStatus, clotureSeqByB, supplyOrders, supplySeq, stockMoves, proRate, pontDevices, sessions, proProducts, lastProSync, proLots, proStock, proBuyPrice, proSellPrice, proStockPush, proBlock, proExtras, proRename, warehouse, entreprise, adminCred, adminEmail, backupState, franchisees, sellers, royaltyInvoices, roySeq, royLastHash, posOrder, posCategories, royAuto, royAutoLog }), 'utf8');
   fs.renameSync(tmp, DATA_FILE);
 }
 function persist() {
@@ -1492,6 +1509,7 @@ function loadPersisted() {
       ['lastTickAt', 'updatedAt', 'updatedBy'].forEach(function (k) { if (typeof ra[k] === 'string') royAuto[k] = ra[k]; });
     }
     if (Array.isArray(d.royAutoLog)) royAutoLog = d.royAutoLog.slice(-300);
+    if (d.posCategories && typeof d.posCategories === 'object' && !Array.isArray(d.posCategories)) posCategories = d.posCategories;
     if (d.posOrder && typeof d.posOrder === 'object') posOrder = d.posOrder;                  // ordre d'affichage caisse par boutique
     if (Array.isArray(d.proProducts)) { proProducts = d.proProducts; proProducts.forEach(ensureStock); }
     if (d.proLots && typeof d.proLots === 'object') proLots = d.proLots;
@@ -3493,7 +3511,7 @@ const server = http.createServer(async (req, res) => {
       return send(res, 200, { ok: true, token: boutiques[b.boutiqueId].pontToken });
     }
     if (req.method === 'GET' && path === '/api/products') {
-      if (PG) return send(res, 200, await PG.getProducts(user, u.searchParams.get('boutique')));
+      if (PG) { const d = await PG.getProducts(user, u.searchParams.get('boutique')); return send(res, 200, Object.assign({}, d, ktCategoryView(d.boutique || user.boutiqueId, d.products || []))); }
       const bId = user.role === 'admin' ? (u.searchParams.get('boutique') || 'aix') : user.boutiqueId;
       // Catalogue = base KINGSTON (+ produits reseau) + catalogue SECONDAIRE propre a la boutique (p.boutiqueId).
       const products = allCatalog().filter((p) => !p.boutiqueId || p.boutiqueId === bId).map((p) => {
@@ -3508,7 +3526,35 @@ const server = http.createServer(async (req, res) => {
         if(p.unit!=='g'&&s){const residual=Math.max(0,s.units-(s.unitLots||[]).reduce((n,l)=>n+l.qty,0));if(residual>0)base.posLots.push({code:'__KT_LEGACY__',qty:residual,expiry:'',expired:false});}
         return base;
       });
-      return send(res, 200, { boutique: bId, products, posOrder: posOrder[bId] || {} });
+      return send(res, 200, Object.assign({ boutique: bId, posOrder: posOrder[bId] || {} }, ktCategoryView(bId, products)));
+    }
+
+    if (req.method === 'POST' && path === '/api/products/categories') {
+      if (!['admin', 'manager'].includes(user.role)) return send(res, 403, { error: 'Réservé au responsable de la boutique' });
+      if (PG) return send(res, 409, { error: 'Gestion des catégories indisponible dans ce mode de stockage.' });
+      const b = await readJson(req);
+      const bId = user.role === 'admin' ? String(b.boutiqueId || 'aix') : user.boutiqueId;
+      if (!boutiques[bId]) return send(res, 404, { error: 'Boutique inconnue' });
+      const name = String(b.name || '').trim().replace(/\s+/g, ' '), key = ktCategoryKey(name);
+      if (!name || name.length > 60 || ['tout', '__proto__', 'constructor', 'prototype'].includes(key)) return send(res, 400, { error: 'Choisis un nom de catégorie de 1 à 60 caractères, différent de Tout.' });
+      const cfg = JSON.parse(JSON.stringify(posCategories[bId] || { names: [], removed: [], assignments: {} }));
+      const rows = allCatalog().filter(p => !p.boutiqueId || p.boutiqueId === bId);
+      const view = ktCategoryView(bId, rows);
+      const existing = view.categories.find(c => ktCategoryKey(c) === key);
+      if (b.action === 'add') {
+        if (existing) return send(res, 409, { error: 'Cette catégorie existe déjà.' });
+        cfg.names.push(name); cfg.removed = cfg.removed.filter(k => k !== key);
+      } else if (b.action === 'delete') {
+        if (!existing || key === 'sans categorie') return send(res, 400, { error: 'Cette catégorie ne peut pas être supprimée.' });
+        cfg.names = cfg.names.filter(c => ktCategoryKey(c) !== key);
+        if (!cfg.removed.includes(key)) cfg.removed.push(key);
+        view.products.filter(p => ktCategoryKey(p.cat) === key).forEach(p => { cfg.assignments[p.id] = 'Sans catégorie'; });
+      } else if (b.action === 'assign') {
+        if (!existing || !rows.some(p => p.id === b.productId)) return send(res, 400, { error: 'Produit ou catégorie inconnus dans cette boutique.' });
+        cfg.assignments[b.productId] = existing;
+      } else return send(res, 400, { error: 'Action inconnue' });
+      posCategories[bId] = cfg; persist();
+      return send(res, 200, { ok: true });
     }
 
     // ---- Ordre d'affichage de la caisse (mode « rangement ») : PAR boutique, par gamme. ----

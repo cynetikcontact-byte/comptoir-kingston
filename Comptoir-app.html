@@ -2998,7 +2998,7 @@ var qrcode = function() {
     else{o.price=p.price;o.stockU=p.stockU||0;if(p.packs&&p.packs.length)o.packs=p.packs;}
     return o;
   }
-  function reloadProducts(cb){ if(!API.on){if(cb)cb();return;} var _q=(st.user&&st.user.role==='admin')?('?boutique='+encodeURIComponent(st.prodBtq||st.boutiqueId||'aix')):''; apiGet('/api/products'+_q).then(function(d){ products=(d.products||[]).map(mapServerProduct); st.posOrder=(d.posOrder&&typeof d.posOrder==='object')?d.posOrder:{}; if(cb)cb(); if(st.view==='produits'||st.view==='pos')render(); }).catch(function(){if(cb)cb();}); }
+  function reloadProducts(cb){ if(!API.on){if(cb)cb();return;} var _q=(st.user&&st.user.role==='admin')?('?boutique='+encodeURIComponent(st.prodBtq||st.boutiqueId||'aix')):''; apiGet('/api/products'+_q).then(function(d){ products=(d.products||[]).map(mapServerProduct); st.categories=d.categories||[]; st.posOrder=(d.posOrder&&typeof d.posOrder==='object')?d.posOrder:{}; if(cb)cb(); if(st.view==='produits'||st.view==='pos')render(); }).catch(function(){if(cb)cb();}); }
   function doApiConnect(){
     API.base=(document.getElementById('rg-api-url').value||'').trim().replace(/\/$/,'');
     API.token=(document.getElementById('rg-api-token').value||'').trim();
@@ -3006,7 +3006,7 @@ var qrcode = function() {
     if(resEl)resEl.innerHTML='<span class="muted" style="font-size:12px">Connexion…</span>';
     if(!LOCAL_SNAPSHOT)LOCAL_SNAPSHOT=JSON.parse(JSON.stringify(products));
     fetch(API.base+'/api/health').then(function(r){return r.json();}).then(function(h){if(!h||!h.ok)throw new Error('réponse inattendue');return apiGet('/api/products');}).then(function(data){
-      products=(data.products||[]).map(mapServerProduct);st.posOrder=(data.posOrder&&typeof data.posOrder==='object')?data.posOrder:{};
+      products=(data.products||[]).map(mapServerProduct);st.categories=data.categories||[];st.posOrder=(data.posOrder&&typeof data.posOrder==='object')?data.posOrder:{};
       API.on=true;st.cart=[];st.client=null;render();loadLoyaltyRate();loadCompany();ktTraceHash();toast('Connecté au serveur — produits chargés depuis le moteur');
     }).catch(function(e){API.on=false;var el=document.getElementById('rg-api-res');if(el)el.innerHTML='<span class="tag tag-low">Échec : '+(e.message||e)+'</span> <span class="muted" style="font-size:12px">— le serveur tourne-t-il ? (node comptoir-server.js)</span>';});
   }
@@ -3021,7 +3021,7 @@ var qrcode = function() {
       if(!h||!h.ok)throw new Error('pas de serveur');
       return apiGet('/api/products');
     }).then(function(data){
-      products=(data.products||[]).map(mapServerProduct);st.posOrder=(data.posOrder&&typeof data.posOrder==='object')?data.posOrder:{};
+      products=(data.products||[]).map(mapServerProduct);st.categories=data.categories||[];st.posOrder=(data.posOrder&&typeof data.posOrder==='object')?data.posOrder:{};
       API.on=true;render();loadLoyaltyRate();loadCompany();ktTraceHash();toast('Connecté au serveur — fidélité et produits en direct');
     }).catch(function(){API.on=false;});
   }
@@ -3056,7 +3056,7 @@ var qrcode = function() {
       openModal('<div class="modal-h">Paiement accepté (serveur)</div><div class="modal-b"><div style="text-align:center;margin-bottom:14px"><div style="width:54px;height:54px;border-radius:50%;background:var(--green);color:#fff;display:flex;align-items:center;justify-content:center;font-size:28px;margin:0 auto 10px">✓</div><div class="muted" style="font-size:12px">Facture '+f.numero+' · '+method+' · empreinte '+(f.empreinte||'')+'</div></div>'+lines+((m.remise>0)?'<div style="display:flex;justify-content:space-between;font-size:13px;color:#7a5f1e;padding:4px 0"><span>Remise points</span><b>−'+eur(m.remise)+'</b></div>':'')+'<div style="display:flex;justify-content:space-between;border-top:1px solid var(--line);margin-top:8px;padding-top:10px;font-family:var(--serif);font-size:19px;font-weight:700"><span>Total</span><span>'+eur(f.total)+'</span></div>'+fidHtml+'<div style="display:flex;gap:8px;margin-top:16px;flex-wrap:wrap"><button class="btn" style="flex:1;min-width:110px" data-act="printticket">🧾 Ticket</button><button class="btn" data-act="kt-sale-labels" data-num="'+f.numero+'">Étiquettes pochons</button><button class="btn" style="flex:1;min-width:110px" data-act="facture" data-num="'+f.numero+'">📄 Facture</button><button class="btn" style="flex:1;min-width:110px" data-act="kt-emailfac" data-num="'+f.numero+'" data-email="'+((st.lastReceipt&&st.lastReceipt.mail)||'')+'">✉️ Email</button><button class="btn btn-gold" style="flex:1;min-width:110px" data-act="closemodal">Nouveau</button></div></div>');
       render();
       if(companyInfo.factureAuto){setTimeout(function(){openFacture(f.numero);},350);}
-    }).catch(function(e){_paying=false;var _b=document.querySelector('[data-act=payok]');if(_b){_b.disabled=false;_b.style.opacity='1';_b.textContent='Réessayer';}toast(/insuffisant/i.test(e.message||'')?'⛔ Stock insuffisant — réapprovisionne le produit avant de vendre.':'Erreur serveur : '+(e.message||e));});
+    }).catch(function(e){_paying=false;ktCashUpdate();var _b=document.querySelector('[data-act=payok]');if(_b){_b.disabled=false;_b.style.opacity='1';_b.textContent='Réessayer';}toast(/insuffisant/i.test(e.message||'')?'⛔ Stock insuffisant — réapprovisionne le produit avant de vendre.':'Erreur serveur : '+(e.message||e));});
   }
   var addCat='Fleurs';
 
@@ -3392,14 +3392,15 @@ document.addEventListener('click',function(e){var eye=e.target.closest('[data-da
       var out=p.unit==='g'?totalStockG(p)<=0:p.stockU<=0;
       return '<div class="pcard '+(out?'dis':'')+'" data-act="'+(out?'rupture':'pick')+'" data-id="'+p.id+'">'+(editing?'<div class="pc-handle" title="Glisser pour déplacer">⠿</div>':'')+
         '<div class="pc-img" style="background-image:url(\''+(p.img||PRODUCT_IMG[p.name]||'')+'\')"></div>'+
-        '<div class="pc-cat">'+p.cat+'</div><div class="pc-name">'+esc(p.name)+'</div><div class="pc-cbd">'+esc(p.cbd)+'</div>'+(out?'<div class="pc-rupture">Plus de stock — saisir du nouveau stock</div>':'')+
+        '<div class="pc-cat">'+esc(p.cat)+'</div><div class="pc-name">'+esc(p.name)+'</div><div class="pc-cbd">'+esc(p.cbd)+'</div>'+(out?'<div class="pc-rupture">Plus de stock — saisir du nouveau stock</div>':'')+
         ktPosLotSummary(p)+'<div class="pc-foot"><span class="pc-price">'+(p.unit==='g'?'dès ':'')+eur(entryPrice(p))+'</span><span class="pc-stock">'+(out?'⛔ Plus de stock':stock)+'</span></div></div>';
     }).join('');
     return html||'<div class="tk-empty" style="grid-column:1/-1">Aucun produit en stock pour cette sélection.</div>';
   }
   function viewPos(){
-    var cats=['Tout','Fleurs','King','Accessoire','Collector'];
+    var cats=['Tout'].concat(st.categories||[]);
     products.forEach(function(p){if(p.cat&&cats.indexOf(p.cat)<0)cats.push(p.cat);});
+    if(cats.indexOf(st.cat)<0)st.cat='Tout';
     var grid=posGrid();
     var nArt=st.cart.length;
     var tkBump=(typeof st._tkN==='number'&&st._tkN!==nArt&&nArt>0);st._tkN=nArt;
@@ -3425,7 +3426,7 @@ document.addEventListener('click',function(e){var eye=e.target.closest('[data-da
     var editBtn='<button class="pos-edit-btn'+(st.posEdit?' on':'')+'" data-act="posedit" title="Réorganiser l\'affichage de la caisse">'+(st.posEdit?'✓ Terminer':'⇅ Ordre')+'</button>';
     var editBanner=st.posEdit?('<div class="pos-edit-banner">'+(st.cat==='Tout'?'Mode rangement — choisis une gamme (Fleurs, King…) puis glisse les produits dans l\'ordre voulu.':'Mode rangement — glisse les produits de la gamme <b>'+esc(st.cat)+'</b> dans l\'ordre voulu. L\'ordre est propre à ta boutique. Touche « Terminer » quand c\'est bon.')+'</div>'):'';
     return '<div id="pos-tpe-strip" style="margin-bottom:10px"></div>'+'<div class="pos"><div class="pos-left">'+editBtn+
-      '<div class="cats">'+cats.map(function(c){return '<button class="cat '+(c===st.cat?'on':'')+'" data-act="poscat" data-c="'+c+'">'+c+'</button>';}).join('')+'</div>'+editBanner+
+      '<div class="cats">'+cats.map(function(c){return '<button class="cat '+(c===st.cat?'on':'')+'" data-act="poscat" data-c="'+esc(c)+'">'+esc(c)+'</button>';}).join('')+'</div>'+editBanner+
       '<input id="pos-search" class="pos-search" placeholder="Rechercher un produit…" value="'+esc(st.posSearch||'')+'"/>'+'<button data-act="prixlibre" style="width:100%;margin:-2px 0 12px;padding:11px 14px;border-radius:10px;border:1px solid var(--gold);background:var(--gold-soft);color:var(--gold);font-size:14px;font-weight:600;cursor:pointer">+ Prix libre</button>'+'<div class="pgrid'+(posEditing()?' editing':'')+'">'+grid+'</div></div>'+
       '<div class="ticket"><div class="tk-head"><h3>Ticket</h3><span class="muted" style="font-size:12px">'+st.boutique+'</span><button class="tk-close" data-act="tkclose" title="Fermer">×</button></div>'+
       '<div class="tk-client">'+clientBox+rewardBox+'</div>'+
@@ -3487,7 +3488,7 @@ document.addEventListener('click',function(e){var eye=e.target.closest('[data-da
     var secN='<h3 style="font-family:var(--serif);margin:16px 0 10px">'+crown('#b8902f')+' Catalogue KINGSTON <span class="muted" style="font-size:12.5px;font-weight:400">('+netProds.length+' — commun à tout le réseau)</span></h3>'+
       '<div class="card">'+(netProds.map(prodRow).join('')||'<div class="muted" style="padding:14px">Aucun produit pour le moment.</div>')+'</div>';
     return '<div class="vhead"><div><h1>Produits</h1><p>'+sub+'</p></div>'+(API.on?'<button class="btn btn-gold" data-act="openprod">+ Ajouter un produit</button>':'')+'</div>'+
-      note+selRow+secB+secN;
+      note+selRow+(API.on&&(isAdmV||isMgrV)?'<p><button class="btn" data-act="categories-open">Gérer les catégories de cette caisse</button></p>':'')+secB+secN;
   }
 
 // KT_STOCK_GAPS_UI_20261007
@@ -5327,7 +5328,7 @@ function ktPosCommit(code){if(!ktPosPending)return;var x=ktPosPending,p=pById(x.
     }
     return '<div class="modal-h">'+(f.editId?'Modifier le produit':'Ajouter un produit')+'</div><div class="modal-b">'+
       '<div class="fld"><label>Nom</label><input id="pf-name" value="'+esc(f.name)+'" placeholder="ex : Amnesia Haze"/></div>'+
-      '<div class="fld"><label>Catégorie</label><input id="pf-cat" value="'+esc(f.cat)+'" placeholder="ex : Fleurs, Café, Snacks…"/></div>'+
+      '<div class="fld"><label>Catégorie</label><input id="pf-cat" list="kt-category-options" value="'+esc(f.cat)+'" placeholder="ex : Fleurs, Café, Snacks…"/><datalist id="kt-category-options">'+(st.categories||[]).map(function(c){return '<option value="'+esc(c)+'"></option>';}).join('')+'</datalist></div>'+
       scopeBlock+
       typeBtns+block+
       '<div class="fld"><label>Photo</label><input id="pf-file" type="file" accept="image/*" style="font-size:12px"/><input id="pf-imgurl" value="'+esc(f.img)+'" placeholder="ou colle un lien d\'image (https://…)" style="margin-top:6px"/>'+prev+'</div>'+
@@ -5428,12 +5429,36 @@ function ktPosCommit(code){if(!ktPosPending)return;var x=ktPosPending,p=pById(x.
   function payTermManual(msg){
     openModal('<div class="modal-h">Terminal</div><div class="modal-b"><div class="muted" style="font-size:13px;margin-bottom:6px">'+esc(msg)+'</div><div style="display:flex;gap:10px;margin-top:8px"><button class="btn" style="flex:1" data-act="closemodal">Annuler</button><button class="btn btn-gold" style="flex:1" data-act="payok" data-m="Carte bancaire">Valider à la main</button></div></div>');
   }
+  // KT_POS_CATEGORIES_UI_20261021
+  function ktCategoryModal(){
+    var cats=st.categories||[];
+    openModal('<div class="modal-h">Catégories de la caisse</div><div class="modal-b"><p>Réglages de '+esc(bqLabelFull(st.prodBtq||st.boutiqueId))+'. Supprimer une catégorie conserve ses produits et stocks dans « Sans catégorie ».</p><label>Nouvelle catégorie<input id="kt-cat-name" maxlength="60" placeholder="Ex. Huiles" style="display:block;width:100%;padding:12px"></label><button class="btn btn-gold" data-act="categories-add">Ajouter la catégorie</button><div style="margin:16px 0">'+cats.map(function(c){return '<div style="display:flex;justify-content:space-between;gap:8px;padding:8px;border-bottom:1px solid var(--line)"><b>'+esc(c)+'</b>'+(c==='Sans catégorie'?'':'<button class="btn" data-act="categories-delete" data-name="'+esc(c)+'">Supprimer</button>')+'</div>';}).join('')+'</div><h3>Classer un produit</h3><label>Produit<select id="kt-cat-product" style="display:block;width:100%;padding:10px">'+products.map(function(p){return '<option value="'+esc(p.id)+'">'+esc(p.name)+' · '+esc(p.cat)+'</option>';}).join('')+'</select></label><label>Catégorie<select id="kt-cat-target" style="display:block;width:100%;padding:10px">'+cats.map(function(c){return '<option value="'+esc(c)+'">'+esc(c)+'</option>';}).join('')+'</select></label><button class="btn" data-act="categories-assign">Enregistrer le classement</button><p id="kt-cat-error" role="alert"></p><button class="btn" data-act="closemodal">Fermer</button></div>');
+  }
+  function ktCategorySave(action,name,productId,el){
+    el.disabled=true;
+    apiPost('/api/products/categories',{action:action,name:name,productId:productId,boutiqueId:st.prodBtq||st.boutiqueId}).then(function(){
+      var q=(st.user||{}).role==='admin'?'?boutique='+encodeURIComponent(st.prodBtq||st.boutiqueId||'aix'):'';
+      return apiGet('/api/products'+q);
+    }).then(function(d){products=(d.products||[]).map(mapServerProduct);st.categories=d.categories||[];st.cat='Tout';render();ktCategoryModal();toast('Catégories enregistrées');}).catch(function(e){var box=document.getElementById('kt-cat-error');if(box)box.textContent=e.message;el.disabled=false;});
+  }
+  function ktCashCents(raw){
+    raw=String(raw).trim().replace(',', '.');
+    if(!/^\d+(?:\.\d{1,2})?$/.test(raw))return null;
+    var n=Math.round(Number(raw)*100);return Number.isSafeInteger(n)?n:null;
+  }
+  function ktCashUpdate(){
+    var input=document.getElementById('kt-cash-received');if(!input)return;
+    var received=ktCashCents(input.value),due=Math.round(cartTotal()*100),box=document.getElementById('kt-cash-change'),btn=document.getElementById('kt-cash-confirm');
+    btn.disabled=received===null||received<due;
+    box.textContent=received===null?'Saisis le montant reçu.':received<due?'Il manque '+eur((due-received)/100):'Monnaie à rendre : '+eur((received-due)/100);
+  }
+  document.addEventListener('input',function(e){if(e.target.id==='kt-cash-received')ktCashUpdate();});
   function payModal(method){
     if(!API.on&&st.cart.some(function(l){return l.lotCode!=null;})){toast('Reconnecte la caisse au serveur pour encaisser les lots tracés.');return;}
     if(method==='Carte bancaire'){
       payByCardTerminal();
     } else {
-      openModal('<div class="modal-h">Paiement espèces</div><div class="modal-b"><p>Montant à encaisser : <b>'+eur(cartTotal())+'</b></p><button class="btn btn-gold" style="width:100%" data-act="payok" data-m="Espèces">Confirmer l\'encaissement</button></div>');
+      openModal('<div class="modal-h">Paiement espèces</div><div class="modal-b"><p>Montant à encaisser : <b style="font-size:28px">'+eur(cartTotal())+'</b></p><button class="btn btn-gold" style="width:100%" data-act="payok" data-m="Espèces">Accepter le paiement directement</button><p class="muted">Le client a donné le montant exact, ou tu as déjà rendu la monnaie.</p><hr><h3>Calculer la monnaie à rendre</h3><label>Montant reçu (€)<input id="kt-cash-received" inputmode="decimal" placeholder="Ex. 50,00" style="display:block;width:100%;padding:14px;font-size:24px"></label><p id="kt-cash-change" aria-live="polite" style="font-size:22px;font-weight:700">Saisis le montant reçu.</p><button id="kt-cash-confirm" class="btn btn-gold" style="width:100%" data-act="cash-confirm" disabled>Monnaie rendue · accepter le paiement</button><button class="btn" style="margin-top:10px" data-act="closemodal">Annuler</button></div>');
     }
   }
   function receptModal(){
@@ -5710,6 +5735,11 @@ function ktPosCommit(code){if(!ktPosPending)return;var x=ktPosPending,p=pById(x.
     if(a==='applycoupon'){st.coupon={e:+el.getAttribute('data-e'),p:+el.getAttribute('data-p')};st.redeemPts=0;render();return;}
     if(a==='rmcoupon'){st.coupon=null;render();return;}
     if(a==='pay'){if(!st.cart.length){toast('Le ticket est vide');return;}st.payKey=(Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,10));payModal(el.getAttribute('data-m'));return;}
+    if(a==='categories-open'){ktCategoryModal();return;}
+    if(a==='categories-add'){ktCategorySave('add',document.getElementById('kt-cat-name').value,null,el);return;}
+    if(a==='categories-delete'){ktCategorySave('delete',el.dataset.name,null,el);return;}
+    if(a==='categories-assign'){ktCategorySave('assign',document.getElementById('kt-cat-target').value,document.getElementById('kt-cat-product').value,el);return;}
+    if(a==='cash-confirm'){var received=ktCashCents(document.getElementById('kt-cash-received').value);if(received===null||received<Math.round(cartTotal()*100)){ktCashUpdate();return;}el.disabled=true;finalizeSale('Espèces');return;}
     if(a==='payok'){finalizeSale(el.getAttribute('data-m'));return;}
     if(a==='printticket'){printReceipt();return;}
     if(a==='facture'){openFacture(el.getAttribute('data-num'));return;}
