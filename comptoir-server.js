@@ -2714,7 +2714,7 @@ const server = http.createServer(async (req, res) => {
     const sales = {};
     for (const inv of invoices) { if (inv.total < 0) continue; for (const ln of (inv.lines || [])) { const nm = String(ln.name || '').toLowerCase(); if (nm) sales[nm] = (sales[nm] || 0) + (ln.qty || 1); } }
     const ranked = Object.keys(sales).sort((a, b) => sales[b] - sales[a]).slice(0, 5);
-    const list = allCatalog().filter((p) => !p.boutiqueId || p.boutiqueId === bId).map((p) => {
+    const list = allCatalog().filter((p) => !p.inventoryOnly && (!p.boutiqueId || p.boutiqueId === bId)).map((p) => {
       const o = { id: p.id, name: p.name, cat: p.cat, unit: p.unit, img: p.img || '', desc: p.desc || '', custom: !!p.custom, new: !!p.new, popular: ranked.indexOf(String(p.name || '').toLowerCase()) >= 0 };
       const sk = (stock[bId] || {})[p.id];
       if (p.unit === 'g') { o.tiers = p.tiers; o.stockG = totalGrams(sk); }
@@ -3517,6 +3517,7 @@ const server = http.createServer(async (req, res) => {
       const products = allCatalog().filter((p) => !p.boutiqueId || p.boutiqueId === bId).map((p) => {
         const s = (stock[bId] || {})[p.id];
         const base = { id: p.id, name: p.name, cat: p.cat, unit: p.unit, img: p.img || '', desc: p.desc || '', custom: !!p.custom };
+        base.inventoryOnly = !!p.inventoryOnly;
         if (p.boutiqueId) base.boutiqueId = p.boutiqueId;
         if (p.vat != null) base.vat = p.vat;
         if (p.new) base.new = true;
@@ -3613,6 +3614,7 @@ const server = http.createServer(async (req, res) => {
         const packs = (Array.isArray(b.packs) ? b.packs : []).map((k) => ({ qty: Math.floor(Number(k.qty)), price: Math.round((Number(k.price) || 0) * 100) / 100 })).filter((k) => k.qty > 1 && k.price >= 0);
         if (packs.length) p.packs = packs;
       }
+      if (b.inventoryOnly === true) { if (unit !== 'u') return send(res,400,{error:'Les emballages sont suivis à la pièce.'}); p.inventoryOnly=true; p.price=0; delete p.packs; }
       customProducts.push(p);
       ensureStock(p);
       const bId = user.role === 'admin' ? (p.boutiqueId || b.boutiqueId || 'aix') : user.boutiqueId;   // produit de boutique -> stock initial CHEZ ELLE
@@ -3639,6 +3641,7 @@ const server = http.createServer(async (req, res) => {
         return send(res, 200, { ok: true, deleted: id });
       }
       const b = await readJson(req);
+      if (b.inventoryOnly === true && p.unit !== 'u') return send(res,400,{error:'Les emballages sont suivis à la pièce.'});
       if (b.name) p.name = b.name.trim();
       if (b.cat) p.cat = b.cat.trim();
       if (b.img != null) p.img = b.img;
@@ -3654,6 +3657,8 @@ const server = http.createServer(async (req, res) => {
         if (b.price != null) p.price = Math.round((Number(b.price) || 0) * 100) / 100;
         if (Array.isArray(b.packs)) p.packs = b.packs.map((k) => ({ qty: Math.floor(Number(k.qty)), price: Math.round((Number(k.price) || 0) * 100) / 100 })).filter((k) => k.qty > 1 && k.price >= 0);
       }
+      if ('inventoryOnly' in b) { if (b.inventoryOnly && p.unit !== 'u') return send(res,400,{error:'Les emballages sont suivis à la pièce.'}); p.inventoryOnly=b.inventoryOnly===true; }
+      if (p.inventoryOnly) { p.price=0; delete p.packs; }
       persist();
       return send(res, 200, { ok: true, product: p });
     }
@@ -3750,6 +3755,7 @@ const server = http.createServer(async (req, res) => {
         if (it.productId === 'libre') { const _p = Math.round(Number(it.price)*100)/100; if(!(_p>0)) throw new Error('Montant prix libre invalide'); brut += _p; lines.push({ produit: (it.name||'Article divers'), detail: 'Prix libre', prix: _p, productId: 'libre', qty: 1, vat: 0.20 }); continue; }
         const p = findProduct(it.productId);
         if (!p) throw new Error('Produit inconnu : ' + it.productId);
+        if (p.inventoryOnly) throw new Error('Emballage non vendu en caisse : ' + p.name);
         const rate = vatRate(p);
         if (p.unit === 'g') {
           const grams = Math.round(Number(it.grams) * 1000) / 1000; // Précision identique au popup et au stock : 0,001 g
