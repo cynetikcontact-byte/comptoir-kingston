@@ -4309,7 +4309,7 @@ function ktNoticePaint(){
  if(cash){ktNoticeDismiss();ktNoticeRemove('kt-order-toast');}
  if(!n&&!ktNotices.receivingCount){if(banner)banner.remove();ktNoticeDismiss();ktNoticeRemove('kt-order-toast');return;}
  if(!banner&&bar){banner=document.createElement('button');banner.id='kt-order-banner';banner.type='button';banner.addEventListener('click',function(){if(!ktNoticeCash()){var actionable=ktNotices.rows.filter(function(x){return x.canReceive;});if(actionable.length===1)ktNoticeReceive(actionable[0]);else if(actionable.length>1)krOrderList();else ktNoticeOpen();}});bar.insertBefore(banner,bar.querySelector('.top-r'));}
- if(banner){banner.className=cash?'kt-order-cash':(ready.length?'kt-order-ready':'');banner.textContent=cash?'● '+rows.length:(rows.length>1?rows.length+' commandes à suivre · Réceptionner →':n?n.numero+' · '+n.title+' →':ktNotices.receivingCount+' commandes Basecamp à réceptionner →');banner.disabled=cash;banner.setAttribute('aria-label',cash?rows.length+' notifications de réassort en attente':banner.textContent);banner.title=cash?'Notification disponible après la caisse':'';}
+ if(banner){banner.className=cash?'kt-order-cash':(ready.length?'kt-order-ready':'');banner.textContent=cash?'● '+rows.length:(rows.length>1?rows.length+' suivis de commande →':n?n.numero+' · '+n.title+' →':ktNotices.receivingCount+' commandes Basecamp à réceptionner →');banner.disabled=cash;banner.setAttribute('aria-label',cash?rows.length+' notifications de réassort en attente':banner.textContent);banner.title=cash?'Notification disponible après la caisse':'';}
  if(ktNotices.shown&&!rows.some(function(x){return x.eventKey===ktNotices.shown;}))ktNoticeDismiss();
  if(cash||document.hidden||document.querySelector('.modal-backdrop,#kt-order-popup,#kt-order-toast,[role="dialog"]')||!document.hasFocus())return;
  var pending=ready.concat(rows.filter(function(x){return x.stage==='preparation';})).find(function(x){return !ktNotices.seen[x.eventKey];});if(!pending)return;
@@ -4614,13 +4614,13 @@ function krBulkLoad(id){ktNoticeDismiss();return apiGet('/api/pro/receiving').th
 function krOrderList(){
  openModal('<div class="modal-h">Mes commandes Basecamp</div><div class="modal-b">Chargement…</div>');
  apiGet('/api/pro/receiving').then(function(d){krData=d.lots||[];var groups={};krData.filter(function(r){return !r.received;}).forEach(function(r){(groups[r.orderId]||(groups[r.orderId]=[])).push(r);});
- var cards=Object.keys(groups).map(function(id){var rows=groups[id],r=rows[0];return '<article class="kr-card"><b>'+esc(r.order)+' · '+esc(r.boutique)+'</b><p>'+rows.length+' lot(s) restant(s) · '+(r.ready?'Disponible pour réception':'En attente de préparation ou d’expédition')+'</p><button class="btn btn-gold" data-act="kr-bulk-open" data-id="'+id+'" '+(!r.ready?'disabled':'')+'>Ajouter la commande au stock</button></article>';}).join('');
+ var cards=Object.keys(groups).map(function(id){var rows=groups[id],r=Object.assign({},rows[0],{ready:rows.some(function(x){return x.ready;})});return '<article class="kr-card"><b>'+esc(r.order)+' · '+esc(r.boutique)+'</b><p>'+rows.length+' lot(s) restant(s) · '+(r.ready?'Disponible pour réception':'En attente de préparation ou d’expédition')+'</p><button class="btn btn-gold" data-act="kr-bulk-open" data-id="'+id+'" '+(!r.ready?'disabled':'')+'>Ajouter la commande au stock</button></article>';}).join('');
  openModal(krCss+'<div class="modal-h">Réceptionner une commande Basecamp</div><div class="modal-b"><p>Choisis une commande physiquement reçue. Les produits, quantités, lots et DDM sont repris automatiquement.</p>'+(cards||'<p class="kr-ok">Aucune commande à ajouter : tes réceptions sont à jour.</p>')+'<button class="btn" data-act="closemodal">Fermer</button></div>');
  }).catch(function(e){openModal('<div class="modal-h">Réceptions Basecamp</div><div class="modal-b"><p role="alert">'+esc(e.message)+'</p><button class="btn" data-act="kr-orders">Réessayer</button><button class="btn" data-act="closemodal">Fermer</button></div>');});
 }
-function krBulkOpen(id){krBulkOrder=Number(id);var rows=krData.filter(function(r){return r.orderId===krBulkOrder&&!r.received;});if(!rows.length){krOrderList();return;}
+function krBulkOpen(id){krBulkOrder=Number(id);var rows=krData.filter(function(r){return r.orderId===krBulkOrder&&!r.received&&r.ready;});if(!rows.length){krOrderList();return;}
  var blocked=rows.some(function(r){return !r.ready||!r.mapped||r.expired||r.issue;});
- openModal(krCss+'<div class="modal-h">Ajouter '+esc(rows[0].order)+' au stock · '+esc(rows[0].boutique)+'</div><div class="modal-b">'+krRail({stage:3,received:false})+'<p>Tous les lots ci-dessous seront ajoutés en une fois. Les lots déjà réceptionnés ne seront pas ajoutés à nouveau.</p>'+rows.map(function(r){return '<div class="kr-card"><b>'+esc(r.product)+' · '+esc(r.qty)+' '+esc(r.unit)+'</b><details><summary>Lot et DDM</summary>'+esc(r.code)+' · DDM : '+esc(ktDdmText(r))+'</details>'+(r.issue?'<p class="kr-warn">Anomalie : '+esc(r.issue)+'</p>':'')+(!r.mapped?'<p class="kr-warn">Basecamp doit relier ce produit à la caisse et vérifier le nombre d’unités par boîte.</p>'+((st.user||{}).role==='admin'?'<button class="btn" data-act="kr-fix-map" data-pid="'+esc(r.productId)+'">Associer ce produit à la caisse</button>':''):'')+(r.expired?'<p class="kr-warn">DDM dépassée.</p>':'')+(!r.originKnown||!(r.ddm||r.expiry)?'<p class="muted">Origine ou DDM historique manquante : les étiquettes clients resteront bloquées.</p>':'')+'</div>';}).join('')+ '<h3>Tout est conforme ?</h3><p>En confirmant, tu attestes avoir reçu les produits indiqués, dans les bonnes quantités, avec les bons lots et des emballages intacts.</p><div id="kr-error" role="alert" class="kr-error"></div>'+(blocked?'<p class="kr-warn" role="alert">Ajout au stock indisponible : corrigez les points signalés ci-dessus avec Basecamp, puis actualisez.</p>':'')+'<div class="kr-actions"><button class="btn" data-act="kr-direct" data-id="'+krBulkOrder+'">Actualiser la réception</button><button class="btn btn-gold" id="kr-bulk-submit" data-act="kr-bulk-submit" '+(blocked?'disabled':'')+'>Oui, ajouter à mon stock</button><button class="btn" data-act="kr-bulk-issue">Signaler un problème</button><button class="btn" data-act="kr-orders">Retour</button></div></div>');
+ openModal(krCss+'<div class="modal-h">Ajouter '+esc(rows[0].order)+' au stock · '+esc(rows[0].boutique)+'</div><div class="modal-b">'+krRail({stage:3,received:false})+'<p>Seuls les lots expédiés ci-dessous seront ajoutés. Les produits différés restent en attente et les lots déjà reçus ne seront pas ajoutés à nouveau.</p>'+rows.map(function(r){return '<div class="kr-card"><b>'+esc(r.product)+' · '+esc(r.qty)+' '+esc(r.unit)+'</b><details><summary>Lot et DDM</summary>'+esc(r.code)+' · DDM : '+esc(ktDdmText(r))+'</details>'+(r.issue?'<p class="kr-warn">Anomalie : '+esc(r.issue)+'</p>':'')+(!r.mapped?'<p class="kr-warn">Basecamp doit relier ce produit à la caisse et vérifier le nombre d’unités par boîte.</p>'+((st.user||{}).role==='admin'?'<button class="btn" data-act="kr-fix-map" data-pid="'+esc(r.productId)+'">Associer ce produit à la caisse</button>':''):'')+(r.expired?'<p class="kr-warn">DDM dépassée.</p>':'')+(!r.originKnown||!(r.ddm||r.expiry)?'<p class="muted">Origine ou DDM historique manquante : les étiquettes clients resteront bloquées.</p>':'')+'</div>';}).join('')+ '<h3>Tout est conforme ?</h3><p>En confirmant, tu attestes avoir reçu les produits indiqués, dans les bonnes quantités, avec les bons lots et des emballages intacts.</p><div id="kr-error" role="alert" class="kr-error"></div>'+(blocked?'<p class="kr-warn" role="alert">Ajout au stock indisponible : corrigez les points signalés ci-dessus avec Basecamp, puis actualisez.</p>':'')+'<div class="kr-actions"><button class="btn" data-act="kr-direct" data-id="'+krBulkOrder+'">Actualiser la réception</button><button class="btn btn-gold" id="kr-bulk-submit" data-act="kr-bulk-submit" '+(blocked?'disabled':'')+'>Oui, ajouter à mon stock</button><button class="btn" data-act="kr-bulk-issue">Signaler un problème</button><button class="btn" data-act="kr-orders">Retour</button></div></div>');
 }
 document.addEventListener('change',function(e){if(e.target.id==='kr-bulk-confirm'){var b=document.getElementById('kr-bulk-submit');if(b)b.disabled=!e.target.checked||b.dataset.blocked==='1';}});
 // KT_RECEIVING_MAPPING_FIX_20261013
@@ -4786,6 +4786,40 @@ function ktSaveFranchiseLot(el){
       return s;
     }).join(', ');
   }
+// Livraison différée : suivi par produit, sans nouvelle commande ni nouveau paiement.
+var kdForm=null,kdBusy=false,kdPoll=0;
+function kdLabel(s){return {waiting:'En attente de réapprovisionnement',prepared:'Complément préparé',shipped:'Complément expédié / prêt à retirer',received:'Complément reçu'}[s]||s;}
+function kdReady(o){return (o.items||[]).some(function(it){return (!it.deferred?['expediee','retrait'].includes(o.status):it.deferred.state==='shipped')&&(it.warehouseLots||[]).some(function(p){return !(p.reception||{}).validatedAt;});});}
+function kdButton(o,it,a,label){return '<button class="btn" data-kd="'+a+'" data-order="'+o.id+'" data-product="'+esc(it.productId)+'">'+esc(label)+'</button>';}
+function kdOrderHtml(o){
+ var admin=(st.user||{}).role==='admin',eligible=admin&&!o.restocked&&!['attente','annulee','recue'].includes(o.status);
+ var rows=(o.items||[]).filter(function(it){return it.deferred||eligible;}).map(function(it){var d=it.deferred;
+ if(!d){return !(it.warehouseLots||[]).some(function(p){return (p.reception||{}).arrivedAt;})?'<p><b>'+esc(it.name)+'</b> · '+esc(it.qty)+' '+esc(it.unit)+' '+kdButton(o,it,'defer','Livrer plus tard')+'</p>':'';}
+ return '<article class="kr-card"><b>'+esc(it.name)+' · '+esc(d.qty)+' '+esc(it.unit)+'</b><p><span class="tag">'+esc(kdLabel(d.state))+'</span></p><p>'+(d.state==='received'?'Ajouté au stock boutique.':d.state==='shipped'?'À réceptionner uniquement à l’arrivée du complément.':'Ce produit reste prévu dans la commande. Aucun nouvel achat nécessaire.')+'</p>'+(d.eta?'<p>Date estimée : '+esc(d.eta.split('-').reverse().join('/'))+' (indicative)</p>':'<p class="muted">Date de livraison à confirmer.</p>')+(admin&&d.state!=='received'?kdButton(o,it,'eta','Modifier la date estimée')+(d.state==='waiting'?kdButton(o,it,'prepare','Préparer le complément'):d.state==='prepared'?kdButton(o,it,'ship',(o.shipMode||o.shipChoice)==='retrait'?'Complément prêt à retirer':'Confirmer l’expédition du complément'):''):'')+'</article>';
+ }).join('');
+ return rows?'<section class="kt-order-next"><h3>Produits à livrer séparément</h3><p>Le reste de la commande peut être reçu indépendamment. Le montant commandé reste inchangé.</p>'+rows+'</section>':'';
+}
+function kdRefresh(){
+ if(!document.getElementById('kd-reminders')&&!document.getElementById('kd-stock-reminders'))return;
+ apiGet('/api/pro/deferred').then(function(d){var admin=(st.user||{}).role==='admin',rows=d.rows||[];
+ var html='<section class="kt-order-next"><h3>'+ (admin?'Compléments à livrer':'Mes produits livrés plus tard')+' · '+rows.length+'</h3>'+rows.map(function(r){return '<article class="kr-card"><b>'+esc(r.order)+' · '+esc(r.boutique)+'</b><p>'+esc(r.product)+' · '+r.qty+' '+esc(r.unit)+' — '+esc(kdLabel(r.state))+'</p>'+(r.eta?'<p>Date estimée : '+esc(r.eta.split('-').reverse().join('/'))+'</p>':'')+(admin&&r.state==='waiting'?'<p class="'+(r.available>=r.qty?'kr-ok':'muted')+'">'+(r.available>=r.qty?'Stock de nouveau disponible : complément à préparer.':'Stock disponible : '+r.available+' '+esc(r.unit)+'. En attente de réapprovisionnement.')+'</p>':'')+'<button class="btn" data-kd="open" data-order="'+r.orderId+'">Ouvrir la commande</button></article>';}).join('')+(!rows.length?'<p>Aucun complément en attente.</p>':'')+'</section>';
+ ['kd-reminders','kd-stock-reminders'].forEach(function(id){var host=document.getElementById(id);if(host)host.innerHTML=html;});
+ }).catch(function(e){['kd-reminders','kd-stock-reminders'].forEach(function(id){var h=document.getElementById(id);if(h)h.textContent='Suivi indisponible : '+e.message;});});
+}
+function kdOpenForm(o,it,a){
+ kdForm={order:o.id,productId:it.productId,action:a,version:(it.deferred||{}).updatedAt||0};
+ var text=a==='defer'?'Ce produit sera livré plus tard. La boutique verra la quantité en attente et pourra recevoir les autres produits.':a==='prepare'?'Le stock disponible sera réservé pour ce complément avec ses lots Kingston. La boutique ne pourra le réceptionner qu’après confirmation de son expédition ou de sa mise à disposition.':a==='ship'?'Confirmez uniquement lorsque ce complément est expédié ou disponible au retrait. La boutique pourra alors confirmer sa réception.':'La date est indicative et sera visible par la boutique.';
+ openModal('<div class="modal-h">'+esc(it.name)+' · '+it.qty+' '+esc(it.unit)+'</div><div class="modal-b"><p>'+text+'</p>'+(['defer','eta'].includes(a)?'<label>Date estimée (facultative)<input id="kd-eta" type="date" value="'+esc((it.deferred||{}).eta||'')+'" style="display:block;padding:12px"></label>':'')+(a==='defer'?'<p><label><input type="checkbox" id="kd-missing"> Je confirme que la quantité déjà réservée est physiquement indisponible.</label></p><p class="muted">Cette rupture est enregistrée dans l’historique Basecamp. Le stock déjà déduit n’est pas réajouté. Le prochain arrivage servira à préparer le complément.</p>':'')+'<div id="kd-error" role="alert"></div><button class="btn btn-gold" data-kd="save">Confirmer</button><button class="btn" data-kd="open" data-order="'+o.id+'">Retour</button></div>');
+}
+document.addEventListener('click',function(e){var el=e.target.closest('[data-kd]');if(!el)return;e.preventDefault();e.stopPropagation();var a=el.dataset.kd;
+ if(a==='save'){
+  if(kdBusy||!kdForm)return;var b=Object.assign({},kdForm),eta=document.getElementById('kd-eta'),missing=document.getElementById('kd-missing');if(eta)b.eta=eta.value;if(missing)b.missingConfirmed=missing.checked;
+  kdBusy=true;el.disabled=true;apiPost('/api/pro/orders/'+b.order+'/deferred',b).then(function(d){var i=proData.orders.findIndex(function(o){return o.id===d.order.id;});if(i>=0)proData.orders[i]=d.order;renderProOrders();openProOrder(d.order.id);kdRefresh();krLoad();toast('Suivi de livraison enregistré.');}).catch(function(err){var h=document.getElementById('kd-error');if(h)h.textContent=err.message;else toast(err.message);}).finally(function(){kdBusy=false;el.disabled=false;});return;
+ }
+ apiGet('/api/pro/orders').then(function(d){proData.orders=d.orders||[];var o=proData.orders.find(function(x){return String(x.id)===el.dataset.order;});if(!o)throw Error('Commande introuvable.');if(a==='open'){openProOrder(o.id);return;}var it=o.items.find(function(x){return x.productId===el.dataset.product;});if(!it)throw Error('Produit introuvable.');kdOpenForm(o,it,a);}).catch(function(err){toast(err.message);});
+});
+setInterval(function(){if(!document.hidden&&Date.now()>kdPoll){kdPoll=Date.now()+30000;kdRefresh();}},5000);
+
 var ktOrderActionBusy=false;
 function ktColissimoButton(o){
  if((st.user||{}).role!=='admin'||!o.wooUrl||!o.wooOrderId||['attente','annulee'].includes(o.status)||(o.shipMode||o.shipChoice||(o.shippingQuote||{}).mode)!=='poste')return '';
@@ -4795,6 +4829,7 @@ function ktColissimoButton(o){
 }
 function ktOrderActions(o,modal){
  if((st.user||{}).role!=='admin')return '';
+ if((o.items||[]).some(function(it){return it.deferred;})&&!(o.items||[]).some(function(it){return !it.deferred&&(it.warehouseLots||[]).some(function(p){return !(p.reception||{}).validatedAt;});}))return '<span class="tag">Suivre le complément dans Détails / lots</span>';
  if(o.status==='recue')return '<span class="tag tag-ok">Réceptionnée · stock boutique mis à jour ✓</span>';
  if(o.status==='attente'||o.status==='annulee')return '<span class="muted">'+proStatusLabel(o.status)+'</span>';
  var pickup=(o.shipMode||o.shipChoice)==='retrait',next=o.status==='envoyee'?'preparation':o.status==='preparation'?(pickup?'retrait':'preparee'):o.status==='preparee'?(pickup?'retrait':'expediee'):null;
@@ -4812,7 +4847,7 @@ function ktOrderStage(el){
 
   function renderProOrders(){
     var el=document.getElementById('pro-orders'); if(!el)return;
-    var isAdmin=st.user.role==='admin';if(!isAdmin)krLoad();
+    var isAdmin=st.user.role==='admin';if(!isAdmin)krLoad();setTimeout(kdRefresh,0);
     var rows=(proData.orders||[]).filter(function(o){
         if(o.status==='annulee')return false;             // commandes annulées : masquées partout
         // Les commandes en attente restent visibles pour résoudre les paiements bloqués.
@@ -4820,7 +4855,7 @@ function ktOrderStage(el){
       }).map(function(o){
       var isAttente=(o.status==='attente');
       var ownerOwn = !isAdmin && o.boutiqueId===st.user.boutiqueId;
-      var ownerCanRecv = ownerOwn && ['expediee','retrait'].includes(o.status);
+      var ownerCanRecv = ownerOwn && kdReady(o);
       var items=proItemsSummary(o);
       var totv=(o.totalConfirme!=null?o.totalConfirme:o.total);
       var tot = totv>0?eur2(totv)+(o.shippingQuote?(o.shippingQuote.priceBasis==='HT'?' TTC':' · TVA à vérifier'):''):'<span class="muted">à définir</span>';
@@ -4829,6 +4864,7 @@ function ktOrderStage(el){
       var statusCell = isAttente
         ? '<span class="tag tag-low">⏳ En attente de paiement</span>'
         : '<span class="tag '+tagcl+'">'+proStatusLabel(o.status)+'</span>'+(o.wooPaid?' <span class="tag tag-ok" style="font-size:10px">payé ✓</span>':'');
+      if((o.items||[]).some(function(it){return it.deferred&&it.deferred.state!=='received';}))statusCell+='<br><span class="tag tag-low">Livraison partielle · complément suivi</span>';
       var act;
       if(isAdmin){ var wooLink=o.wooUrl?'<a class="btn" href="'+esc(o.wooUrl)+'" target="_blank" rel="noopener" onclick="event.stopPropagation()" title="Ouvrir cette commande dans WooCommerce" style="text-decoration:none;margin-right:6px">🛒</a>':''; act=ktColissimoButton(o)+wooLink+'<button class="btn'+(o.status==='envoyee'?' btn-gold':'')+'" data-act="pro-open" data-id="'+o.id+'">'+(o.status==='recue'?'Voir ›':'Détails / lots ›')+'</button><div style="margin-top:8px">'+ktOrderActions(o,false)+'</div>'; }
       else if(isAttente && ownerOwn){ var payB=o.payUrl?'<a class="btn btn-gold" href="'+esc(o.payUrl)+'" target="_blank" rel="noopener" onclick="event.stopPropagation()" title="Payer pour valider la commande" style="text-decoration:none;margin-right:6px">💳 Payer pour valider</a>':'<button class="btn btn-gold" data-act="kt-payment-retry" data-id="'+o.id+'">Récupérer le lien de paiement</button>'; act=payB+'<button class="btn" data-act="pro-cancel" data-id="'+o.id+'" style="color:#b4452f">Annuler</button>'; }
@@ -4842,26 +4878,26 @@ function ktOrderStage(el){
         '<td>'+statusCell+shipTag+proTimeline(o)+'</td>'+
         '<td style="text-align:right;white-space:nowrap">'+act+'</td></tr>';
     }).join('')||'<tr><td colspan="5" class="muted" style="padding:12px">Aucune commande de réassort pour le moment.</td></tr>';
-    el.innerHTML='<table class="tbl"><thead><tr><th>N°</th><th>Articles</th><th>Total</th><th>Statut</th><th></th></tr></thead><tbody>'+rows+'</tbody></table>'+
+    el.innerHTML='<div id="kd-reminders"></div><table class="tbl"><thead><tr><th>N°</th><th>Articles</th><th>Total</th><th>Statut</th><th></th></tr></thead><tbody>'+rows+'</tbody></table>'+
       (isAdmin?'<div class="muted" style="font-size:12px;padding:8px 2px 0">Change le statut directement avec les boutons. Ouvre Détails / lots pour consulter les lots automatiques et imprimer les étiquettes.</div>':'');
   }
   // Détail d'une commande de réassort (admin) : voir la commande, poser des réserves/notes, confirmer, expédier.
   function openProOrder(id){
     var o=(proData.orders||[]).filter(function(x){return String(x.id)===String(id);})[0]; if(!o){toast('Commande introuvable');return;} proData.cur=o;
     var bl=(netData.boutiques||[]).filter(function(b){return b.id===o.boutiqueId;})[0]; var blabel=bl?bl.label:o.boutiqueId;
-    var locked=(st.user||{}).role!=='admin'||['attente','recue','expediee','retrait'].includes(o.status);
+    var locked=(st.user||{}).role!=='admin'||(o.items||[]).some(function(it){return it.deferred;})||['attente','recue','expediee','retrait'].includes(o.status);
     var rows=(o.items||[]).map(function(it){
       var conf=(it.qtyConfirmed!=null?it.qtyConfirmed:it.qty); var u=proUnitSym(it.unit); var dis=locked?' disabled':'';
       return '<tr><td><b>'+esc(it.name)+'</b><div class="muted" style="font-size:11px">'+esc(it.productId)+(it.unitPrice!=null?' · '+eur2(it.unitPrice)+'/'+u:'')+'</div></td>'+
         '<td style="text-align:center;white-space:nowrap">'+it.qty+' '+u+'</td>'+
-        '<td style="white-space:nowrap"><input id="poq-'+esc(it.productId)+'" type="number" min="0" value="'+conf+'"'+dis+' style="width:74px;padding:7px 8px;border:1px solid var(--line);border-radius:8px"/> '+u+(locked?'':' <button class="btn" data-act="pro-rupture" data-pid="'+esc(it.productId)+'" style="padding:5px 9px;font-size:11px;color:#b4452f">rupture</button>')+'</td>'+
+        '<td style="white-space:nowrap"><input id="poq-'+esc(it.productId)+'" type="number" min="0" value="'+conf+'"'+dis+' style="width:74px;padding:7px 8px;border:1px solid var(--line);border-radius:8px"/> '+u+''+'</td>'+
         '<td><input id="pon-'+esc(it.productId)+'" value="'+esc(it.note||'')+'"'+dis+' placeholder="spécificité, remarque…" style="width:100%;padding:7px 8px;border:1px solid var(--line);border-radius:8px"/></td></tr>';
     }).join('');
     var foot='<button class="btn" data-act="closemodal">Fermer</button>'+(locked?'':(['envoyee','preparation','preparee'].includes(o.status)?'<button class="btn" data-act="kt-order-stage" data-id="'+o.id+'" data-stage="'+o.status+'" data-modal="1">Enregistrer les quantités et notes</button>':''));
     openModal('<div class="modal-h">Commande '+esc(o.numero)+' — '+esc(blabel)+'</div>'+
-      '<div class="modal-b">'+ktProCss+ktOrderRail(o)+ktOrderNext(o)+ktOrderShipping(o)+ktOrderLineage(o)+
+      '<div class="modal-b">'+ktProCss+ktOrderRail(o)+ktOrderNext(o)+ktOrderShipping(o)+kdOrderHtml(o)+ktOrderLineage(o)+
       '<div class="muted" style="font-size:12.5px;margin-bottom:10px">Passée le '+(o.ts?new Date(o.ts).toLocaleString('fr-FR'):'—')+' · Statut <b>'+proStatusLabel(o.status)+'</b>'+(o.by?' · par '+esc(o.by):'')+'</div>'+
-      (locked?'':'<div class="muted" style="font-size:12px;margin-bottom:10px">Ajuste la quantité <b>envoyée</b> si tu sers moins que demandé (rupture, partiel) — c\'est elle qui entrera dans le stock du franchisé à la réception. Ajoute une note par produit si besoin.</div>')+
+      (locked?'':'<div class="muted" style="font-size:12px;margin-bottom:10px">Pour un produit à livrer plus tard, utilisez le suivi ci-dessus. Ajuste la quantité <b>envoyée</b> uniquement pour une réduction définitive — c\'est elle qui entrera dans le stock du franchisé à la réception. Ajoute une note par produit si besoin.</div>')+
       '<table class="tbl"><thead><tr><th>Produit</th><th style="text-align:center">Demandé</th><th>Envoyé</th><th>Réserve / note</th></tr></thead><tbody>'+rows+'</tbody></table>'+
       '<div class="fld" style="margin-top:12px"><label>Note générale pour le franchisé (optionnel)</label><textarea id="po-note" rows="2"'+(locked?' disabled':'')+' style="width:100%;padding:9px;border:1px solid var(--line);border-radius:10px;font-family:inherit" placeholder="ex. envoi partiel, reliquat la semaine prochaine">'+esc(o.note||'')+'</textarea></div>'+
       '</div>'+
@@ -4925,12 +4961,13 @@ function ktOrderRail(o){
  return '<div class="kt-order-rail" aria-label="Suivi de la commande">'+labels.map(function(label,i){var done=i<stage,current=i===stage;return '<div class="kt-order-step '+(done?'done':current?'current':'')+'" '+(current?'aria-current="step"':'')+'><b>'+(done?'✓':i+1)+' · '+label+'</b><span>'+(done?'Validé':current?(i===0?'Paiement à effectuer':hints[i]):'À venir')+'</span></div>';}).join('')+'</div>';
 }
 function ktOrderNext(o){
- var admin=(st.user||{}).role==='admin',ready=['retrait','expediee'].includes(o.status),done=o.restocked||o.status==='recue';
- var body=admin?ktOrderActions(o,true):done?'<button class="btn btn-gold" data-act="kr-order" data-id="'+o.id+'">Créer mes étiquettes clients</button> <button class="btn" data-act="kr-stock">Voir mon stock</button>':ready?'<button class="btn btn-gold" data-act="kr-direct" data-id="'+o.id+'">J’ai reçu ma commande · ajouter au stock</button>':o.status==='attente'?ktPaymentButton(o):'<p>Basecamp prépare votre commande. Vous serez notifié dès qu’elle sera '+((o.shipMode||o.shipChoice)==='retrait'?'prête à récupérer':'expédiée')+'.</p>';
+ var admin=(st.user||{}).role==='admin',ready=kdReady(o),done=o.restocked||o.status==='recue';
+ var waiting=(o.items||[]).some(function(it){return it.deferred&&it.deferred.state!=='received';});
+ var body=admin?ktOrderActions(o,true):!ready&&waiting?'<p>Un complément reste prévu. Son état et sa date estimée figurent ci-dessous.</p>':done?'<button class="btn btn-gold" data-act="kr-order" data-id="'+o.id+'">Créer mes étiquettes clients</button> <button class="btn" data-act="kr-stock">Voir mon stock</button>':ready?'<button class="btn btn-gold" data-act="kr-direct" data-id="'+o.id+'">J’ai reçu ma commande · ajouter au stock</button>':o.status==='attente'?ktPaymentButton(o):'<p>Basecamp prépare votre commande. Vous serez notifié dès qu’elle sera '+((o.shipMode||o.shipChoice)==='retrait'?'prête à récupérer':'expédiée')+'.</p>';
  return '<section class="kt-order-next"><h3>'+ (done?'Réception terminée':'Prochaine étape')+'</h3>'+body+'<p class="muted" style="margin-bottom:0">'+(done?'Les quantités reçues ont été ajoutées au stock boutique.':ready?'Confirmez uniquement après avoir reçu et contrôlé les produits.':'Quantités, lots et DDM suivent automatiquement la commande.')+'</p></section>';
 }
 function ktProWorkbench(){
- var admin=(st.user||{}).role==='admin',scope=ktProScope(),choices=ktProPanelChoices();
+ var admin=(st.user||{}).role==='admin',scope=ktProScope(),choices=ktProPanelChoices();setTimeout(kdRefresh,0);
  if(ktProPanel.scope!==scope||!choices.some(function(x){return x[0]===ktProPanel.key;}))ktProPanel={scope:scope,key:admin?'stock':'catalogue'};
  function panel(key,html){return '<section class="kt-pro-panel" id="kt-pro-'+key+'" data-pro-panel="'+key+'" role="tabpanel" aria-labelledby="kt-pro-tab-'+key+'" '+(ktProPanel.key!==key?'hidden':'')+'>'+html+'</section>';}
  var catalogue='<div class="kt-pro-intro"><div><h2 style="margin:0">'+(admin?'Catalogue de réassort':'Commander chez Basecamp')+'</h2><p class="muted">Choisissez les produits et les quantités avec − / +. Les lots sont attribués automatiquement.</p></div>'+(admin?'<button class="btn btn-gold" data-act="pro-newprod">＋ Ajouter un produit</button>':'')+'</div>'+
@@ -4938,7 +4975,7 @@ function ktProWorkbench(){
  '<div id="pro-main">'+(!admin&&proData.blocked?proBlockCard(proData.blockMsg,proData.blockRoyalty):'<div id="pro-cat" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:14px"></div><div id="pro-bar" style="position:sticky;bottom:0;background:#fbfaf6;border-top:1px solid var(--line);padding:14px 4px;margin-top:14px;display:flex;align-items:center;justify-content:flex-end"></div>')+'</div>';
  var orders='<div class="kt-pro-intro"><div><h2 style="margin:0">'+(admin?'Commandes du réseau':'Mes commandes')+'</h2><p class="muted">Ouvrez une commande pour suivre chaque étape, du paiement à la réception.</p></div>'+(admin?'<a class="btn" id="woo-orders-link" href="https://kingbase.fr/wp-admin/edit.php?post_type=shop_order" target="_blank" rel="noopener">Gérer dans WooCommerce ↗</a>':'<button class="btn" data-act="kt-pro-panel" data-panel="receiving">Réceptions & étiquettes</button>')+'</div><div class="card kt-pro-orders-wrap" id="pro-orders">Chargement des commandes…</div>';
  var result=ktProCss+'<div class="kt-pro-tabs" role="tablist" aria-label="Parcours de réassort">'+choices.map(function(c){return '<button type="button" class="btn" id="kt-pro-tab-'+c[0]+'" role="tab" data-act="kt-pro-panel" data-panel="'+c[0]+'" aria-controls="kt-pro-'+c[0]+'" aria-selected="'+(c[0]===ktProPanel.key)+'">'+c[1]+'</button>';}).join('')+(!admin?'<button class="btn" data-act="kr-stock">Voir mon stock boutique ↗</button>':'')+'</div>';
- if(admin)result+=panel('stock','<div class="kt-pro-intro"><div><h2 style="margin:0">Inventaire Basecamp</h2><button class="btn" data-act="quick-label-bc">Imprimer des étiquettes produits</button><button class="btn" data-act="manual-open">+ Ajouter un stock manuellement</button> <button class="btn" data-act="gaps-open">Écarts de stock des boutiques</button><p class="muted">Réception fournisseur → lot interne → stock disponible → commandes des franchises.</p></div></div><div id="pro-stockmgr">Chargement du stock…</div>');
+ if(admin)result+=panel('stock','<div class="kt-pro-intro"><div><h2 style="margin:0">Inventaire Basecamp</h2><button class="btn" data-act="quick-label-bc">Imprimer des étiquettes produits</button><button class="btn" data-act="manual-open">+ Ajouter un stock manuellement</button> <button class="btn" data-act="gaps-open">Écarts de stock des boutiques</button><p class="muted">Réception fournisseur → lot interne → stock disponible → commandes des franchises.</p></div></div><div id="kd-stock-reminders"></div><div id="pro-stockmgr">Chargement du stock…</div>');
  result+=panel('catalogue',catalogue)+panel('orders',orders);
  if(admin)result+=panel('lots','<div id="kt-network-lots">Chargement des lots…</div>');
  if(admin&&ktProPanel.key==='lots')setTimeout(ktNetworkLotsLoad,0);
@@ -7629,6 +7666,19 @@ function applySnapshot(d){
 }
 function setBusy(value){busy=value;root.setAttribute('aria-busy',String(value));root.querySelectorAll('button').forEach(function(b){b.disabled=value;});}
 function load(){if(busy)return;setBusy(true);request('/api/pro/inventory').then(function(d){if(!host.isConnected)return;applySnapshot(d);render();}).catch(function(e){announce(e.message);if(!revision)main.innerHTML='<div class="k-surface k-pad"><h2>Chargement impossible</h2><p class="k-muted">'+esc(e.message)+'</p>'+button('Réessayer','refresh','','k-primary')+'</div>';}).finally(function(){setBusy(false);});}
+// Refresh warehouse reads when another shop places an order. Never replace a form in progress.
+var stockReadBusy=false;
+function canRefreshStock(){return host.isConnected&&!document.hidden&&!busy&&!draft&&['catalog','product','history','receipts'].includes(view)&&!main.querySelector('form')&&!(root.contains(document.activeElement)&&document.activeElement.matches('input,textarea,select,[contenteditable]'))&&root.getClientRects().length>0;}
+function refreshStockRead(){
+ if(!canRefreshStock()||stockReadBusy)return;
+ stockReadBusy=true;var beforeRevision=revision;
+ request('/api/pro/inventory').then(function(d){
+  if(!canRefreshStock()||revision!==beforeRevision)return;
+  if(d.revision!==revision){applySnapshot(d);render();announce('Stock actualisé : les commandes franchisées sont déduites du disponible.');}
+ }).catch(function(e){if(canRefreshStock())announce('Actualisation du stock impossible : '+e.message);}).finally(function(){stockReadBusy=false;});
+}
+var stockReadTimer=setInterval(function(){if(!host.isConnected){clearInterval(stockReadTimer);window.removeEventListener('focus',refreshStockRead);return;}refreshStockRead();},10000);
+window.addEventListener('focus',refreshStockRead);
 function mutate(action,payload,done){
  if(busy)return;setBusy(true);
  request('/api/pro/inventory/'+action,Object.assign({},payload,{revision:revision})).then(function(r){applySnapshot(r.inventory);if(done)done(r);render();if(bridge.refresh)bridge.refresh();}).catch(function(e){announce(e.message);var f=main.querySelector('form');if(f)error(f,e.message);if(e.status===409){notice.innerHTML=esc(e.message)+' '+button('Actualiser sans perdre la saisie','refresh','','k-small');}}).finally(function(){setBusy(false);});
