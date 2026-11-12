@@ -3038,6 +3038,7 @@ var qrcode = function() {
     var items=st.cart.map(function(l){return l.productId==='libre'?{productId:'libre',price:l.price,name:l.name}:l.grams?{productId:l.productId,grams:l.grams}:(l.packQty?{productId:l.productId,packQty:l.packQty,count:l.qty||1}:{productId:l.productId,qty:l.qty||1});});
     items.forEach(function(it,i){if(st.cart[i].lotCode!=null)it.lotCode=st.cart[i].lotCode;});
     var payload={items:items,payment:method,saleKey:st.payKey};
+    if(ksActiveUi())payload.kingSpinClaim=ksActiveUi().id;
     if(st.user&&st.user.role==='admin')payload.boutiqueId=st.prodBtq||st.boutiqueId||'aix';
     if(st.client&&st.client.email)payload.customerRef=st.client.email;
     if(st.coupon){payload.couponEur=st.coupon.e;payload.couponPoints=st.coupon.p;}
@@ -3049,6 +3050,7 @@ var qrcode = function() {
       var lines=rcLines.map(function(l){return '<div style="display:flex;justify-content:space-between;padding:5px 0;font-size:13px"><span>'+esc(l.name)+' <span class="muted">'+esc(l.detail||'')+'</span></span><b>'+eur(l.price)+'</b></div>';}).join('');
       var ht=(m.totalHT!=null?m.totalHT:Math.round(f.total/1.2*100)/100), tva=(m.totalTVA!=null?m.totalTVA:Math.round((f.total-ht)*100)/100);
       st.lastReceipt={mail:(st.client&&st.client.email)||'',num:f.numero,date:new Date().toLocaleString('fr-FR'),boutique:st.boutique,lines:rcLines,total:f.total,ht:ht,tva:tva,method:method,client:(fid&&fid.membre)?fid.membre:null,earned:(fid&&fid.pointsGagnes)||0,newBal:(fid&&fid.nouveauSolde!=null)?fid.nouveauSolde:null,disc:(m.remise||0),usedPts:(fid&&fid.pointsUtilises)||0};
+      ksUi.claim=null;ksUi.options=null;ksUi.error='';
       st.cart=[];st.client=null;st.redeemPts=0;st.coupon=null;
       var fidHtml;
       if(fid&&fid.membre){
@@ -3402,18 +3404,65 @@ document.addEventListener('click',function(e){var eye=e.target.closest('[data-da
   }
   // KT_KING_SPIN_V1: read-only member wheel, refreshed only while the register is visible.
   var ktSpin={client:null,ref:'',loading:false,data:null,error:false,at:0,seq:0};
+  // KT_KING_SPIN_REDEEM_UI
+  var ksUi={busy:false,options:null,claim:null,ref:'',shop:'',error:'',version:0};
+  function ksShopUi(){return st.prodBtq||st.boutiqueId||'aix';}
+  function ksItemsUi(){return st.cart.map(function(l){var it=l.productId==='libre'?{productId:'libre',price:l.price,name:l.name}:l.grams?{productId:l.productId,grams:l.grams}:l.packQty?{productId:l.productId,packQty:l.packQty,count:l.qty||1}:{productId:l.productId,qty:l.qty||1};if(l.lotCode!=null)it.lotCode=l.lotCode;return it;});}
+  function ksBodyUi(){return {customerRef:ktSpinRef(),boutiqueId:ksShopUi(),items:ksItemsUi(),claim:ksUi.claim&&ksUi.claim.id};}
+  function ksSyncUi(d){
+    if(ksUi.busy)return;
+    ksUi.claim=d.claim||null;ksUi.ref=ktSpinRef();ksUi.shop=ksShopUi();
+    var box=document.getElementById('kt-spin-ticket-line');if(box)box.innerHTML=ksLineUi();
+  }
+  function ksActiveUi(){return ksUi.claim&&ksUi.ref===ktSpinRef()&&ksUi.shop===ksShopUi()?ksUi.claim:null;}
+  function ksLineUi(){var c=ksActiveUi();return c?'<div class="tk-line" style="background:var(--gold-soft);padding:12px;border-radius:10px"><div><div class="tl-name">'+esc(c.name)+'</div><div class="tl-det">'+c.amount+(c.kind==='bonusgram'?' g':' ×')+' offerts · King Spin</div><small>Réservé · validé à l’encaissement</small></div><div class="tl-r"><b>0,00 €</b><button class="tk-x" data-act="ks-release" title="Retirer et libérer le cadeau" '+(ksUi.busy?'disabled':'')+'>×</button></div></div>':'';}
+  function ksControlsUi(){
+    var c=ksActiveUi(),d=ktSpin.data,s=d&&d.spin,disabled=ksUi.busy?' disabled':'';
+    var html='';
+    if(c)html='<p style="margin:6px 0">'+(c.state==='preparing'?'Réservation à confirmer.':'Cadeau ajouté au ticket · utilisation unique.')+'</p>'+(c.state==='preparing'?'<button class="btn btn-gold" data-act="ks-resume"'+disabled+'>Reprendre</button> ':'')+'<button class="btn" data-act="ks-release"'+disabled+'>Retirer du ticket</button>';
+    else if(s&&s.redeemable){
+      html='<button class="btn btn-gold" style="width:100%" data-act="ks-options"'+disabled+'>'+(ksUi.busy?'Vérification…':'Utiliser sur ce ticket')+'</button>';
+      if(ksUi.options)html+='<p>Choisis le produit offert :</p>'+ksUi.options.map(function(o){return '<button class="btn" style="display:block;width:100%;margin-top:5px;text-align:left" data-act="ks-reserve" data-product="'+esc(o.productId)+'"'+disabled+'>'+esc(o.name)+' · '+o.amount+(o.kind==='bonusgram'?' g':' ×')+' offerts</button>';}).join('');
+    }
+    if(ksUi.error)html+='<p role="alert" style="color:#a33;margin:8px 0">'+esc(ksUi.error)+'</p>';
+    return html?'<div style="padding:0 12px 12px">'+html+'</div>':'';
+  }
+  function ksRunUi(op,product){
+    if(ksUi.busy||_paying)return;
+    if(!API.on){toast('Connexion au serveur nécessaire pour utiliser le cadeau.');return;}
+    var ref=ktSpinRef(),shop=ksShopUi(),body=ksBodyUi();if(product)body.productId=product;
+    ksUi.busy=true;ksUi.version++;ksUi.error='';ktSpinPaint();
+    apiPost('/api/loyalty/king-spin/'+op,body).then(function(d){
+      if(ref!==ktSpinRef()||shop!==ksShopUi())return;
+      ksUi.ref=ref;ksUi.shop=shop;
+      if(d.claim)ksUi.claim=d.claim;
+      if(d.options)ksUi.options=d.options;
+      if(op==='release'){ksUi.claim=null;ksUi.options=null;st.payKey=null;}
+      if(op==='reserve'){ksUi.options=null;st.payKey=null;}
+    }).catch(function(e){ksUi.error=e.message||'Vérification interrompue. Réessaie.';}).finally(function(){ksUi.busy=false;render();ktSpinLoad(true);});
+  }
+  function ksPayUi(method){
+    if(ksUi.busy||_paying)return;
+    var c=ksActiveUi();
+    if(!c){st.payKey=st.payKey||(Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,10));payModal(method);return;}
+    if(!API.on){toast('Connexion requise pour ce cadeau.');return;}
+    ksUi.busy=true;ksUi.version++;ksUi.error='';ktSpinPaint();
+    apiPost('/api/loyalty/king-spin/check',ksBodyUi()).then(function(){st.payKey='king-spin-'+c.id;payModal(method);}).catch(function(e){ksUi.error=e.message;toast(e.message);}).finally(function(){ksUi.busy=false;ktSpinPaint();});
+  }
+  // END KT_KING_SPIN_REDEEM_UI
+
   function ktSpinRef(){return st.client&&String(st.client.email||st.client.id||'');}
-  function ktSpinReset(){ktSpin={client:st.client,ref:ktSpinRef(),loading:false,data:null,error:false,at:0,seq:ktSpin.seq+1};}
+  function ktSpinReset(){ksUi.options=null;ksUi.error='';ktSpin={client:st.client,ref:ktSpinRef(),shop:ksShopUi(),loading:false,data:null,error:false,at:0,seq:ktSpin.seq+1};}
   function ktSpinLoad(force){
-    if(st.view!=='pos'||!st.client||document.hidden)return;
-    if(ktSpin.client!==st.client||ktSpin.ref!==ktSpinRef())ktSpinReset();
+    if(st.view!=='pos'||!st.client||document.hidden||ksUi.busy)return;
+    if(ktSpin.client!==st.client||ktSpin.ref!==ktSpinRef()||ktSpin.shop!==ksShopUi())ktSpinReset();
     if(ktSpin.loading||(!force&&Date.now()-ktSpin.at<15000))return;
     if(!API.on||!ktSpin.ref){ktSpin.error=true;ktSpin.at=Date.now();ktSpinPaint();return;}
-    var state=ktSpin;state.loading=true;state.error=false;ktSpinPaint();
-    apiGet('/api/loyalty/king-spin?user='+encodeURIComponent(state.ref)).then(function(d){
-      if(ktSpin!==state||st.client!==state.client)return;
+    var state=ktSpin,version=ksUi.version;state.loading=true;state.error=false;ktSpinPaint();
+    apiGet('/api/loyalty/king-spin?user='+encodeURIComponent(state.ref)+'&boutique='+encodeURIComponent(ksShopUi())).then(function(d){
+      if(ktSpin!==state||st.client!==state.client||ksUi.version!==version)return;
       if(!d||d.available!==true)throw Error('unavailable');
-      state.data=d;state.error=false;
+      state.data=d;state.error=false;ksSyncUi(d);
     }).catch(function(){if(ktSpin===state){state.error=true;state.data=null;}}).finally(function(){
       if(ktSpin!==state)return;state.loading=false;state.at=Date.now();ktSpinPaint();
     });
@@ -3433,21 +3482,22 @@ document.addEventListener('click',function(e){var eye=e.target.closest('[data-da
         detail='Roue '+(s.wheel_label||'King Spin')+' · '+ktSpinDate(s.claimed_at);
         if(s.status==='credited')foot='Points déjà crédités sur son compte';
         else if(s.status==='pending'){badge='À confirmer';foot='Crédit en attente · à reprendre sur son compte';tone='warn';}
-        else if(s.status==='used')foot='Cadeau déjà utilisé';
+        else if(s.status==='used')foot='Cadeau déjà utilisé'+(s.pos&&s.pos.boutique?' · '+s.pos.boutique:'')+(s.pos&&s.pos.used_at?' · '+ktSpinDate(s.pos.used_at):'');
+        else if(s.status==='pos_reserved'){badge='Réservé';foot='Réservé en caisse'+(s.pos&&s.pos.boutique?' · '+s.pos.boutique:'');}
         else if(s.expires<=d.now)foot='Cadeau expiré';
-        else if(s.status==='ready')foot='Cadeau disponible sur son compte · jusqu’au '+ktSpinDate(s.expires);
+        else if(s.status==='ready')foot='Cadeau disponible · jusqu’au '+ktSpinDate(s.expires);
         else foot='État du gain à vérifier sur son compte';
         if(d.can_play){title='Un nouveau tour est disponible';detail='Dernier gain : '+s.label+' · '+detail;}
       }
       if(!d.enabled){badge='Roue fermée';tone='warn';if(!played)title='Les tirages sont fermés';}
       else if(!played)foot='Un tour disponible sur son compte';
     }
-    return '<section class="kt-spin" aria-label="King Spin du client" aria-live="polite"><div class="kt-spin-head"><b>♛ KING SPIN</b><span class="kt-spin-badge '+tone+'">'+esc(badge)+'</span><button type="button" data-act="king-spin-refresh" title="Actualiser King Spin" aria-label="Actualiser King Spin" '+(ktSpin.loading?'disabled':'')+'>↻</button></div><div class="kt-spin-body"><div class="kt-spin-wheel" style="--spin-color:'+color+'" aria-hidden="true"><span>♛</span></div><div><strong>'+esc(title)+'</strong><p>'+esc(detail)+'</p></div></div>'+(foot?'<div class="kt-spin-foot">'+esc(foot)+'</div>':'')+'</section>';
+    return '<section class="kt-spin" aria-label="King Spin du client" aria-live="polite"><div class="kt-spin-head"><b>♛ KING SPIN</b><span class="kt-spin-badge '+tone+'">'+esc(badge)+'</span><button type="button" data-act="king-spin-refresh" title="Actualiser King Spin" aria-label="Actualiser King Spin" '+(ktSpin.loading?'disabled':'')+'>↻</button></div><div class="kt-spin-body"><div class="kt-spin-wheel" style="--spin-color:'+color+'" aria-hidden="true"><span>♛</span></div><div><strong>'+esc(title)+'</strong><p>'+esc(detail)+'</p></div></div>'+(foot?'<div class="kt-spin-foot">'+esc(foot)+'</div>':'')+ksControlsUi()+'</section>';
   }
   function ktSpinPaint(){var box=document.getElementById('kt-spin-slot');if(box&&st.client===ktSpin.client)box.innerHTML=ktSpinHtml();}
   function ktSpinBox(){
     if(!st.client){if(ktSpin.client)ktSpinReset();return '';}
-    if(ktSpin.client!==st.client||ktSpin.ref!==ktSpinRef())ktSpinReset();
+    if(ktSpin.client!==st.client||ktSpin.ref!==ktSpinRef()||ktSpin.shop!==ksShopUi())ktSpinReset();
     setTimeout(function(){ktSpinLoad(false);},0);
     return '<div id="kt-spin-slot">'+ktSpinHtml()+'</div>';
   }
@@ -3488,7 +3538,7 @@ document.addEventListener('click',function(e){var eye=e.target.closest('[data-da
       '<input id="pos-search" class="pos-search" placeholder="Rechercher un produit…" value="'+esc(st.posSearch||'')+'"/>'+'<button data-act="prixlibre" style="width:100%;margin:-2px 0 12px;padding:11px 14px;border-radius:10px;border:1px solid var(--gold);background:var(--gold-soft);color:var(--gold);font-size:14px;font-weight:600;cursor:pointer">+ Prix libre</button>'+'<div class="pgrid'+(posEditing()?' editing':'')+'">'+grid+'</div></div>'+
       '<div class="ticket"><div class="tk-head"><h3>Ticket</h3><span class="muted" style="font-size:12px">'+st.boutique+'</span><button class="tk-close" data-act="tkclose" title="Fermer">×</button></div>'+
       '<div class="tk-client">'+clientBox+ktSpinBox()+rewardBox+'</div>'+
-      '<div class="tk-lines">'+lines+'</div>'+
+      '<div class="tk-lines">'+lines+'<div id="kt-spin-ticket-line">'+ksLineUi()+'</div></div>'+
       '<div class="tk-foot"><div class="tk-tot"><span class="t1">Total TTC</span><span class="t2">'+eur(cartTotal())+'</span></div>'+
       '<div class="tk-tva">dont TVA 20% : '+eur(Math.round((cartTotal()-cartTotal()/1.2)*100)/100)+' · HT : '+eur(Math.round(cartTotal()/1.2*100)/100)+'</div>'+
       '<div class="tk-pts">'+(st.client?'Le membre gagnera '+Math.round(cartTotal()*ptsRate())+' points':'+ '+Math.round(cartTotal()*ptsRate())+' points avec un compte membre')+'</div>'+
@@ -5818,8 +5868,13 @@ function ktPosCommit(code){if(!ktPosPending)return;var x=ktPosPending,p=pById(x.
     if(a==='addunit'){var puu=pById(el.getAttribute('data-id'));ktPosAdd({name:puu.name,detail:'Unité',price:puu.price,productId:puu.id,qty:1});return;}
     if(a==='addpack'){var ppk=pById(el.getAttribute('data-id'));var pq=+el.getAttribute('data-q'),ppr=+el.getAttribute('data-pr');ktPosAdd({name:ppk.name,detail:'Pack de '+pq,price:ppr,productId:ppk.id,packQty:pq,qty:1});return;}
     if(a==='rmline'){st.cart.splice(+el.getAttribute('data-i'),1);render();return;}
-    if(a==='pickclient'){clientModal();return;}
+    if(a==='pickclient'){if(ksActiveUi()||ksUi.busy){toast('Retire le cadeau du ticket avant de changer de client.');return;}clientModal();return;}
     if(a==='cmscan'){cmStartScan();return;}
+    if(['rmclient','pickclient','setclient','setclientremote','prodbtq-sel'].includes(a)&&(ksActiveUi()||ksUi.busy)){toast('Retire le cadeau du ticket avant de changer de client ou de boutique.');return;}
+    if(a==='ks-options'){ksRunUi('options');return;}
+    if(a==='ks-reserve'){ksRunUi('reserve',el.getAttribute('data-product'));return;}
+    if(a==='ks-resume'){ksRunUi('reserve');return;}
+    if(a==='ks-release'){ksRunUi('release');return;}
     if(a==='king-spin-refresh'){ktSpinLoad(true);return;}
     if(a==='rmclient'){st.client=null;st.redeemPts=0;st.coupon=null;render();return;}
     if(a==='setclient'){st.client=customers.find(function(c){return c.id===el.getAttribute('data-id');});st.redeemPts=0;closeModal();render();return;}
@@ -5831,7 +5886,7 @@ function ktPosCommit(code){if(!ktPosPending)return;var x=ktPosPending,p=pById(x.
     if(a==='unredeem'){st.redeemPts=0;render();return;}
     if(a==='applycoupon'){st.coupon={e:+el.getAttribute('data-e'),p:+el.getAttribute('data-p')};st.redeemPts=0;render();return;}
     if(a==='rmcoupon'){st.coupon=null;render();return;}
-    if(a==='pay'){if(!st.cart.length){toast('Le ticket est vide');return;}st.payKey=(Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,10));payModal(el.getAttribute('data-m'));return;}
+    if(a==='pay'){if(!st.cart.length){toast('Le ticket est vide');return;}ksPayUi(el.getAttribute('data-m'));return;}
     if(a==='categories-open'){ktCategoryModal();return;}
     if(a==='categories-add'){ktCategorySave('add',document.getElementById('kt-cat-name').value,null,el);return;}
     if(a==='categories-delete'){ktCategorySave('delete',el.dataset.name,null,el);return;}

@@ -172,6 +172,7 @@ function vendeurTabsForPath(method, p){
   if (p.indexOf('/api/stock/') === 0) return ['stock'];
   if (p.indexOf('/api/trace/')===0) return ['pos','pro','stock','journal'];
   if (p === '/api/sales') return ['pos', 'borne'];
+  if (p.indexOf('/api/loyalty/king-spin/') === 0) return ['pos'];
   if (p.indexOf('/api/loyalty/') === 0) return ['fidelite', 'pos', 'borne'];
   if (p.indexOf('/api/terminal/') === 0) return ['pos', 'ponts'];
   if (p === '/api/ponts' || p.indexOf('/api/pont/setup-token') === 0) return ['ponts'];
@@ -1324,6 +1325,101 @@ let roySeq = 0;              // numerotation continue dediee (jamais remise a ze
 let royLastHash = 'GENESIS'; // chaine d'empreintes PROPRE aux factures de royalties
 // Redevances AUTOMATIQUES (voir « REDEVANCES AUTOMATIQUES ») : facture le 1er, paiement en ligne kingbase.fr, blocage du reassort.
 let royAuto = { enabled: true, block: true, startYm: '2026-09', invoiceDay: 1, invoiceHour: 6, dueDay: 7, remindDay: 5, lastTickAt: null, updatedAt: null, updatedBy: '' };
+// KT_KING_SPIN_REDEEM_V1: durable ticket claims, shared with the WordPress wheel.
+let kingSpinClaims = {};
+const kingSpinBusy = new Set();
+function ksShop(user, body) {
+  const id = user.role==='admin' ? (body.boutiqueId||'aix') : user.boutiqueId;
+  if (!id || !boutiques[id]) throw Error('Boutique requise pour le cadeau.');
+  return id;
+}
+function ksPublic(c) { return {id:c.id, spin:c.spin, productId:c.productId, name:c.name, amount:c.amount, kind:c.kind, label:c.label, state:c.state, boutiqueId:c.bId}; }
+async function ksBalance(ref) {
+  if (!ref || String(ref).length>254) throw Error('Client requis.');
+  const b=await loyalty._call('/balance?user='+encodeURIComponent(ref)+'&type='+encodeURIComponent(loyalty.pointType),{timeoutMs:8000});
+  if (!b.user_id || !b.king_spin || !b.king_spin.available) throw Error('King Spin indisponible.');
+  return b;
+}
+async function ksRemote(c,op) {
+  const r=await loyalty._call('/king-spin-claim',{method:'POST',timeoutMs:10000,body:{user:c.ref,spin:c.spin,claim:c.id,op,boutique:(boutiques[c.bId]||{}).label||c.bId,seller:c.seller,receipt:c.receipt||''}});
+  if(!r || !r.ok || r.state!==({reserve:'reserved',check:'reserved',release:'released',commit:'used'})[op])throw Error('Confirmation King Spin indisponible.');
+  return r;
+}
+function ksPaid(items,bId) {
+  if(!Array.isArray(items)||!items.length)throw Error('Ajoute un article payant au ticket.');
+  let total=0;const grams={};
+  for(const it of items){
+    if(it.productId==='libre'){const n=Number(it.price);if(!Number.isFinite(n)||n<=0)throw Error('Prix invalide.');total+=n;continue;}
+    const p=findProduct(it.productId);
+    if(!p||p.inventoryOnly||(p.boutiqueId&&p.boutiqueId!==bId))throw Error('Produit indisponible dans cette boutique.');
+    let price;
+    if(p.unit==='g'){
+      const n=Math.round(Number(it.grams)*1000)/1000;
+      if(!Number.isFinite(n)||n<=0||n>100000)throw Error('Grammage invalide.');
+      price=tierPriceForGrams(p.tiers,n);
+      if(price>0)grams[p.id]=(grams[p.id]||0)+n;
+    }else if(it.packQty&&Array.isArray(p.packs)){
+      const pack=p.packs.find(x=>Number(x.qty)===Number(it.packQty)),n=Number(it.count||1);
+      if(!pack||!Number.isSafeInteger(n)||n<=0)throw Error('Pack invalide.');price=pack.price*n;
+    }else{const n=Number(it.qty||1);if(!Number.isSafeInteger(n)||n<=0)throw Error('Quantité invalide.');price=p.price*n;}
+    if(!Number.isFinite(price)||price<0)throw Error('Prix produit invalide.');total+=price;
+  }
+  if(!(total>0))throw Error('Ajoute un article payant au ticket.');
+  return {total,grams};
+}
+function ksEligible(p){return p&&p.unit==='g'&&!p.inventoryOnly&&/^(fleurs?|résines?|resines?|king)$/i.test(p.cat||'');}
+function ksOptions(spin,items,bId) {
+  const paid=ksPaid(items,bId),r=spin.reward||{},amount=Number(r.amount);
+  if(!['tips','paper','bonusgram'].includes(r.kind)||!Number.isSafeInteger(amount)||amount<1||amount>100)throw Error('Gain non utilisable en caisse.');
+  let products;
+  if(r.kind==='bonusgram')products=allCatalog().filter(p=>ksEligible(p)&&paid.grams[p.id]>=5&&(!p.boutiqueId||p.boutiqueId===bId));
+  else {
+    const gift=spin.gift_product;
+    if(!gift)throw Error('Le produit cadeau doit être configuré sur Kingston.');
+    products=allCatalog().filter(p=>String(p.wooId)===String(gift.id)&&p.unit!=='g'&&!p.inventoryOnly&&(!p.boutiqueId||p.boutiqueId===bId));
+    if(!products.length)products=allCatalog().filter(p=>p.name.trim().toLowerCase()===gift.name.trim().toLowerCase()&&p.unit!=='g'&&!p.inventoryOnly&&(!p.boutiqueId||p.boutiqueId===bId));
+    if(products.length!==1)throw Error('Produit cadeau non identifié dans le catalogue de caisse.');
+  }
+  if(!products.length)throw Error('Ajoute au moins 5 g payants d’une même fleur, résine ou gamme King.');
+  return products.map(p=>({productId:p.id,name:p.name,amount,kind:r.kind,label:spin.label}));
+}
+function ksValidate(c,items,bId) {
+  const paid=ksPaid(items,bId),p=findProduct(c.productId);
+  if(!p||p.inventoryOnly||(p.boutiqueId&&p.boutiqueId!==bId))throw Error('Produit cadeau indisponible.');
+  if(c.kind==='bonusgram'&&(!ksEligible(p)||!(paid.grams[p.id]>=5)))throw Error('Le cadeau exige 5 g payants du même produit.');
+  if(c.kind!=='bonusgram'&&p.unit==='g')throw Error('Format du cadeau modifié.');
+  return p;
+}
+function ksGiftLine(c,bId) {
+  const p=findProduct(c.productId),g=c.kind==='bonusgram',lots=g?decrementFEFO(bId,p.id,c.amount):decrementUnits(bId,p.id,c.amount);
+  return {produit:p.name,detail:(g?c.amount+' g':c.amount+' ×')+' offerts · King Spin',prix:0,productId:p.id,...(g?{grams:c.amount}:{qty:c.amount}),vat:vatRate(p),lots,kingSpin:c.spin,kingSpinClaim:c.id};
+}
+function ksStockCheck(c,items,bId) {
+  ksValidate(c,items,bId);
+  const saved=JSON.parse(JSON.stringify(stock[bId]||{}));
+  try {
+    for(const it of items){if(it.productId==='libre')continue;const p=findProduct(it.productId);
+      if(p.unit==='g')decrementFEFO(bId,p.id,Math.round(Number(it.grams)*1000)/1000,it.lotCode);
+      else decrementUnits(bId,p.id,it.packQty?Number(it.packQty)*Number(it.count||1):Number(it.qty||1),it.lotCode);
+    }
+    ksGiftLine(c,bId);
+  }finally{stock[bId]=saved;}
+}
+function ksOwn(user,body) {
+  const c=kingSpinClaims[String(body.kingSpinClaim||body.claim||'')];
+  if(!c||c.bId!==ksShop(user,body)||c.ref!==String(body.customerRef||'').trim().toLowerCase())throw Error('Ce cadeau ne correspond pas au client et à la boutique du ticket.');
+  return c;
+}
+async function ksCommit(c) {
+  if(c.state!=='sold'||c.synced||kingSpinBusy.has(c.id))return;
+  kingSpinBusy.add(c.id);
+  try{await ksRemote(c,'commit');c.synced=true;writeDataFileNow();}
+  catch(e){c.synced=false;console.error('King Spin : synchronisation en attente pour '+c.receipt);}
+  finally{kingSpinBusy.delete(c.id);}
+}
+setInterval(()=>{for(const c of Object.values(kingSpinClaims))if(c.state==='sold'&&!c.synced)void ksCommit(c);},30000).unref();
+// END KT_KING_SPIN_REDEEM_V1
+
 let royAutoLog = [];         // journal des operations automatiques (300 dernieres)
 function fb(id) { if (seqByB[id] == null) seqByB[id] = 0; if (gtByB[id] == null) gtByB[id] = 0; if (gtAvoirsByB[id] == null) gtAvoirsByB[id] = 0; if (!clotureSeqByB[id]) clotureSeqByB[id] = { Z: 0, M: 0, A: 0 }; return id; }
 
@@ -1365,7 +1461,7 @@ function writeDataFileNow() {
   // Écriture ATOMIQUE : fichier temporaire puis renommage -> jamais de fichier tronqué en cas de coupure.
   // NB : fiscalKey n'est PLUS écrite ici (stockée à part, fichier protégé).
   const tmp = DATA_FILE + '.tmp';
-  fs.writeFileSync(tmp, JSON.stringify({ v: 1, savedAt: new Date().toISOString(), pointsPerEuro: POINTS_PER_EURO, hideBaseCatalog, customProducts, stock, boutiques, invoiceSeq, lastHash, invoices, orderSeq, orders, fiscalEvents, fiscalSeq, lastFiscalSig, clotureSeq, gtPerpetuel, gtPerpetuelAvoirs, seqByB, gtByB, gtAvoirsByB, royaltiesRates, royaltiesStatus, clotureSeqByB, supplyOrders, supplySeq, stockMoves, proRate, pontDevices, sessions, proProducts, lastProSync, proLots, proStock, proBuyPrice, proSellPrice, proStockPush, proBlock, proExtras, proRename, warehouse, entreprise, adminCred, adminEmail, backupState, franchisees, sellers, royaltyInvoices, roySeq, royLastHash, posOrder, posCategories, royAuto, royAutoLog }), 'utf8');
+  fs.writeFileSync(tmp, JSON.stringify({ v: 1, savedAt: new Date().toISOString(), pointsPerEuro: POINTS_PER_EURO, hideBaseCatalog, customProducts, stock, boutiques, invoiceSeq, lastHash, invoices, orderSeq, orders, fiscalEvents, fiscalSeq, lastFiscalSig, clotureSeq, gtPerpetuel, gtPerpetuelAvoirs, seqByB, gtByB, gtAvoirsByB, royaltiesRates, royaltiesStatus, clotureSeqByB, supplyOrders, supplySeq, stockMoves, proRate, pontDevices, sessions, proProducts, lastProSync, proLots, proStock, proBuyPrice, proSellPrice, proStockPush, proBlock, proExtras, proRename, warehouse, entreprise, adminCred, adminEmail, backupState, franchisees, sellers, royaltyInvoices, roySeq, royLastHash, posOrder, posCategories, royAuto, royAutoLog, kingSpinClaims }), 'utf8');
   fs.renameSync(tmp, DATA_FILE);
 }
 function persist() {
@@ -1555,6 +1651,7 @@ function loadPersisted() {
       if (/^\d{4}-\d{2}$/.test(String(ra.startYm || ''))) royAuto.startYm = ra.startYm;
       ['lastTickAt', 'updatedAt', 'updatedBy'].forEach(function (k) { if (typeof ra[k] === 'string') royAuto[k] = ra[k]; });
     }
+    if (d.kingSpinClaims && typeof d.kingSpinClaims === 'object' && !Array.isArray(d.kingSpinClaims)) kingSpinClaims=d.kingSpinClaims;
     if (Array.isArray(d.royAutoLog)) royAutoLog = d.royAutoLog.slice(-300);
     if (d.posCategories && typeof d.posCategories === 'object' && !Array.isArray(d.posCategories)) posCategories = d.posCategories;
     if (d.posOrder && typeof d.posOrder === 'object') posOrder = d.posOrder;                  // ordre d'affichage caisse par boutique
@@ -3726,6 +3823,54 @@ const server = http.createServer(async (req, res) => {
       return send(res, 410, { error: 'Le réapprovisionnement global est désactivé. Ouvrez Stock, choisissez un produit et saisissez la quantité réellement restante. Pour une livraison Basecamp, validez la réception de la commande.' });
     }
 
+    if(req.method==='POST' && path.startsWith('/api/loyalty/king-spin/')) {
+      res.setHeader('Cache-Control','private, no-store');
+      if(PG)throw Error('King Spin nécessite le stockage caisse habituel.');
+      if(user.role==='vendeur' && !(user.tabs||[]).includes('pos'))return send(res,403,{error:'Accès caisse requis.'});
+      const op=path.split('/').pop(),body=await readJson(req),bId=ksShop(user,body),ref=String(body.customerRef||'').trim().toLowerCase();
+      if(['options','reserve'].includes(op)) {
+        const bal=await ksBalance(ref),spin=bal.king_spin.spin,lock='member:'+bal.user_id;
+        if(kingSpinBusy.has(lock))throw Error('Vérification du cadeau en cours. Réessaie.');
+        kingSpinBusy.add(lock);
+        try {
+          let c=Object.values(kingSpinClaims).find(x=>x.uid===bal.user_id&&['preparing','reserved'].includes(x.state));
+          if(c) {
+            if(c.bId!==bId)throw Error('Cadeau déjà réservé à '+((boutiques[c.bId]||{}).label||c.bId)+'. Retire-le de ce ticket pour le libérer.');
+            if(op==='options')return send(res,200,{claim:ksPublic(c)});
+            if(kingSpinBusy.has(c.id))throw Error('Cadeau en cours de traitement.');
+          }else{
+            if(!spin||!spin.redeemable)throw Error('Cadeau déjà utilisé, réservé ou expiré.');
+            const options=ksOptions(spin,body.items,bId);
+            if(op==='options')return send(res,200,{options});
+            const selected=options.find(x=>x.productId===body.productId);
+            if(!selected)throw Error('Choisis le produit offert.');
+            c={...selected,id:crypto.randomUUID(),uid:bal.user_id,ref,bId,spin:spin.id,state:'preparing',seller:user.name||user.uname||user.role,createdAt:Date.now()};
+            ksStockCheck(c,body.items,bId);
+            kingSpinClaims[c.id]=c;
+            try{writeDataFileNow();}catch(e){delete kingSpinClaims[c.id];throw e;}
+          }
+          kingSpinBusy.add(c.id);
+          try{await ksRemote(c,'reserve');c.state='reserved';writeDataFileNow();return send(res,200,{claim:ksPublic(c)});}
+          finally{kingSpinBusy.delete(c.id);}
+        }finally{kingSpinBusy.delete(lock);}
+      }
+      if(['release','check'].includes(op)) {
+        const c=ksOwn(user,body);
+        if(kingSpinBusy.has(c.id))throw Error('Cadeau en cours de traitement. Réessaie.');
+        kingSpinBusy.add(c.id);
+        try{
+          if(c.state==='sold')throw Error('Cadeau déjà utilisé sur le ticket '+c.receipt+'.');
+          if(op==='release'){
+            await ksRemote(c,'release');c.state='released';writeDataFileNow();return send(res,200,{ok:true});
+          }
+          if(c.state!=='reserved')throw Error('Réservation à reprendre ou à retirer avant de payer.');
+          ksStockCheck(c,body.items,bId);await ksRemote(c,'check');
+          return send(res,200,{ok:true,claim:ksPublic(c)});
+        }finally{kingSpinBusy.delete(c.id);}
+      }
+      return send(res,404,{error:'Action King Spin inconnue.'});
+    }
+
     // KT_KING_SPIN_V1 — existing authenticated loyalty connection, no reward mutation.
     if (req.method === 'GET' && path === '/api/loyalty/king-spin') {
       res.setHeader('Cache-Control', 'private, no-store, max-age=0');
@@ -3734,7 +3879,9 @@ const server = http.createServer(async (req, res) => {
       try {
         const balance = await loyalty._call('/balance?user=' + encodeURIComponent(ref) + '&type=' + encodeURIComponent(loyalty.pointType), { timeoutMs: 8000 });
         if (!balance || !balance.king_spin || balance.king_spin.available !== true) return send(res, 503, { error: 'King Spin indisponible' });
-        return send(res, 200, balance.king_spin);
+        const bId=user.role==='admin'?(u.searchParams.get('boutique')||'aix'):user.boutiqueId;
+        const held=Object.values(kingSpinClaims).find(c=>c.uid===balance.user_id&&c.bId===bId&&['preparing','reserved'].includes(c.state));
+        return send(res, 200, {...balance.king_spin,claim:held?ksPublic(held):null});
       } catch (e) { return send(res, 502, { error: 'Impossible de vérifier King Spin. Réessaie dans un instant.' }); }
     }
 
@@ -3787,6 +3934,21 @@ const server = http.createServer(async (req, res) => {
 
     if (req.method === 'POST' && path === '/api/sales') {
       const body = await readJson(req);
+      let ksClaim=null;
+      if(body.kingSpinClaim){
+        if(PG)throw Error('King Spin indisponible avec ce stockage.');
+        if(user.role==='vendeur'&&!(user.tabs||[]).includes('pos'))throw Error('Accès caisse requis.');
+        ksClaim=ksOwn(user,body);
+        if(kingSpinBusy.has(ksClaim.id))throw Error('Ce cadeau est déjà en cours de traitement. Réessaie.');
+        if(ksClaim.state==='sold'){
+          const done=invoices.find(i=>i.kingSpinClaim===ksClaim.id);
+          if(!done)throw Error('Ticket du cadeau à vérifier dans le journal.');
+          return send(res,201,{facture:{numero:done.num,total:done.total,date:done.date,boutique:done.boutiqueId,empreinte:done.hash.slice(0,16)+'...'},lignes:done.lines.map(l=>({produit:l.produit,detail:l.detail,prix:l.prix})),replayed:true});
+        }
+        if(ksClaim.state!=='reserved')throw Error('Cadeau non réservé.');
+        kingSpinBusy.add(ksClaim.id);
+      }
+      try {
       // SECURITE anti-double-paiement : si cette vente (meme cle) a deja ete encaissee, on renvoie le MEME resultat sans creer de 2e vente.
       const _saleKey = body && body.saleKey ? (user.role==='admin'?(body.boutiqueId||'aix'):user.boutiqueId)+':'+String(body.saleKey).slice(0,80) : '';
       if(_saleKey&&!PG){const done=invoices.find(i=>i.saleKey===_saleKey);if(done)return send(res,201,{facture:{numero:done.num,total:done.total,date:done.date,boutique:done.boutiqueId,empreinte:done.hash.slice(0,16)+'...'},lignes:done.lines.map(l=>({produit:l.produit,detail:l.detail,prix:l.prix})),replayed:true});}
@@ -3807,6 +3969,7 @@ const server = http.createServer(async (req, res) => {
       const items = Array.isArray(body.items) ? body.items : [];
       if (!items.length) throw new Error('Aucun article dans la vente');
 
+      if(ksClaim){ksStockCheck(ksClaim,items,bId);await ksRemote(ksClaim,'check');}
       const stockBefore=JSON.parse(JSON.stringify(stock[bId]||{}));
       const lines = [];
       let brut = 0;
@@ -3847,6 +4010,7 @@ const server = http.createServer(async (req, res) => {
           lines.push({ produit: p.name, detail: qty + ' x', prix: prix, productId: p.id, qty: qty, vat: rate, lots:lots });
         }
       }
+      if(ksClaim)lines.push(ksGiftLine(ksClaim,bId));
       }catch(e){stock[bId]=stockBefore;throw e;}
       brut = Math.round(brut * 100) / 100;
 
@@ -3865,8 +4029,9 @@ const server = http.createServer(async (req, res) => {
       const fiscalBefore={length:invoices.length,lastHash,seq:{...seqByB},gt:{...gtByB},avoir:{...gtAvoirsByB},total:gtPerpetuel,totalAvoir:gtPerpetuelAvoirs};
       let inv;
       try{inv=createInvoice(bId,total,lines,body.customerRef||'Comptoir',body.payment||'Carte Monetico','caisse');
-        inv.tva=tva;inv.remise=remise;inv.couponPoints=pointsUtilises;inv.saleKey=_saleKey;writeDataFileNow();
-      }catch(e){stock[bId]=stockBefore;invoices.length=fiscalBefore.length;lastHash=fiscalBefore.lastHash;seqByB=fiscalBefore.seq;gtByB=fiscalBefore.gt;gtAvoirsByB=fiscalBefore.avoir;gtPerpetuel=fiscalBefore.total;gtPerpetuelAvoirs=fiscalBefore.totalAvoir;throw e;}
+        inv.tva=tva;inv.remise=remise;inv.couponPoints=pointsUtilises;inv.saleKey=_saleKey;if(ksClaim){inv.kingSpinClaim=ksClaim.id;ksClaim.state='sold';ksClaim.receipt=bId+':'+inv.num+'@'+inv.date;ksClaim.synced=false;}writeDataFileNow();
+      }catch(e){if(ksClaim){ksClaim.state='reserved';delete ksClaim.receipt;delete ksClaim.synced;}stock[bId]=stockBefore;invoices.length=fiscalBefore.length;lastHash=fiscalBefore.lastHash;seqByB=fiscalBefore.seq;gtByB=fiscalBefore.gt;gtAvoirsByB=fiscalBefore.avoir;gtPerpetuel=fiscalBefore.total;gtPerpetuelAvoirs=fiscalBefore.totalAvoir;throw e;}
+
 
       // Fidelite en BEST-EFFORT : une vente deja encaissee ne doit JAMAIS echouer a cause de myCred.
       // Le ref inclut la date -> jamais confondu avec une vente d'une session precedente (anti-faux-doublon).
@@ -3887,6 +4052,7 @@ const server = http.createServer(async (req, res) => {
         montants: { brut: brut, remise: remise, totalTTC: total, totalHT: tva.totalHT, totalTVA: tva.totalTVA, ventilationTVA: tva.ventilation },
         fidelite: body.customerRef ? { membre: body.customerRef, pointsUtilises: pointsUtilises, pointsGagnes: pointsEarned, nouveauSolde: newBalance, taux: POINTS_PER_EURO, erreur: fidErreur } : 'client au comptoir',
       });
+      }finally{if(ksClaim){kingSpinBusy.delete(ksClaim.id);if(ksClaim.state==='sold')void ksCommit(ksClaim);}}
     }
 
     if (req.method === 'POST' && path === '/api/refund') {
