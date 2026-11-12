@@ -3726,6 +3726,18 @@ const server = http.createServer(async (req, res) => {
       return send(res, 410, { error: 'Le réapprovisionnement global est désactivé. Ouvrez Stock, choisissez un produit et saisissez la quantité réellement restante. Pour une livraison Basecamp, validez la réception de la commande.' });
     }
 
+    // KT_KING_SPIN_V1 — existing authenticated loyalty connection, no reward mutation.
+    if (req.method === 'GET' && path === '/api/loyalty/king-spin') {
+      res.setHeader('Cache-Control', 'private, no-store, max-age=0');
+      const ref = String(u.searchParams.get('user') || '').trim();
+      if (!ref || ref.length > 254) return send(res, 400, { error: 'Client requis' });
+      try {
+        const balance = await loyalty._call('/balance?user=' + encodeURIComponent(ref) + '&type=' + encodeURIComponent(loyalty.pointType), { timeoutMs: 8000 });
+        if (!balance || !balance.king_spin || balance.king_spin.available !== true) return send(res, 503, { error: 'King Spin indisponible' });
+        return send(res, 200, balance.king_spin);
+      } catch (e) { return send(res, 502, { error: 'Impossible de vérifier King Spin. Réessaie dans un instant.' }); }
+    }
+
     const mC = path.match(/^\/api\/customers\/(.+)$/);
     if (req.method === 'GET' && mC) {
       const ref = decodeURIComponent(mC[1]);

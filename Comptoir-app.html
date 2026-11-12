@@ -444,6 +444,9 @@ table.tbl tr:hover td{background:#faf9f5;}
 @media(max-width:370px){
   .kpis{grid-template-columns:1fr;}
 }
+/* KT_KING_SPIN_V1 */
+.kt-spin{margin-top:10px;padding:11px;border:1px solid #ddc58e;border-radius:12px;background:linear-gradient(115deg,#fcf6e6,#fffdf8);color:#211c12}.kt-spin-head{display:flex;align-items:center;gap:8px;font-size:12px}.kt-spin-head b{letter-spacing:.3px;white-space:nowrap}.kt-spin-head button{margin-left:auto;border:0;background:transparent;font-size:22px;line-height:1;color:#88702c;cursor:pointer;padding:2px 4px}.kt-spin-head button:disabled{opacity:.4;cursor:wait}.kt-spin-badge{padding:3px 7px;border-radius:20px;background:#eee9dd;font-size:10px;line-height:1.3}.kt-spin-badge.done{background:#e0edce;color:#46672a}.kt-spin-badge.warn{background:#ffedcb;color:#875c16}.kt-spin-body{display:flex;align-items:center;gap:12px;margin-top:12px}.kt-spin-body>div:last-child{min-width:0;flex:1}.kt-spin-body strong{font-size:15px;line-height:1.3;display:block;overflow-wrap:anywhere}.kt-spin-body p{font-size:11px;line-height:1.5;color:#777065;margin:5px 0 0}.kt-spin-wheel{width:52px;height:52px;flex:0 0 52px;border:2px solid #fff;box-shadow:0 0 0 1px var(--spin-color);border-radius:50%;background:repeating-conic-gradient(var(--spin-color) 0deg 45deg,#211c12 45deg 90deg);display:grid;place-items:center;position:relative}.kt-spin-wheel:before{content:'';position:absolute;top:-3px;left:20px;border-left:5px solid transparent;border-right:5px solid transparent;border-top:8px solid #a17e20}.kt-spin-wheel span{background:#fff9e9;border:1px solid var(--spin-color);border-radius:50%;width:23px;height:23px;display:grid;place-items:center;color:#967321;font-size:19px;line-height:1}.kt-spin-foot{background:#f3e7c7;color:#776024;font-size:11px;font-weight:600;border-radius:7px;margin-top:11px;padding:7px 9px;line-height:1.4}.kt-spin-head button:focus-visible{outline:2px solid #806010;outline-offset:2px}
+
 </style>
 <style id="kt-modal-css">.modal-grid .gbtn{padding:24px 18px;border:1.5px solid #ece7df;border-radius:16px;background:#fff;display:flex;flex-direction:column;align-items:center;gap:10px;transition:transform .12s ease,box-shadow .12s ease,border-color .12s ease;cursor:pointer}.modal-grid .gbtn:hover{border-color:#d9b873;box-shadow:0 8px 22px rgba(0,0,0,.10);transform:translateY(-2px)}.modal-grid .gbtn:active{transform:translateY(0)}.modal-grid .gbtn .g1{font-size:38px;font-weight:800;line-height:1;color:#191919;letter-spacing:-.5px}.modal-grid .gbtn .g2{font-size:22px;font-weight:700;color:#b5872f}</style>
 <style id="kt-mobile-pos-css">
@@ -3397,6 +3400,61 @@ document.addEventListener('click',function(e){var eye=e.target.closest('[data-da
     }).join('');
     return html||'<div class="tk-empty" style="grid-column:1/-1">Aucun produit en stock pour cette sélection.</div>';
   }
+  // KT_KING_SPIN_V1: read-only member wheel, refreshed only while the register is visible.
+  var ktSpin={client:null,ref:'',loading:false,data:null,error:false,at:0,seq:0};
+  function ktSpinRef(){return st.client&&String(st.client.email||st.client.id||'');}
+  function ktSpinReset(){ktSpin={client:st.client,ref:ktSpinRef(),loading:false,data:null,error:false,at:0,seq:ktSpin.seq+1};}
+  function ktSpinLoad(force){
+    if(st.view!=='pos'||!st.client||document.hidden)return;
+    if(ktSpin.client!==st.client||ktSpin.ref!==ktSpinRef())ktSpinReset();
+    if(ktSpin.loading||(!force&&Date.now()-ktSpin.at<15000))return;
+    if(!API.on||!ktSpin.ref){ktSpin.error=true;ktSpin.at=Date.now();ktSpinPaint();return;}
+    var state=ktSpin;state.loading=true;state.error=false;ktSpinPaint();
+    apiGet('/api/loyalty/king-spin?user='+encodeURIComponent(state.ref)).then(function(d){
+      if(ktSpin!==state||st.client!==state.client)return;
+      if(!d||d.available!==true)throw Error('unavailable');
+      state.data=d;state.error=false;
+    }).catch(function(){if(ktSpin===state){state.error=true;state.data=null;}}).finally(function(){
+      if(ktSpin!==state)return;state.loading=false;state.at=Date.now();ktSpinPaint();
+    });
+  }
+  function ktSpinDate(t){return t?new Date(t*1000).toLocaleString('fr-FR',{timeZone:'Europe/Paris',day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):'';}
+  function ktSpinHtml(){
+    var d=ktSpin.data,s=d&&d.spin,badge='Vérification',title='Consultation de la roue…',detail='',foot='',tone='';
+    var colors={common:'#aaa797',rare:'#8fb7e7',epic:'#b59be0',legendary:'#d1ad50'};
+    var color=s&&colors[s.wheel]||'#c29a38';
+    if(ktSpin.error){badge='Indisponible';title='État de la roue indisponible';detail='Réessaie pour vérifier si le client a joué.';tone='warn';}
+    else if(d){
+      var played=s&&s.claimed_at>0;
+      badge=played&&!d.can_play?'Déjà jouée':'Non jouée';tone=played&&!d.can_play?'done':'warn';
+      title=played?s.label:'La roue n’a pas été tournée';
+      if(!played){detail=s?'Roue '+s.wheel_label+' révélée · tirage à terminer sur son compte Kingston.':'Invitez le client à jouer sur son compte Kingston.';}
+      if(played){
+        detail='Roue '+(s.wheel_label||'King Spin')+' · '+ktSpinDate(s.claimed_at);
+        if(s.status==='credited')foot='Points déjà crédités sur son compte';
+        else if(s.status==='pending'){badge='À confirmer';foot='Crédit en attente · à reprendre sur son compte';tone='warn';}
+        else if(s.status==='used')foot='Cadeau déjà utilisé';
+        else if(s.expires<=d.now)foot='Cadeau expiré';
+        else if(s.status==='ready')foot='Cadeau disponible sur son compte · jusqu’au '+ktSpinDate(s.expires);
+        else foot='État du gain à vérifier sur son compte';
+        if(d.can_play){title='Un nouveau tour est disponible';detail='Dernier gain : '+s.label+' · '+detail;}
+      }
+      if(!d.enabled){badge='Roue fermée';tone='warn';if(!played)title='Les tirages sont fermés';}
+      else if(!played)foot='Un tour disponible sur son compte';
+    }
+    return '<section class="kt-spin" aria-label="King Spin du client" aria-live="polite"><div class="kt-spin-head"><b>♛ KING SPIN</b><span class="kt-spin-badge '+tone+'">'+esc(badge)+'</span><button type="button" data-act="king-spin-refresh" title="Actualiser King Spin" aria-label="Actualiser King Spin" '+(ktSpin.loading?'disabled':'')+'>↻</button></div><div class="kt-spin-body"><div class="kt-spin-wheel" style="--spin-color:'+color+'" aria-hidden="true"><span>♛</span></div><div><strong>'+esc(title)+'</strong><p>'+esc(detail)+'</p></div></div>'+(foot?'<div class="kt-spin-foot">'+esc(foot)+'</div>':'')+'</section>';
+  }
+  function ktSpinPaint(){var box=document.getElementById('kt-spin-slot');if(box&&st.client===ktSpin.client)box.innerHTML=ktSpinHtml();}
+  function ktSpinBox(){
+    if(!st.client){if(ktSpin.client)ktSpinReset();return '';}
+    if(ktSpin.client!==st.client||ktSpin.ref!==ktSpinRef())ktSpinReset();
+    setTimeout(function(){ktSpinLoad(false);},0);
+    return '<div id="kt-spin-slot">'+ktSpinHtml()+'</div>';
+  }
+  setInterval(function(){ktSpinLoad(false);},15000);
+  document.addEventListener('visibilitychange',function(){if(!document.hidden)ktSpinLoad(true);});
+  // END KT_KING_SPIN_V1
+
   function viewPos(){
     var cats=['Tout'].concat(st.categories||[]);
     products.forEach(function(p){if(p.cat&&cats.indexOf(p.cat)<0)cats.push(p.cat);});
@@ -3429,7 +3487,7 @@ document.addEventListener('click',function(e){var eye=e.target.closest('[data-da
       '<div class="cats">'+cats.map(function(c){return '<button class="cat '+(c===st.cat?'on':'')+'" data-act="poscat" data-c="'+esc(c)+'">'+esc(c)+'</button>';}).join('')+'</div>'+editBanner+
       '<input id="pos-search" class="pos-search" placeholder="Rechercher un produit…" value="'+esc(st.posSearch||'')+'"/>'+'<button data-act="prixlibre" style="width:100%;margin:-2px 0 12px;padding:11px 14px;border-radius:10px;border:1px solid var(--gold);background:var(--gold-soft);color:var(--gold);font-size:14px;font-weight:600;cursor:pointer">+ Prix libre</button>'+'<div class="pgrid'+(posEditing()?' editing':'')+'">'+grid+'</div></div>'+
       '<div class="ticket"><div class="tk-head"><h3>Ticket</h3><span class="muted" style="font-size:12px">'+st.boutique+'</span><button class="tk-close" data-act="tkclose" title="Fermer">×</button></div>'+
-      '<div class="tk-client">'+clientBox+rewardBox+'</div>'+
+      '<div class="tk-client">'+clientBox+ktSpinBox()+rewardBox+'</div>'+
       '<div class="tk-lines">'+lines+'</div>'+
       '<div class="tk-foot"><div class="tk-tot"><span class="t1">Total TTC</span><span class="t2">'+eur(cartTotal())+'</span></div>'+
       '<div class="tk-tva">dont TVA 20% : '+eur(Math.round((cartTotal()-cartTotal()/1.2)*100)/100)+' · HT : '+eur(Math.round(cartTotal()/1.2*100)/100)+'</div>'+
@@ -5762,6 +5820,7 @@ function ktPosCommit(code){if(!ktPosPending)return;var x=ktPosPending,p=pById(x.
     if(a==='rmline'){st.cart.splice(+el.getAttribute('data-i'),1);render();return;}
     if(a==='pickclient'){clientModal();return;}
     if(a==='cmscan'){cmStartScan();return;}
+    if(a==='king-spin-refresh'){ktSpinLoad(true);return;}
     if(a==='rmclient'){st.client=null;st.redeemPts=0;st.coupon=null;render();return;}
     if(a==='setclient'){st.client=customers.find(function(c){return c.id===el.getAttribute('data-id');});st.redeemPts=0;closeModal();render();return;}
     if(a==='setclientremote'){var rc=remoteCustomers[+el.getAttribute('data-i')];if(rc){st.client={name:rc.name||rc.email,email:rc.email,phone:rc.phone||'',points:Math.round(rc.points||0),tier:tierOf(rc.points)};st.redeemPts=0;}closeModal();render();return;}
