@@ -887,10 +887,31 @@ function ktShipQuote(b,user){
   if(!cfg.enabled)whFail('Le réseau doit valider les tarifs et le poids de l’emballage dans Tarifs Colissimo.',409);
   if(cfg.validFrom>ktParisDay(new Date()))whFail('Cette grille n’est pas encore applicable.',409);
   if((b.country||'FR')!=='FR'||!/^\d{5}$/.test(String(b.zip||''))||/^(97|98)/.test(b.zip))whFail('Grille configurée uniquement pour la France métropolitaine (Corse incluse).');
-  var maxG=cfg.rates[cfg.rates.length-1][0],maxV=Math.round(cfg.insurance[cfg.insurance.length-1][0]*100),current=null;
-  function newPack(){if(quote.packages.length>=100)whFail('Plus de 100 colis : contactez le réseau.');current={number:quote.packages.length+1,grams:cfg.packingGrams,valueCents:0,items:[]};quote.packages.push(current);}
-  lines.filter(function(l){return !l.service;}).forEach(function(l){if(!l.grams)whFail('Poids à renseigner pour '+l.name,409);if(l.grams>maxG-cfg.packingGrams)whFail('Unité trop lourde pour un colis de la grille : '+l.name+'. Contactez Kingston pour un transport adapté.',409);if(l.cents>maxV)whFail('Un article '+l.name+' vaut '+(l.cents/100).toFixed(2)+' €, au-delà du plafond de '+(maxV/100).toFixed(2)+' € par colis. Contactez Kingston pour une assurance complémentaire ou un transport adapté avant de payer.',409);var left=l.qty;while(left>0){if(!current)newPack();var q=Math.min(left,Math.floor((maxG-current.grams+1e-8)/l.grams),l.cents?Math.floor((maxV-current.valueCents)/l.cents):left);if(q<1){newPack();continue;}current.items.push({productId:l.productId,name:l.name,qty:q,unit:l.unit});current.grams+=q*l.grams;current.valueCents+=q*l.cents;left-=q;}});
-  quote.packages.forEach(function(p){p.grams=Math.ceil(p.grams);p.value=p.valueCents/100;delete p.valueCents;var rate=cfg.rates.find(function(r){return r[0]>=p.grams;});if(!rate)whFail('Poids hors grille.');p.shipping=rate[1];var included=Math.max(5.75,p.grams/1000*23);var cover=cfg.insurance.find(function(r){return r[0]>=p.value;});if(!cover)whFail('Valeur hors grille assurance.');var needCover=included<p.value+p.shipping;p.insurance=needCover?cover[1]:0;p.covered=needCover?cover[0]:whRound(included);p.option=needCover?(cover[0]===50?'R1':cover[0]===200?'R2':'Ad Valorem'):'Indemnisation incluse';p.signature=needCover||p.grams>5000;quote.shipping=whRound(quote.shipping+p.shipping);quote.insurance=whRound(quote.insurance+p.insurance);});
+  // KT_SINGLE_PARCEL_V1: one physical parcel per restock, never split by insured value.
+  quote.parcelPolicy='single';
+  var maxG=cfg.rates[cfg.rates.length-1][0],physical=lines.filter(function(l){return !l.service;});
+  if(physical.length){
+   var parcel={number:1,grams:cfg.packingGrams,valueCents:0,items:[]};
+   physical.forEach(function(l){
+    if(!l.grams)whFail('Poids à renseigner pour '+l.name,409);
+    parcel.items.push({productId:l.productId,name:l.name,qty:l.qty,unit:l.unit});
+    parcel.grams+=l.qty*l.grams;parcel.valueCents+=l.qty*l.cents;
+   });
+   parcel.grams=Math.ceil(parcel.grams);parcel.value=parcel.valueCents/100;delete parcel.valueCents;
+   if(!Number.isSafeInteger(parcel.grams)||parcel.grams>maxG)whFail('Le réassort regroupé pèse '+parcel.grams+' g emballage compris. La grille accepte '+maxG+' g au maximum pour un seul colis. Contactez Kingston pour un transport adapté ou choisissez le retrait Basecamp.',409);
+   var rate=cfg.rates.find(function(r){return r[0]>=parcel.grams;});
+   if(!rate)whFail('Poids hors grille.');
+   parcel.shipping=rate[1];
+   var included=Math.max(5.75,parcel.grams/1000*23);
+   var cover=cfg.insurance.find(function(r){return r[0]>=parcel.value;})||cfg.insurance[cfg.insurance.length-1];
+   var needCover=included<parcel.value+parcel.shipping;
+   parcel.insurance=needCover?cover[1]:0;
+   parcel.covered=needCover?cover[0]:whRound(included);
+   parcel.coverageShortfall=whRound(Math.max(0,parcel.value-parcel.covered));
+   parcel.option=needCover?(cover[0]===50?'R1':cover[0]===200?'R2':'Ad Valorem'):'Indemnisation incluse';
+   parcel.signature=needCover||parcel.grams>5000;
+   quote.packages=[parcel];quote.shipping=parcel.shipping;quote.insurance=parcel.insurance;
+  }
   quote.fees=whRound(quote.shipping+quote.insurance);quote.total=whRound(quote.goods+quote.fees);
  }
  quote.priceBasis='HT';quote.tax=whRound(lines.reduce(function(sum,l){return sum+whRound(l.cents/100*l.qty*l.vat);},0));quote.taxEstimated=true;quote.totalHT=whRound(quote.goods+quote.fees);quote.total=whRound(quote.totalHT+quote.tax);
