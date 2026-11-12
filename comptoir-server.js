@@ -1340,9 +1340,9 @@ async function ksBalance(ref) {
   if (!b.user_id || !b.king_spin || !b.king_spin.available) throw Error('King Spin indisponible.');
   return b;
 }
-async function ksRemote(c,op) {
-  const r=await loyalty._call('/king-spin-claim',{method:'POST',timeoutMs:10000,body:{user:c.ref,spin:c.spin,claim:c.id,op,boutique:(boutiques[c.bId]||{}).label||c.bId,seller:c.seller,receipt:c.receipt||''}});
-  if(!r || !r.ok || r.state!==({reserve:'reserved',check:'reserved',release:'released',commit:'used'})[op])throw Error('Confirmation King Spin indisponible.');
+async function ksRemote(c,op,attempt) {
+  const r=await loyalty._call('/king-spin-claim',{method:'POST',timeoutMs:10000,body:{user:c.ref,spin:c.spin,claim:c.id,op,attempt:attempt||c.attempt||'',boutique:(boutiques[c.bId]||{}).label||c.bId,seller:c.seller,receipt:c.receipt||''}});
+  if(!r || !r.ok || r.state!==({reserve:'reserved',check:'reserved',release:'released',begin:'checkout',abort:'reserved',commit:'used'})[op])throw Error('Confirmation King Spin indisponible.');
   return r;
 }
 function ksPaid(items,bId) {
@@ -1413,11 +1413,20 @@ function ksOwn(user,body) {
 async function ksCommit(c) {
   if(c.state!=='sold'||c.synced||kingSpinBusy.has(c.id))return;
   kingSpinBusy.add(c.id);
-  try{await ksRemote(c,'commit');c.synced=true;writeDataFileNow();}
+  try{
+    if(!c.attempt){c.attempt=crypto.randomUUID();writeDataFileNow();}
+    try{await ksRemote(c,'commit');}
+    catch(e){await ksRemote(c,'begin');await ksRemote(c,'commit');}
+    c.synced=true;writeDataFileNow();
+  }
   catch(e){c.synced=false;console.error('King Spin : synchronisation en attente pour '+c.receipt);}
   finally{kingSpinBusy.delete(c.id);}
 }
-setInterval(()=>{for(const c of Object.values(kingSpinClaims))if(c.state==='sold'&&!c.synced)void ksCommit(c);},30000).unref();
+async function ksAbort(c,attempt){
+  try{await ksRemote(c,'abort',attempt);delete c.abortAttempt;writeDataFileNow();}
+  catch(e){c.abortAttempt=attempt;try{writeDataFileNow();}catch(_){}console.error('King Spin : annulation à synchroniser.');}
+}
+setInterval(()=>{for(const c of Object.values(kingSpinClaims))if(c.state==='sold'&&!c.synced)void ksCommit(c);else if(c.abortAttempt&&!kingSpinBusy.has(c.id)){kingSpinBusy.add(c.id);void ksAbort(c,c.abortAttempt).finally(()=>kingSpinBusy.delete(c.id));}},30000).unref();
 // END KT_KING_SPIN_REDEEM_V1
 
 let royAutoLog = [];         // journal des operations automatiques (300 dernieres)
@@ -3934,7 +3943,7 @@ const server = http.createServer(async (req, res) => {
 
     if (req.method === 'POST' && path === '/api/sales') {
       const body = await readJson(req);
-      let ksClaim=null;
+      let ksClaim=null,ksAttempt=null;
       if(body.kingSpinClaim){
         if(PG)throw Error('King Spin indisponible avec ce stockage.');
         if(user.role==='vendeur'&&!(user.tabs||[]).includes('pos'))throw Error('Accès caisse requis.');
@@ -3969,7 +3978,7 @@ const server = http.createServer(async (req, res) => {
       const items = Array.isArray(body.items) ? body.items : [];
       if (!items.length) throw new Error('Aucun article dans la vente');
 
-      if(ksClaim){ksStockCheck(ksClaim,items,bId);await ksRemote(ksClaim,'check');}
+      if(ksClaim){ksStockCheck(ksClaim,items,bId);ksAttempt=crypto.randomUUID();await ksRemote(ksClaim,'begin',ksAttempt);}
       const stockBefore=JSON.parse(JSON.stringify(stock[bId]||{}));
       const lines = [];
       let brut = 0;
@@ -4029,8 +4038,8 @@ const server = http.createServer(async (req, res) => {
       const fiscalBefore={length:invoices.length,lastHash,seq:{...seqByB},gt:{...gtByB},avoir:{...gtAvoirsByB},total:gtPerpetuel,totalAvoir:gtPerpetuelAvoirs};
       let inv;
       try{inv=createInvoice(bId,total,lines,body.customerRef||'Comptoir',body.payment||'Carte Monetico','caisse');
-        inv.tva=tva;inv.remise=remise;inv.couponPoints=pointsUtilises;inv.saleKey=_saleKey;if(ksClaim){inv.kingSpinClaim=ksClaim.id;ksClaim.state='sold';ksClaim.receipt=bId+':'+inv.num+'@'+inv.date;ksClaim.synced=false;}writeDataFileNow();
-      }catch(e){if(ksClaim){ksClaim.state='reserved';delete ksClaim.receipt;delete ksClaim.synced;}stock[bId]=stockBefore;invoices.length=fiscalBefore.length;lastHash=fiscalBefore.lastHash;seqByB=fiscalBefore.seq;gtByB=fiscalBefore.gt;gtAvoirsByB=fiscalBefore.avoir;gtPerpetuel=fiscalBefore.total;gtPerpetuelAvoirs=fiscalBefore.totalAvoir;throw e;}
+        inv.tva=tva;inv.remise=remise;inv.couponPoints=pointsUtilises;inv.saleKey=_saleKey;if(ksClaim){inv.kingSpinClaim=ksClaim.id;ksClaim.state='sold';ksClaim.attempt=ksAttempt;ksClaim.receipt=bId+':'+inv.num+'@'+inv.date;ksClaim.synced=false;}writeDataFileNow();
+      }catch(e){if(ksClaim){ksClaim.state='reserved';delete ksClaim.receipt;delete ksClaim.synced;delete ksClaim.attempt;}stock[bId]=stockBefore;invoices.length=fiscalBefore.length;lastHash=fiscalBefore.lastHash;seqByB=fiscalBefore.seq;gtByB=fiscalBefore.gt;gtAvoirsByB=fiscalBefore.avoir;gtPerpetuel=fiscalBefore.total;gtPerpetuelAvoirs=fiscalBefore.totalAvoir;throw e;}
 
 
       // Fidelite en BEST-EFFORT : une vente deja encaissee ne doit JAMAIS echouer a cause de myCred.
@@ -4052,7 +4061,7 @@ const server = http.createServer(async (req, res) => {
         montants: { brut: brut, remise: remise, totalTTC: total, totalHT: tva.totalHT, totalTVA: tva.totalTVA, ventilationTVA: tva.ventilation },
         fidelite: body.customerRef ? { membre: body.customerRef, pointsUtilises: pointsUtilises, pointsGagnes: pointsEarned, nouveauSolde: newBalance, taux: POINTS_PER_EURO, erreur: fidErreur } : 'client au comptoir',
       });
-      }finally{if(ksClaim){kingSpinBusy.delete(ksClaim.id);if(ksClaim.state==='sold')void ksCommit(ksClaim);}}
+      }finally{if(ksClaim){if(ksClaim.state!=='sold'&&ksAttempt)await ksAbort(ksClaim,ksAttempt);kingSpinBusy.delete(ksClaim.id);if(ksClaim.state==='sold')void ksCommit(ksClaim);}}
     }
 
     if (req.method === 'POST' && path === '/api/refund') {

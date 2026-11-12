@@ -3483,6 +3483,7 @@ document.addEventListener('click',function(e){var eye=e.target.closest('[data-da
         if(s.status==='credited')foot='Points déjà crédités sur son compte';
         else if(s.status==='pending'){badge='À confirmer';foot='Crédit en attente · à reprendre sur son compte';tone='warn';}
         else if(s.status==='used')foot='Cadeau déjà utilisé'+(s.pos&&s.pos.boutique?' · '+s.pos.boutique:'')+(s.pos&&s.pos.used_at?' · '+ktSpinDate(s.pos.used_at):'');
+        else if(s.status==='pos_checkout'){badge='Encaissement';foot='Encaissement en cours'+(s.pos&&s.pos.boutique?' · '+s.pos.boutique:'');}
         else if(s.status==='pos_reserved'){badge='Réservé';foot='Réservé en caisse'+(s.pos&&s.pos.boutique?' · '+s.pos.boutique:'');}
         else if(s.expires<=d.now)foot='Cadeau expiré';
         else if(s.status==='ready')foot='Cadeau disponible · jusqu’au '+ktSpinDate(s.expires);
