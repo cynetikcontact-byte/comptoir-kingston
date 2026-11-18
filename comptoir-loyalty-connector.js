@@ -38,7 +38,7 @@ class ComptoirLoyalty {
         signal: ctrl ? ctrl.signal : undefined,
       });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error('myCred: ' + ((data && data.message) || ('Erreur ' + res.status)));
+      if (!res.ok) { const err = new Error('myCred: ' + ((data && data.message) || ('Erreur ' + res.status))); err.status = res.status; err.code = data && data.code; throw err; }
       return data;
     } finally {
       if (to) clearTimeout(to);
@@ -59,7 +59,14 @@ class ComptoirLoyalty {
     ];
     if (search) qs.push('search=' + encodeURIComponent(search));
     if (membersOnly) qs.push('members_only=1');
-    return this._call('/customers?' + qs.join('&'));
+    // Route '/clients' en priorite : le pare-feu Hostinger bloque toute URL contenant « customers » (403, nov. 2026).
+    // Repli sur l'ancienne route '/customers' si le plugin du site n'a pas encore l'alias (404 rest_no_route).
+    try {
+      return await this._call('/clients?' + qs.join('&'));
+    } catch (e) {
+      if (e && e.status === 404) return this._call('/customers?' + qs.join('&'));
+      throw e;
+    }
   }
 
   /** Crediter les points gagnes sur une vente (montant en euros) selon la regle pointsPerEuro. */
@@ -113,7 +120,7 @@ if (require.main === module && process.argv.includes('--demo')) {
       store[b.user] = (store[b.user] || 0) + b.amount;
       return { ok: true, status: 200, json: async () => ({ user_id: 7, points: store[b.user], type: 'mycred_default', adjusted: b.amount }) };
     }
-    if (u.pathname.endsWith('/customers')) {
+    if (u.pathname.endsWith('/customers') || u.pathname.endsWith('/clients')) {
       const s = (u.searchParams.get('search') || '').toLowerCase();
       let list = Object.keys(store).map((email, i) => ({ user_id: i + 1, name: email.split('@')[0], email, phone: '', points: store[email] }));
       if (s) list = list.filter((c) => c.email.toLowerCase().includes(s) || c.name.toLowerCase().includes(s));

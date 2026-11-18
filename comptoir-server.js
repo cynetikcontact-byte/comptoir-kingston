@@ -1721,7 +1721,7 @@ function makeDemoLoyalty() {
       store[b.user] = (store[b.user] || 0) + b.amount;
       return { ok: true, status: 200, json: async () => ({ points: store[b.user], adjusted: b.amount }) };
     }
-    if (u.pathname.endsWith('/customers')) {
+    if (u.pathname.endsWith('/customers') || u.pathname.endsWith('/clients')) {
       const s = (u.searchParams.get('search') || '').toLowerCase();
       const names = { 'lenny@kingston-cbd.fr': 'Lenny K.', 'sarah@kingston-cbd.fr': 'Sarah M.' };
       let list = Object.keys(store).map((email, i) => ({ user_id: i + 1, name: names[email] || email, email, phone: '', points: store[email] }));
