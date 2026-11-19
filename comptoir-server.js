@@ -1348,6 +1348,8 @@ let royLastHash = 'GENESIS'; // chaine d'empreintes PROPRE aux factures de royal
 let royAuto = { enabled: true, block: true, startYm: '2026-09', invoiceDay: 1, invoiceHour: 6, dueDay: 7, remindDay: 5, lastTickAt: null, updatedAt: null, updatedBy: '' };
 // KT_KING_SPIN_REDEEM_V1: durable ticket claims, shared with the WordPress wheel.
 let kingSpinClaims = {};
+// Notes internes par client fidélité (clé = e-mail en minuscules) : [{id,text,date,author,boutiqueId,bqLabel}]
+let clientNotes = {};
 const kingSpinBusy = new Set();
 function ksShop(user, body) {
   const id = user.role==='admin' ? (body.boutiqueId||'aix') : user.boutiqueId;
@@ -1491,7 +1493,7 @@ function writeDataFileNow() {
   // Écriture ATOMIQUE : fichier temporaire puis renommage -> jamais de fichier tronqué en cas de coupure.
   // NB : fiscalKey n'est PLUS écrite ici (stockée à part, fichier protégé).
   const tmp = DATA_FILE + '.tmp';
-  fs.writeFileSync(tmp, JSON.stringify({ v: 1, savedAt: new Date().toISOString(), pointsPerEuro: POINTS_PER_EURO, hideBaseCatalog, customProducts, stock, boutiques, invoiceSeq, lastHash, invoices, orderSeq, orders, fiscalEvents, fiscalSeq, lastFiscalSig, clotureSeq, gtPerpetuel, gtPerpetuelAvoirs, seqByB, gtByB, gtAvoirsByB, royaltiesRates, royaltiesStatus, clotureSeqByB, supplyOrders, supplySeq, stockMoves, proRate, pontDevices, sessions, proProducts, lastProSync, proLots, proStock, proBuyPrice, proSellPrice, proStockPush, proBlock, proExtras, proRename, warehouse, entreprise, adminCred, adminEmail, backupState, franchisees, sellers, royaltyInvoices, roySeq, royLastHash, posOrder, posCategories, royAuto, royAutoLog, kingSpinClaims }), 'utf8');
+  fs.writeFileSync(tmp, JSON.stringify({ v: 1, savedAt: new Date().toISOString(), pointsPerEuro: POINTS_PER_EURO, hideBaseCatalog, customProducts, stock, boutiques, invoiceSeq, lastHash, invoices, orderSeq, orders, fiscalEvents, fiscalSeq, lastFiscalSig, clotureSeq, gtPerpetuel, gtPerpetuelAvoirs, seqByB, gtByB, gtAvoirsByB, royaltiesRates, royaltiesStatus, clotureSeqByB, supplyOrders, supplySeq, stockMoves, proRate, pontDevices, sessions, proProducts, lastProSync, proLots, proStock, proBuyPrice, proSellPrice, proStockPush, proBlock, proExtras, proRename, warehouse, entreprise, adminCred, adminEmail, backupState, franchisees, sellers, royaltyInvoices, roySeq, royLastHash, posOrder, posCategories, royAuto, royAutoLog, kingSpinClaims, clientNotes }), 'utf8');
   fs.renameSync(tmp, DATA_FILE);
 }
 function persist() {
@@ -1682,6 +1684,7 @@ function loadPersisted() {
       ['lastTickAt', 'updatedAt', 'updatedBy'].forEach(function (k) { if (typeof ra[k] === 'string') royAuto[k] = ra[k]; });
     }
     if (d.kingSpinClaims && typeof d.kingSpinClaims === 'object' && !Array.isArray(d.kingSpinClaims)) kingSpinClaims=d.kingSpinClaims;
+    if (d.clientNotes && typeof d.clientNotes === 'object' && !Array.isArray(d.clientNotes)) clientNotes = d.clientNotes;   // notes internes clients (caisse)
     if (Array.isArray(d.royAutoLog)) royAutoLog = d.royAutoLog.slice(-300);
     if (d.posCategories && typeof d.posCategories === 'object' && !Array.isArray(d.posCategories)) posCategories = d.posCategories;
     if (d.posOrder && typeof d.posOrder === 'object') posOrder = d.posOrder;                  // ordre d'affichage caisse par boutique
@@ -3935,6 +3938,59 @@ const server = http.createServer(async (req, res) => {
         let soldeApres = null; try { const bal = await loyalty.getBalance(ref); soldeApres = bal && bal.points; } catch (e2) {}
         return send(res, 200, { ok: true, ref: ref, ajuste: amount, points: r && typeof r.points === 'number' ? r.points : null, soldeApres: soldeApres, reponse: r });
       } catch (e) { return send(res, 502, { ok: false, error: String(e.message || e) }); }
+    }
+
+    // ---- Historique d'achats + notes internes d'un client fidélité (fiche client de la caisse) ----
+    // Achats : tous les tickets / factures du réseau rattachés à son e-mail (caisse + borne), plus récents d'abord.
+    if (req.method === 'GET' && path === '/api/loyalty/history') {
+      const ref = String(u.searchParams.get('ref') || '').trim().toLowerCase();
+      if (!ref || ref.length > 200) return send(res, 400, { error: 'Client requis' });
+      const notes = (clientNotes[ref] || []).slice().sort((x, y) => (x.date < y.date ? 1 : -1));
+      if (PG) return send(res, 200, { ref: ref, disponible: false, achats: [], stats: null, notes: notes });
+      const mine = invoices.filter((i) => i && typeof i.client === 'string' && i.client.trim().toLowerCase() === ref);
+      const ventes = mine.filter((i) => i.total >= 0), avoirs = mine.filter((i) => i.total < 0);
+      const totalNet = Math.round(mine.reduce((t, i) => t + (Number(i.total) || 0), 0) * 100) / 100;
+      const sorted = mine.slice().sort((x, y) => (x.date < y.date ? 1 : -1));
+      const lim = Math.min(200, Math.max(1, parseInt(u.searchParams.get('limit') || '50', 10) || 50));
+      const achats = sorted.slice(0, lim).map((i) => ({
+        num: i.num, date: i.date, total: i.total, payment: i.payment || '', source: i.source || 'caisse',
+        boutiqueId: i.boutiqueId, boutique: (boutiques[i.boutiqueId] && boutiques[i.boutiqueId].label) || i.boutiqueId,
+        lignes: (i.lines || []).map((l) => ({ produit: l.produit || l.label || l.name || '', detail: l.detail || '', prix: l.prix != null ? l.prix : l.price })),
+      }));
+      const stats = {
+        nbAchats: ventes.length, nbAvoirs: avoirs.length, totalNet: totalNet,
+        panierMoyen: ventes.length ? Math.round(ventes.reduce((t, i) => t + i.total, 0) / ventes.length * 100) / 100 : 0,
+        premier: sorted.length ? sorted[sorted.length - 1].date : null, dernier: sorted.length ? sorted[0].date : null,
+      };
+      return send(res, 200, { ref: ref, disponible: true, achats: achats, total: mine.length, stats: stats, notes: notes });
+    }
+    // Ajouter une note interne sur un client (visible par toutes les boutiques du réseau, jamais par le client).
+    if (req.method === 'POST' && path === '/api/loyalty/notes') {
+      const b = await readJson(req);
+      const ref = String(b.customerRef || '').trim().toLowerCase();
+      const text = String(b.text || '').replace(/\r/g, '').trim().slice(0, 1000);
+      if (!ref || ref.length > 200) return send(res, 400, { error: 'Client requis' });
+      if (!text) return send(res, 400, { error: 'Note vide' });
+      const bId = user.role === 'admin' ? (b.boutiqueId || user.boutiqueId || null) : user.boutiqueId;
+      const note = { id: crypto.randomUUID(), text: text, date: new Date().toISOString(), author: String(user.name || user.role || '').slice(0, 80), role: user.role, boutiqueId: bId || null, bqLabel: (bId && boutiques[bId] && boutiques[bId].label) || (user.role === 'admin' ? 'Réseau' : '') };
+      if (!clientNotes[ref]) clientNotes[ref] = [];
+      clientNotes[ref].push(note);
+      if (clientNotes[ref].length > 200) clientNotes[ref] = clientNotes[ref].slice(-200);
+      persist();
+      return send(res, 201, { ok: true, note: note });
+    }
+    // Supprimer une note : l'admin réseau, ou la boutique qui l'a écrite.
+    if (req.method === 'POST' && path === '/api/loyalty/notes/delete') {
+      const b = await readJson(req);
+      const ref = String(b.customerRef || '').trim().toLowerCase();
+      const list = clientNotes[ref] || [];
+      const idx = list.findIndex((n) => n.id === b.id);
+      if (idx < 0) return send(res, 404, { error: 'Note introuvable' });
+      if (user.role !== 'admin' && list[idx].boutiqueId !== user.boutiqueId) return send(res, 403, { error: 'Seule la boutique qui a écrit la note (ou l\'admin) peut la supprimer' });
+      list.splice(idx, 1);
+      if (!list.length) delete clientNotes[ref];
+      persist();
+      return send(res, 200, { ok: true });
     }
 
     // État de la liaison fidélité (sans exposer la clé secrète)

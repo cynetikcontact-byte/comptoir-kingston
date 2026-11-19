@@ -3515,7 +3515,7 @@ document.addEventListener('click',function(e){var eye=e.target.closest('[data-da
     var tkBump=(typeof st._tkN==='number'&&st._tkN!==nArt&&nArt>0);st._tkN=nArt;
     var tkbar='<div class="tkbar'+(tkBump?' bump':'')+'" data-act="tkopen"><span class="n">'+nArt+'</span><span class="lbl">'+(nArt?('article'+(nArt>1?'s':'')):'ticket vide')+'</span><span class="tot">'+eur(cartTotal())+'</span><span class="go">'+(nArt?'Encaisser':'Voir')+'</span></div>'+'<div class="tk-backdrop" data-act="tkclose"></div>';
     var lines=st.cart.length?st.cart.map(function(l,i){return '<div class="tk-line"><div><div class="tl-name">'+l.name+'</div><div class="tl-det">'+l.detail+'</div>'+ (l.productId!=='libre'?'<div style="font-size:12px;overflow-wrap:anywhere">'+(l.lotCode?'Lot : <b>'+esc(ktPosLabel(l.lotCode))+'</b>':'Lot non renseigné')+' <button class="btn" style="padding:3px 6px;font-size:11px" data-act="pos-lot-edit" data-i="'+i+'">Choisir le lot</button></div>':'')+'</div><div class="tl-r"><b>'+eur(l.price)+'</b><button class="tk-x" data-act="rmline" data-i="'+i+'">×</button></div></div>';}).join(''):'<div class="tk-empty">Touche un produit pour commencer le ticket.</div>';
-    var clientBox=st.client?'<div class="mem"><div><div style="font-weight:600">'+st.client.name+'</div><div style="font-size:11px;color:#a59c88">'+st.client.tier+' · solde myCred</div></div><div class="pts">'+st.client.points+' pts</div><button class="tk-x" data-act="rmclient" title="Détacher le client">×</button></div>':'<button class="btn" style="width:100%" data-act="pickclient">+ Associer un membre fidélité</button>';
+    var clientBox=st.client?'<div class="mem"><div><div style="font-weight:600">'+st.client.name+'</div><div style="font-size:11px;color:#a59c88">'+st.client.tier+' · solde myCred</div></div><div class="pts">'+st.client.points+' pts</div><button class="tk-x" data-act="rmclient" title="Détacher le client">×</button></div>'+(API.on&&st.client.email?'<button class="btn" style="width:100%;margin-top:6px;font-size:13px" data-act="clhist">📋 Historique & notes</button>':''):'<button class="btn" style="width:100%" data-act="pickclient">+ Associer un membre fidélité</button>';
     var rewardBox='';
     if(st.client&&cartBrut()>0){
       if(st.coupon){
@@ -5575,6 +5575,50 @@ function ktPosCommit(code){if(!ktPosPending)return;var x=ktPosPending,p=pById(x.
   function cmTick(){ if(!cmStream)return; var video=document.getElementById('cm-video'),canvas=document.getElementById('cm-canvas'); if(!video||!canvas){cmStopScan();return;} if(!cmBusy&&video.readyState===video.HAVE_ENOUGH_DATA){ canvas.width=video.videoWidth;canvas.height=video.videoHeight; var ctx=canvas.getContext('2d'); ctx.drawImage(video,0,0,canvas.width,canvas.height); var img=ctx.getImageData(0,0,canvas.width,canvas.height); var q=(typeof jsQR!=='undefined')?jsQR(img.data,img.width,img.height):null; if(q&&q.data){cmIdentify(q.data);} } cmScanTimer=requestAnimationFrame(cmTick); }
   function cmIdentify(code){ cmBusy=true; cmQrMsg('Recherche du compte…',false); apiPost('/api/borne/identify',{code:String(code||'')}).then(function(d){ if(d&&d.found){ st.client={name:d.name||d.email,email:d.email||d.ref,phone:'',points:Math.round(d.points||0),tier:tierOf(d.points)}; st.redeemPts=0; cmStopScan(); closeModal(); render(); toast('Membre '+(d.name||d.email)+' associé · '+Math.round(d.points||0)+' pts'); } else { cmQrMsg('Client introuvable — vérifie le QR (compte kingston-cbd.fr).',true); setTimeout(function(){cmBusy=false;},1200); } }).catch(function(){ cmQrMsg('Erreur serveur — réessaie.',true); setTimeout(function(){cmBusy=false;},1200); }); }
   function cmStartScan(){ var cam=document.getElementById('cm-cam'); if(!cam)return; cam.style.display='block'; cmQrMsg('Chargement du lecteur QR…',false); cmLoadJsQR(function(ok){ if(!ok){cmQrMsg('Lecteur QR indisponible (jsqr.js).',true);return;} if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){cmQrMsg('Caméra non supportée sur cet appareil.',true);return;} if(cmStream)return; navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}}).then(function(stream){ cmStream=stream; var video=document.getElementById('cm-video'); if(!video){cmStopScan();return;} video.srcObject=stream; video.setAttribute('playsinline',true); video.play(); cmQrMsg('Présente le QR du client devant la caméra…',false); cmScanTimer=requestAnimationFrame(cmTick); }).catch(function(){ cmQrMsg('Accès caméra refusé — autorise la caméra pour kingtools.fr.',true); }); }); }
+  // ---- Fiche client : historique d'achats (tout le réseau) + notes internes ----
+  function clFmtDate(iso){try{var d=new Date(iso);return d.toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit',year:'numeric'})+' '+d.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'});}catch(e){return iso||'';}}
+  function clHistModal(){
+    var c=st.client;if(!c||!c.email)return;
+    openModal('<div class="modal-h">'+esc(c.name||c.email)+'<div class="muted" style="font-size:12px;font-weight:400">'+esc(c.email)+' · '+esc(c.tier||'')+' · '+(c.points||0)+' pts</div></div><div class="modal-b" id="clhist-b">Chargement…</div>');
+    clHistLoad();
+  }
+  function clHistLoad(){
+    var c=st.client;if(!c||!c.email)return;
+    apiGet('/api/loyalty/history?ref='+encodeURIComponent(c.email)).then(function(d){
+      var b=document.getElementById('clhist-b');if(!b)return;
+      var notes=d.notes||[];
+      var nh='<div style="font-weight:700;margin-bottom:6px">📝 Notes internes <span class="muted" style="font-weight:400;font-size:11px">(visibles par les boutiques du réseau, jamais par le client)</span></div>'+
+        '<textarea id="clnote-txt" rows="2" maxlength="1000" placeholder="Ex : préfère les fleurs indoor, allergique à…, à rappeler pour…" style="width:100%;box-sizing:border-box;border:1px solid var(--line);border-radius:10px;padding:10px;font:inherit;resize:vertical"></textarea>'+
+        '<button class="btn btn-gold" style="width:100%;margin:6px 0 10px" data-act="clnote-add">Ajouter la note</button><div id="clnote-msg" style="color:#a33;font-size:12px"></div>'+
+        (notes.length?notes.map(function(n){var canDel=(st.user&&st.user.role==='admin')||(n.boutiqueId&&n.boutiqueId===(st.user&&st.user.boutiqueId))||(n.boutiqueId&&n.boutiqueId===st.boutiqueId&&st.user&&st.user.role!=='vendeur');
+          return '<div style="background:#f7f2e6;border:1px solid #e9dfc6;border-radius:10px;padding:8px 10px;margin-bottom:6px"><div style="white-space:pre-wrap;overflow-wrap:anywhere">'+esc(n.text)+'</div><div class="muted" style="font-size:11px;margin-top:4px;display:flex;justify-content:space-between;gap:6px"><span>'+clFmtDate(n.date)+' · '+esc(n.author||'')+(n.bqLabel?' · '+esc(n.bqLabel):'')+'</span>'+(canDel?'<button data-act="clnote-del" data-id="'+esc(n.id)+'" style="border:none;background:none;color:#a33;cursor:pointer;font-size:11px">Supprimer</button>':'')+'</div></div>';}).join(''):'<div class="muted" style="font-size:12px;margin-bottom:6px">Aucune note pour ce client.</div>');
+      var hh='';
+      if(!d.disponible){hh='<div class="muted" style="font-size:12px">Historique indisponible avec ce stockage.</div>';}
+      else{
+        var s2=d.stats||{};
+        hh='<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:10px;text-align:center">'+
+          '<div style="background:#f7f2e6;border-radius:10px;padding:8px"><div style="font-weight:700">'+(s2.nbAchats||0)+'</div><div class="muted" style="font-size:11px">achats</div></div>'+
+          '<div style="background:#f7f2e6;border-radius:10px;padding:8px"><div style="font-weight:700">'+eur(s2.totalNet||0)+'</div><div class="muted" style="font-size:11px">dépensé</div></div>'+
+          '<div style="background:#f7f2e6;border-radius:10px;padding:8px"><div style="font-weight:700">'+eur(s2.panierMoyen||0)+'</div><div class="muted" style="font-size:11px">panier moyen</div></div></div>'+
+          (s2.dernier?'<div class="muted" style="font-size:11px;margin-bottom:8px">Client depuis le '+clFmtDate(s2.premier).slice(0,10)+' · dernier passage le '+clFmtDate(s2.dernier)+'</div>':'');
+        var ach=d.achats||[];
+        hh+=ach.length?ach.map(function(t,i){
+          return '<div style="border-bottom:1px solid var(--line);padding:7px 0"><div data-act="clhist-tk" data-i="'+i+'" style="display:flex;justify-content:space-between;gap:8px;cursor:pointer"><div><div style="font-size:13px;font-weight:600">'+clFmtDate(t.date)+'</div><div class="muted" style="font-size:11px">'+esc(t.boutique||'')+' · '+esc(t.num||'')+(t.source==='borne'?' · borne':'')+' · '+esc(t.payment||'')+'</div></div><div style="font-weight:700;white-space:nowrap'+(t.total<0?';color:#a33':'')+'">'+eur(t.total)+' ▾</div></div>'+
+            '<div id="clhist-l-'+i+'" style="display:none;margin-top:5px;font-size:12px">'+(t.lignes||[]).map(function(l){return '<div style="display:flex;justify-content:space-between;gap:8px"><span>'+esc(l.produit)+(l.detail?' <span class="muted">· '+esc(l.detail)+'</span>':'')+'</span><span>'+(l.prix!=null?eur(Number(l.prix)):'')+'</span></div>';}).join('')+'</div></div>';
+        }).join('')+(d.total>ach.length?'<div class="muted" style="font-size:11px;margin-top:6px">'+ach.length+' derniers tickets affichés sur '+d.total+'.</div>':''):'<div class="muted" style="font-size:12px">Aucun achat en boutique enregistré pour ce client.</div>';
+      }
+      b.innerHTML=nh+'<div style="font-weight:700;margin:14px 0 6px">🧾 Historique d\'achats en boutique</div>'+hh+'<button class="btn" style="width:100%;margin-top:12px" data-act="closemodal">Fermer</button>';
+    }).catch(function(e){var b=document.getElementById('clhist-b');if(b)b.innerHTML='<div class="tag tag-low">Fiche indisponible ('+esc(e.message||e)+')</div><button class="btn" style="width:100%;margin-top:12px" data-act="closemodal">Fermer</button>';});
+  }
+  function clNoteAdd(){
+    var c=st.client,t=document.getElementById('clnote-txt'),m=document.getElementById('clnote-msg');if(!c||!t)return;
+    var txt=(t.value||'').trim();if(!txt){if(m)m.textContent='Écris une note d\'abord.';return;}
+    apiPost('/api/loyalty/notes',{customerRef:c.email,text:txt,boutiqueId:st.boutiqueId}).then(function(){toast('Note ajoutée');clHistLoad();}).catch(function(e){if(m)m.textContent='Échec : '+(e.message||e);});
+  }
+  function clNoteDel(id){
+    var c=st.client;if(!c||!id)return;
+    apiPost('/api/loyalty/notes/delete',{customerRef:c.email,id:id}).then(function(){toast('Note supprimée');clHistLoad();}).catch(function(e){toast('Échec : '+(e.message||e));});
+  }
   function clientModal(){
     if(API.on){
       openModal('<div class="modal-h">Associer un membre Kingston Club</div><div class="modal-b">'+
@@ -5924,6 +5968,10 @@ function ktPosCommit(code){if(!ktPosPending)return;var x=ktPosPending,p=pById(x.
     if(a==='rmline'){st.cart.splice(+el.getAttribute('data-i'),1);render();return;}
     if(a==='pickclient'){if(ksActiveUi()||ksUi.busy){toast('Retire le cadeau du ticket avant de changer de client.');return;}clientModal();return;}
     if(a==='cmscan'){cmStartScan();return;}
+    if(a==='clhist'){clHistModal();return;}
+    if(a==='clnote-add'){clNoteAdd();return;}
+    if(a==='clnote-del'){clNoteDel(el.getAttribute('data-id'));return;}
+    if(a==='clhist-tk'){var tkd=document.getElementById('clhist-l-'+el.getAttribute('data-i'));if(tkd)tkd.style.display=tkd.style.display==='none'?'block':'none';return;}
     if(['rmclient','pickclient','setclient','setclientremote','prodbtq-sel'].includes(a)&&(ksActiveUi()||ksUi.busy)){toast('Retire le cadeau du ticket avant de changer de client ou de boutique.');return;}
     if(a==='ks-options'){ksRunUi('options');return;}
     if(a==='ks-reserve'){ksRunUi('reserve',el.getAttribute('data-product'));return;}
